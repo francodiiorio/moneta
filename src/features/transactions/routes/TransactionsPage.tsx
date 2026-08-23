@@ -1,16 +1,203 @@
-import { ArrowLeftRight } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronLeft, ChevronRight, Plus, Receipt } from 'lucide-react'
+import { toast } from 'sonner'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { fromDateStamp, formatMonthLabel, shiftMonth } from '@/lib/dates'
+import { useTransactions } from '../hooks/useTransactions'
+import { useAccounts } from '../hooks/useAccounts'
+import { useAllCategories } from '../hooks/useAllCategories'
+import { useTransactionsUiStore } from '../store'
+import { TransactionFormDialog } from '../components/TransactionFormDialog'
+import { TransactionRow } from '../components/TransactionRow'
+import { removeTransaction, type TransactionListItem } from '../service'
+
+const ALL = '__all__'
+
+function groupByDate(items: TransactionListItem[]): [string, TransactionListItem[]][] {
+  const groups = new Map<string, TransactionListItem[]>()
+  for (const item of items) {
+    const list = groups.get(item.date) ?? []
+    list.push(item)
+    groups.set(item.date, list)
+  }
+  return [...groups.entries()]
+}
+
+function dateLabel(date: string): string {
+  const label = format(fromDateStamp(date), "EEEE d 'de' MMMM", { locale: es })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
 
 export function TransactionsPage() {
+  const transactions = useTransactions()
+  const accounts = useAccounts()
+  const categories = useAllCategories()
+
+  const {
+    month,
+    accountFilter,
+    categoryFilter,
+    setMonth,
+    setAccountFilter,
+    setCategoryFilter,
+    dialogOpen,
+    dialogKind,
+    editingTransactionId,
+    openCreateDialog,
+    openEditDialog,
+    closeDialog,
+  } = useTransactionsUiStore()
+
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+
+  const editingItem = transactions?.find((t) => t.id === editingTransactionId)
+  const groups = groupByDate(transactions ?? [])
+
+  async function handleDelete() {
+    if (!pendingDeleteId) return
+    try {
+      await removeTransaction(pendingDeleteId)
+      toast.success('Movimiento eliminado')
+    } catch {
+      toast.error('No se pudo eliminar el movimiento')
+    } finally {
+      setPendingDeleteId(null)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Movimientos" description="Ingresos, gastos y transferencias." />
-      <EmptyState
-        icon={ArrowLeftRight}
-        title="Próximamente"
-        description="La carga de movimientos se implementa en la siguiente etapa."
+      <PageHeader
+        title="Movimientos"
+        description="Ingresos, gastos y transferencias."
+        actions={
+          <Button onClick={() => openCreateDialog()}>
+            <Plus className="size-4" />
+            Nuevo movimiento
+          </Button>
+        }
       />
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={() => setMonth(shiftMonth(month, -1))}>
+            <ChevronLeft className="size-4" />
+          </Button>
+          <span className="min-w-36 text-center text-sm font-medium capitalize">
+            {formatMonthLabel(month)}
+          </span>
+          <Button variant="ghost" size="icon" onClick={() => setMonth(shiftMonth(month, 1))}>
+            <ChevronRight className="size-4" />
+          </Button>
+        </div>
+
+        <Select value={accountFilter ?? ALL} onValueChange={(v) => setAccountFilter(v === ALL ? null : v)}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Todas las cuentas" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Todas las cuentas</SelectItem>
+            {accounts?.map((account) => (
+              <SelectItem key={account.id} value={account.id}>
+                {account.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={categoryFilter ?? ALL} onValueChange={(v) => setCategoryFilter(v === ALL ? null : v)}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Todas las categorías" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Todas las categorías</SelectItem>
+            {categories?.map((category) => (
+              <SelectItem key={category.id} value={category.id}>
+                {category.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {transactions === undefined ? (
+        <div className="flex flex-col gap-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />
+          ))}
+        </div>
+      ) : groups.length === 0 ? (
+        <EmptyState
+          icon={Receipt}
+          title="No hay movimientos este mes"
+          description="Registrá un gasto, un ingreso o una transferencia para empezar."
+          action={<Button onClick={() => openCreateDialog()}>Nuevo movimiento</Button>}
+        />
+      ) : (
+        <div className="flex flex-col gap-6">
+          {groups.map(([date, items]) => (
+            <div key={date}>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">{dateLabel(date)}</p>
+              <div className="rounded-xl border border-border px-3">
+                {items.map((item) => {
+                  // No form handles 'adjustment' yet (nothing creates one today) —
+                  // hide "Editar" rather than open a dialog that can't represent it.
+                  const editableKind =
+                    item.kind === 'expense' || item.kind === 'income' || item.kind === 'transfer'
+                      ? item.kind
+                      : undefined
+                  return (
+                    <TransactionRow
+                      key={item.id}
+                      item={item}
+                      {...(editableKind && { onEdit: () => openEditDialog(item.id, editableKind) })}
+                      onDelete={() => setPendingDeleteId(item.id)}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <TransactionFormDialog
+        open={dialogOpen}
+        item={editingItem}
+        initialKind={dialogKind}
+        onOpenChange={(open) => (open ? undefined : closeDialog())}
+      />
+
+      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este movimiento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. El movimiento y sus efectos sobre el saldo de la
+              cuenta se eliminan por completo.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleDelete()}>Eliminar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -57,6 +57,12 @@ saldo actual.
 `sourcePlanId` + `occurrenceIndex` linkean una transacción materializada a el
 `RecurringPlan` o `InstallmentPlan` que la generó.
 
+**Editar una transacción reemplaza sus postings, no los diffea.** `saveTransaction()`
+(`src/database/repositories/transactions.repo.ts`) borra los postings existentes e
+inserta los nuevos derivados del formulario, dentro de la misma transacción Dexie `rw`;
+conserva el `id` y el `createdAt` originales. Es más simple que un diff campo por campo y
+sigue siendo atómico — ver `docs/DECISIONS.md` si se agrega ahí una entrada.
+
 ### RecurringPlan / InstallmentPlan
 
 Los planes son **plantillas**, no transacciones. Un `RecurringPlan` define una regla de

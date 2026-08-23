@@ -13,20 +13,27 @@
 - Shell de la app: layout responsive (sidebar desktop / bottom nav mobile), routing,
   tema claro/oscuro.
 
-## Etapa 1 — Movimientos (transacciones)
+## Etapa 1 — Movimientos (transacciones) (hecho)
 
-El objetivo es validar el modelo de partida doble en uso real, no sólo en tests.
+El objetivo era validar el modelo de partida doble en uso real, no sólo en tests —
+cumplido: balances verificados a mano en el navegador, incluyendo una transferencia
+cross-currency (ARS → USD).
 
 - Alta de ingreso, gasto y transferencia (misma moneda y cross-currency) sobre el ledger,
   usando los builders existentes de `domain/ledger`.
-- Lista de movimientos con filtros por mes, cuenta y categoría.
-- Edición y borrado (en cascada: transacción + sus postings) de una transacción.
-- Carga de tasas de cambio manuales (`ExchangeRate`) para poder hacer transferencias
-  cross-currency.
+- Lista de movimientos agrupada por fecha, con filtros por mes, cuenta y categoría.
+- Edición (reemplaza los postings, conserva `id`/`createdAt`) y borrado en cascada.
+- Selector de categoría con creación inline ("+ Nueva categoría") — el CRUD completo de
+  categorías queda para la Etapa 2.
+- La transferencia cross-currency pide directamente "monto que sale" y "monto que
+  entra"; `fx.rate` se deriva de esos dos montos. La gestión de `ExchangeRate` (tasas
+  guardadas por fecha) se difiere a la Etapa 3, que es donde se necesita para consolidar
+  el patrimonio a una moneda base.
 
 ## Etapa 2 — Categorías
 
-- CRUD de categorías con jerarquía de un nivel.
+- CRUD completo con jerarquía de un nivel, archivar, reordenar (hoy sólo existen
+  alta + listado, usados por el selector inline de Movimientos).
 - Seed inicial de categorías comunes en español (comida, transporte, sueldo, etc.),
   editable/borrable por el usuario.
 
@@ -54,7 +61,7 @@ reales vía `sourcePlanId`.
 
 ## Backlog / no priorizado
 
-- Code-splitting por ruta (el bundle actual es ~715 KB porque todavía no hay rutas
+- Code-splitting por ruta (el bundle actual es ~785 KB porque todavía no hay rutas
   lazy — no urgente hasta que el peso real de features futuras lo justifique).
 - Cifrado opcional del archivo `.finance` con passphrase (WebCrypto AES-GCM).
 - Modo *merge* en el import de backup (hoy sólo hace *replace* completo).

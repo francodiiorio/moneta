@@ -1,4 +1,5 @@
-import { format, parse, startOfMonth } from 'date-fns'
+import { addMonths, endOfMonth, format, parse, startOfMonth } from 'date-fns'
+import { es } from 'date-fns/locale'
 
 /** A calendar day with no timezone attached, e.g. "2026-08-23". */
 export type DateStamp = string
@@ -33,4 +34,26 @@ export function currentMonthStamp(): MonthStamp {
 export function isValidDateStamp(value: string): value is DateStamp {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   return toDateStamp(fromDateStamp(value)) === value
+}
+
+function monthStart(month: MonthStamp): Date {
+  return parse(month, MONTH_FORMAT, new Date())
+}
+
+export function monthRange(month: MonthStamp): { start: DateStamp; end: DateStamp } {
+  const start = monthStart(month)
+  return { start: toDateStamp(start), end: toDateStamp(endOfMonth(start)) }
+}
+
+export function shiftMonth(month: MonthStamp, delta: number): MonthStamp {
+  return format(addMonths(monthStart(month), delta), MONTH_FORMAT)
+}
+
+export function formatMonthLabel(month: MonthStamp): string {
+  const label = format(monthStart(month), 'LLLL yyyy', { locale: es })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+export function formatShortDate(date: DateStamp): string {
+  return format(fromDateStamp(date), 'dd/MM')
 }
