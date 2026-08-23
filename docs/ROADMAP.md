@@ -93,9 +93,19 @@ cross-currency (ARS → USD).
 
 ## Backlog / no priorizado
 
-- Code-splitting por ruta (el bundle actual es ~1.2 MB — Recharts es el salto más
-  grande desde que Reportes lo usa de verdad — porque todavía no hay rutas lazy; esto ya
-  amerita revisarlo antes de sumar más peso en etapas futuras).
+- ~~Code-splitting por ruta~~ (hecho) — `src/app/router.tsx` usa `lazy` de React Router
+  por ruta (`{ path, lazy: () => import(...).then(m => ({ Component: m.XPage })) }`) en
+  vez de imports estáticos. Recharts (el salto más grande) queda aislado en el chunk de
+  `ReportsPage` y sólo se descarga si el usuario visita `/reportes`. El chunk compartido
+  (React, react-router, Dexie, react-hook-form, zod, date-fns — usados por casi toda
+  ruta) bajó de ~1.2 MB a ~528 kB; seguir bajando eso requeriría separar esas libs por
+  vendor o diferir react-hook-form/zod dentro de cada diálogo, que es más invasivo y no
+  se justifica todavía para el volumen de uso de esta app.
+  Costo aceptado: `RouterProvider` no pinta nada (ni el shell estático de `AppLayout`)
+  hasta resolver el chunk lazy de la ruta inicial — antes invisible porque todo era un
+  solo bundle. Se cubre con `HydrateFallback` (`src/app/RootFallback.tsx`, un spinner
+  mínimo) en la ruta raíz, para que una carga directa/refresh en una URL profunda (ej.
+  `/ajustes/categorias`) muestre algo en vez de pantalla en blanco.
 - Cifrado opcional del archivo `.finance` con passphrase (WebCrypto AES-GCM).
 - Modo *merge* en el import de backup (hoy sólo hace *replace* completo).
 - Import de CSV/extractos bancarios.
