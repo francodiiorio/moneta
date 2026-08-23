@@ -122,6 +122,5 @@ cross-currency (ARS → USD).
   deshabilitadas. Todo-o-nada al confirmar (`transactions.repo.ts:bulkSaveTransactions`).
   Una sola categoría de gasto y una de ingreso para todo el lote — sin matching por texto
   en esta versión, ver ADR en `docs/DECISIONS.md`.
-- Adjuntar comprobantes (imágenes) como Blobs en IndexedDB.
 - Multi-dispositivo (fuera de alcance del proyecto tal como está planteado hoy — ver
   `docs/PRODUCT.md` "No-objetivos").
