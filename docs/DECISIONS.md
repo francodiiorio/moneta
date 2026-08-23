@@ -72,6 +72,27 @@ tiene que borrar esa transacción puntual desde Movimientos, no desde el plan �
 patrón ya establecido para editar una ocurrencia sin afectar el resto (ver "Recurrentes y
 cuotas como planes + instancias materializadas" arriba).
 
+## Cifrado del backup: WebCrypto nativo, opt-in, sin recuperación
+
+**Decisión:** el archivo `.finance` puede cifrarse opcionalmente con una contraseña
+(AES-256-GCM + PBKDF2-SHA256 vía `crypto.subtle`, `src/features/backups/encryption.ts`).
+Nunca es el comportamiento por defecto — el usuario tiene que activar un switch a
+propósito y confirmar la contraseña. No hay ningún mecanismo de recuperación: perder la
+contraseña deja el backup inservible para siempre.
+
+**Por qué:** el `.finance` es la única persistencia que sale del dispositivo (la
+IndexedDB local ya está protegida por el sandbox del navegador/OS) — es el único punto
+donde cifrado agrega algo. `crypto.subtle` es una API nativa del navegador, así que esto
+no agrega ninguna dependencia nueva, consistente con la política de dependencias del
+repo. GCM es cifrado autenticado: una contraseña incorrecta y un archivo corrupto tiran
+la misma excepción indistinguible — es deliberado (evita un oráculo de padding), así que
+la UI muestra un único mensaje para ambos casos en vez de intentar diferenciarlos.
+
+**Costo aceptado:** sin recuperación, un typo en la contraseña del día que se cifró un
+backup lo vuelve inútil — por eso el formulario de export pide la contraseña dos veces.
+No agregar un "hint" de contraseña ni ningún dato derivado más débil (reduciría la
+seguridad real a cambio de una conveniencia que no vale la pena para este caso de uso).
+
 ## Cuenta con moneda fija + tasas manuales, no conversión automática
 
 **Decisión:** cada `Account` tiene una `currency` fija; las tasas de cambio

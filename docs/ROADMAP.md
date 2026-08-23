@@ -106,7 +106,10 @@ cross-currency (ARS → USD).
   solo bundle. Se cubre con `HydrateFallback` (`src/app/RootFallback.tsx`, un spinner
   mínimo) en la ruta raíz, para que una carga directa/refresh en una URL profunda (ej.
   `/ajustes/categorias`) muestre algo en vez de pantalla en blanco.
-- Cifrado opcional del archivo `.finance` con passphrase (WebCrypto AES-GCM).
+- ~~Cifrado opcional del archivo `.finance` con passphrase~~ (hecho) —
+  `src/features/backups/encryption.ts`, AES-256-GCM + PBKDF2-SHA256 vía `crypto.subtle`
+  nativo (cero dependencias nuevas). Nunca por defecto, sin recuperación si se pierde la
+  contraseña — ver ADR en `docs/DECISIONS.md`.
 - Modo *merge* en el import de backup (hoy sólo hace *replace* completo).
 - Import de CSV/extractos bancarios.
 - Adjuntar comprobantes (imágenes) como Blobs en IndexedDB.

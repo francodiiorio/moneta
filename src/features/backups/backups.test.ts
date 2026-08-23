@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '@/database/db'
 import { generateId } from '@/lib/ids'
 import { buildBackupPayload, exportBackup } from './export'
-import { importBackup } from './import'
+import { importBackup, PassphraseRequiredError, peekIsEncrypted } from './import'
 import { migrateToLatest } from './migrations'
 
 afterEach(async () => {
@@ -178,5 +178,88 @@ describe('backup round-trip', () => {
   it('rejects a file that is not valid JSON', async () => {
     const file = new File(['not json'], 'broken.finance')
     await expect(importBackup(file)).rejects.toThrow(/JSON válido/)
+  })
+})
+
+describe('backup round-trip — encrypted', () => {
+  it('reconstructs an identical database state after export(passphrase) -> wipe -> import(passphrase)', async () => {
+    await seedFullDatabase()
+
+    const before = {
+      accounts: sortById(await db.accounts.toArray()),
+      categories: sortById(await db.categories.toArray()),
+      transactions: sortById(await db.transactions.toArray()),
+      postings: sortById(await db.postings.toArray()),
+      budgets: sortById(await db.budgets.toArray()),
+      exchangeRates: sortById(await db.exchangeRates.toArray()),
+      settings: await db.settings.get('singleton'),
+    }
+
+    const exported = await exportBackup('correcto-caballo-batería-grapa')
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+
+    // An encrypted export is not readable JSON of the underlying data —
+    // the whole point of this feature.
+    const rawText = await exported.blob.text()
+    expect(rawText).not.toContain('Banco')
+    expect(rawText).not.toContain('Supermercado')
+
+    expect(await peekIsEncrypted(file)).toBe(true)
+
+    await Promise.all([
+      db.accounts.clear(),
+      db.categories.clear(),
+      db.transactions.clear(),
+      db.postings.clear(),
+      db.budgets.clear(),
+      db.exchangeRates.clear(),
+      db.settings.clear(),
+    ])
+
+    const result = await importBackup(file, 'correcto-caballo-batería-grapa')
+    expect(result.checksumMatched).toBe(true)
+
+    const after = {
+      accounts: sortById(await db.accounts.toArray()),
+      categories: sortById(await db.categories.toArray()),
+      transactions: sortById(await db.transactions.toArray()),
+      postings: sortById(await db.postings.toArray()),
+      budgets: sortById(await db.budgets.toArray()),
+      exchangeRates: sortById(await db.exchangeRates.toArray()),
+      settings: await db.settings.get('singleton'),
+    }
+
+    expect(after).toEqual(before)
+  })
+
+  it('requires a passphrase for an encrypted file, and does not write anything without one', async () => {
+    await seedFullDatabase()
+    const exported = await exportBackup('contraseña')
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+
+    const countBefore = await db.transactions.count()
+    await expect(importBackup(file)).rejects.toThrow(PassphraseRequiredError)
+    expect(await db.transactions.count()).toBe(countBefore)
+  })
+
+  it('rejects the wrong passphrase, and does not write anything', async () => {
+    await seedFullDatabase()
+    const exported = await exportBackup('contraseña-correcta')
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+
+    const countBefore = await db.transactions.count()
+    await expect(importBackup(file, 'contraseña-incorrecta')).rejects.toThrow(/Contraseña incorrecta/)
+    expect(await db.transactions.count()).toBe(countBefore)
+  })
+
+  it('peekIsEncrypted returns false for a plaintext backup', async () => {
+    const exported = await exportBackup() // no passphrase
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+    expect(await peekIsEncrypted(file)).toBe(false)
+  })
+
+  it('peekIsEncrypted returns false (not a throw) for a file that is not valid JSON', async () => {
+    const file = new File(['not json'], 'broken.finance')
+    expect(await peekIsEncrypted(file)).toBe(false)
   })
 })

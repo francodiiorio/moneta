@@ -167,3 +167,33 @@ Reglas (ver `src/features/backups/`):
   corrupto o editado a mano queda rechazado sin tocar la base actual.
 - El checksum se recalcula y se compara: si no coincide, se avisa pero no se bloquea el
   import (podría ser una edición manual legítima).
+
+### Cifrado opcional (sobre independiente del formato de datos)
+
+El objeto de arriba (`BackupV1`) nunca cambia por esto — cifrar es una capa de transporte
+que lo envuelve entero, no una versión nueva del formato. Un `.finance` cifrado es:
+
+```jsonc
+{
+  "format": "moneta-backup-encrypted",
+  "version": 1,
+  "kdf": "PBKDF2", "hash": "SHA-256", "iterations": 600000,
+  "salt": "base64...", "iv": "base64...",
+  "ciphertext": "base64... (el BackupV1 de arriba, JSON.stringify + AES-256-GCM)"
+}
+```
+
+- `src/features/backups/encryption.ts`: `crypto.subtle` nativo del navegador, sin
+  dependencias — PBKDF2-SHA256 (iteraciones guardadas en el sobre, no hardcodeadas, para
+  poder subirlas a futuro sin romper backups viejos) deriva la clave, AES-256-GCM cifra.
+  `salt`/`iv` frescos y aleatorios en cada export, incluso reusando la misma contraseña.
+- Import detecta el formato por `isEncryptedBackup()` antes de intentar nada — si hace
+  falta contraseña y no se pasó una, tira `PassphraseRequiredError` (distinto de un JSON
+  inválido) para que la UI sepa que tiene que pedirla. Una vez desencriptado, el JSON
+  plano pasa por **exactamente el mismo camino** que un backup sin cifrar
+  (`migrateToLatest` → `validateLedgerIntegrity` → checksum → escritura).
+- GCM es autenticado: contraseña incorrecta y archivo corrupto/editado son
+  indistinguibles a propósito (evita un oráculo de padding) — un solo mensaje de error
+  para ambos casos.
+- **Sin recuperación.** Perder la contraseña de un backup cifrado lo deja inservible para
+  siempre — no hay backdoor. Nunca es el comportamiento por defecto.

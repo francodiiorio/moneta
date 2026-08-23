@@ -1,5 +1,6 @@
 import { readAllTables } from '@/database/repositories/backup.repo'
 import { computeChecksum } from './checksum'
+import { encryptPayload } from './encryption'
 import { BACKUP_FORMAT, type BackupDataV1, type BackupV1 } from './schemas/v1'
 import packageJson from '../../../package.json'
 
@@ -32,12 +33,21 @@ export async function buildBackupPayload(): Promise<BackupV1> {
   }
 }
 
-export async function exportBackup(): Promise<ExportedBackup> {
+/** @param passphrase When given, the backup is written to disk encrypted
+ *  (AES-GCM, see encryption.ts) — never by default. There is no recovery
+ *  if the passphrase is lost; the caller is expected to have confirmed it
+ *  with the user before calling this. */
+export async function exportBackup(passphrase?: string): Promise<ExportedBackup> {
   const payload = await buildBackupPayload()
   const json = JSON.stringify(payload, null, 2)
-  const blob = new Blob([json], { type: 'application/json' })
-  const stamp = payload.exportedAt.slice(0, 10)
-  return { filename: `moneta-${stamp}.finance`, blob }
+  const filename = `moneta-${payload.exportedAt.slice(0, 10)}.finance`
+
+  if (passphrase) {
+    const envelope = await encryptPayload(json, passphrase)
+    return { filename, blob: new Blob([JSON.stringify(envelope)], { type: 'application/json' }) }
+  }
+
+  return { filename, blob: new Blob([json], { type: 'application/json' }) }
 }
 
 /** Triggers a browser download. UI-only — never call from tests or
