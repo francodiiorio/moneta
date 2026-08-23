@@ -216,7 +216,7 @@ describe('backup round-trip — encrypted', () => {
       db.settings.clear(),
     ])
 
-    const result = await importBackup(file, 'correcto-caballo-batería-grapa')
+    const result = await importBackup(file, { passphrase: 'correcto-caballo-batería-grapa' })
     expect(result.checksumMatched).toBe(true)
 
     const after = {
@@ -248,7 +248,7 @@ describe('backup round-trip — encrypted', () => {
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
 
     const countBefore = await db.transactions.count()
-    await expect(importBackup(file, 'contraseña-incorrecta')).rejects.toThrow(/Contraseña incorrecta/)
+    await expect(importBackup(file, { passphrase: 'contraseña-incorrecta' })).rejects.toThrow(/Contraseña incorrecta/)
     expect(await db.transactions.count()).toBe(countBefore)
   })
 
@@ -261,5 +261,68 @@ describe('backup round-trip — encrypted', () => {
   it('peekIsEncrypted returns false (not a throw) for a file that is not valid JSON', async () => {
     const file = new File(['not json'], 'broken.finance')
     expect(await peekIsEncrypted(file)).toBe(false)
+  })
+})
+
+describe('backup round-trip — merge', () => {
+  it('combines a disjoint dataset from a backup with what is already local, without touching either', async () => {
+    const deviceA = await seedFullDatabase()
+    const exportedA = await exportBackup()
+    const file = new File([exportedA.blob], exportedA.filename, { type: 'application/json' })
+
+    await Promise.all([
+      db.accounts.clear(),
+      db.categories.clear(),
+      db.transactions.clear(),
+      db.postings.clear(),
+      db.budgets.clear(),
+      db.exchangeRates.clear(),
+      db.settings.clear(),
+    ])
+
+    // A second, independent dataset — seedFullDatabase() mints fresh ids
+    // every call, so this never collides with deviceA's.
+    const deviceB = await seedFullDatabase()
+
+    const result = await importBackup(file, { mode: 'merge' })
+    expect(result.checksumMatched).toBe(true)
+    expect(result.merged).toEqual({
+      accounts: { added: 1, skipped: 0 },
+      categories: { added: 1, skipped: 0 },
+      transactions: { added: 1, skipped: 0 },
+      recurringPlans: { added: 0, skipped: 0 },
+      installmentPlans: { added: 0, skipped: 0 },
+      budgets: { added: 1, skipped: 0 },
+      exchangeRates: { added: 1, skipped: 0 },
+    })
+
+    const accountIds = (await db.accounts.toArray()).map((a) => a.id).sort()
+    expect(accountIds).toEqual([deviceA.account.id, deviceB.account.id].sort())
+    const transactionIds = (await db.transactions.toArray()).map((t) => t.id).sort()
+    expect(transactionIds).toEqual([deviceA.transaction.id, deviceB.transaction.id].sort())
+    // Local settings (from deviceB's seed) were never touched by the merge.
+    expect((await db.settings.get('singleton'))?.baseCurrency).toBe('ARS')
+  })
+
+  it('merging the same backup twice in a row is idempotent (no duplicates the second time)', async () => {
+    await seedFullDatabase()
+    const exported = await exportBackup()
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+
+    const first = await importBackup(file, { mode: 'merge' })
+    expect(first.merged?.accounts).toEqual({ added: 0, skipped: 1 }) // same device, ids already exist
+
+    const countBefore = await db.transactions.count()
+    const second = await importBackup(file, { mode: 'merge' })
+    expect(second.merged).toEqual({
+      accounts: { added: 0, skipped: 1 },
+      categories: { added: 0, skipped: 1 },
+      transactions: { added: 0, skipped: 1 },
+      recurringPlans: { added: 0, skipped: 0 },
+      installmentPlans: { added: 0, skipped: 0 },
+      budgets: { added: 0, skipped: 1 },
+      exchangeRates: { added: 0, skipped: 1 },
+    })
+    expect(await db.transactions.count()).toBe(countBefore)
   })
 })

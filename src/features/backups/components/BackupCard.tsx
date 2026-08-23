@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,8 +19,53 @@ import {
 } from '@/components/ui/alert-dialog'
 import { downloadBackup, exportBackup } from '../export'
 import { importBackup, peekIsEncrypted } from '../import'
+import type { MergeCounts, MergeSummary } from '@/database/repositories/backup.repo'
 
 const MIN_PASSPHRASE_LENGTH = 8
+
+type ImportMode = 'replace' | 'merge'
+
+const MERGE_LABELS: Record<keyof MergeSummary, [string, string]> = {
+  accounts: ['cuenta', 'cuentas'],
+  categories: ['categoría', 'categorías'],
+  transactions: ['movimiento', 'movimientos'],
+  recurringPlans: ['recurrente', 'recurrentes'],
+  installmentPlans: ['compra en cuotas', 'compras en cuotas'],
+  budgets: ['presupuesto', 'presupuestos'],
+  exchangeRates: ['tasa de cambio', 'tasas de cambio'],
+}
+
+function joinList(parts: string[]): string {
+  return parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(', ')} y ${parts[parts.length - 1]}`
+}
+
+/** Reports only what's actually known: `added` and `skipped` are tracked
+ *  separately per table (see MergeSummary), so a table that's absent
+ *  from both lists never gets a claim made about it — a naive "count ===
+ *  0 means it already existed" would be wrong whenever the file simply
+ *  had none of that kind to begin with. */
+function describeMergeSummary(summary: MergeSummary): string {
+  const keys = Object.keys(MERGE_LABELS) as (keyof MergeSummary)[]
+
+  function list(pick: (counts: MergeCounts) => number): string[] {
+    return keys
+      .map((key) => {
+        const count = pick(summary[key])
+        if (count === 0) return null
+        const [singular, plural] = MERGE_LABELS[key]
+        return `${count} ${count === 1 ? singular : plural}`
+      })
+      .filter((part): part is string => part !== null)
+  }
+
+  const added = list((c) => c.added)
+  const skipped = list((c) => c.skipped)
+
+  if (added.length === 0 && skipped.length === 0) return 'El archivo no tenía nada para importar.'
+  if (added.length === 0) return `No había nada nuevo para agregar — ya tenías ${joinList(skipped)}.`
+  if (skipped.length === 0) return `Se agregó: ${joinList(added)}.`
+  return `Se agregó: ${joinList(added)}. Ya tenías: ${joinList(skipped)}.`
+}
 
 export function BackupCard() {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -32,6 +78,7 @@ export function BackupCard() {
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [pendingFileEncrypted, setPendingFileEncrypted] = useState(false)
   const [importPassphrase, setImportPassphrase] = useState('')
+  const [importMode, setImportMode] = useState<ImportMode>('replace')
 
   function resetExportPassphrase() {
     setEncryptOnExport(false)
@@ -77,6 +124,7 @@ export function BackupCard() {
     setPendingFile(null)
     setPendingFileEncrypted(false)
     setImportPassphrase('')
+    setImportMode('replace')
   }
 
   async function confirmImport() {
@@ -84,7 +132,9 @@ export function BackupCard() {
 
     setIsBusy(true)
     try {
-      // Safety net: snapshot current state before it gets replaced. Never
+      // Safety net: snapshot current state before it gets touched. Kept
+      // for merge too even though it's non-destructive — cheap, and
+      // consistent regardless of which mode the user picks. Never
       // encrypted — it has to be openable without remembering a second
       // passphrase in the middle of recovering from a bad import.
       const safety = await exportBackup()
@@ -93,11 +143,16 @@ export function BackupCard() {
         filename: safety.filename.replace('.finance', '-antes-de-importar.finance'),
       })
 
-      const result = await importBackup(pendingFile, pendingFileEncrypted ? importPassphrase : undefined)
+      const result = await importBackup(pendingFile, {
+        ...(pendingFileEncrypted && { passphrase: importPassphrase }),
+        mode: importMode,
+      })
       if (!result.checksumMatched) {
         toast.warning(
           'Backup importado, pero el checksum no coincide (el archivo pudo haber sido editado).',
         )
+      } else if (result.merged) {
+        toast.success(describeMergeSummary(result.merged))
       } else {
         toast.success('Backup importado')
       }
@@ -191,10 +246,22 @@ export function BackupCard() {
             <AlertDialogDescription asChild>
               <div className="flex flex-col gap-3">
                 <p>
-                  Esto reemplaza todos los datos actuales de la app por los del archivo{' '}
-                  <span className="font-medium">{pendingFile?.name}</span>. Antes de importar se
-                  descarga automáticamente un backup de seguridad del estado actual.
+                  Archivo <span className="font-medium">{pendingFile?.name}</span>. Antes de
+                  importar se descarga automáticamente un backup de seguridad del estado actual.
                 </p>
+
+                <Tabs value={importMode} onValueChange={(v) => setImportMode(v as ImportMode)}>
+                  <TabsList className="w-full">
+                    <TabsTrigger value="replace">Reemplazar todo</TabsTrigger>
+                    <TabsTrigger value="merge">Combinar</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <p>
+                  {importMode === 'replace'
+                    ? 'Esto borra todos los datos actuales de la app y los reemplaza por los del archivo.'
+                    : 'Esto agrega lo que falte del archivo — nunca pisa ni borra nada que ya tengas.'}
+                </p>
+
                 {pendingFileEncrypted && (
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="import-passphrase" className="text-foreground">

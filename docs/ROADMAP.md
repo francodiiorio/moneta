@@ -110,7 +110,9 @@ cross-currency (ARS → USD).
   `src/features/backups/encryption.ts`, AES-256-GCM + PBKDF2-SHA256 vía `crypto.subtle`
   nativo (cero dependencias nuevas). Nunca por defecto, sin recuperación si se pierde la
   contraseña — ver ADR en `docs/DECISIONS.md`.
-- Modo *merge* en el import de backup (hoy sólo hace *replace* completo).
+- ~~Modo *merge* en el import de backup~~ (hecho) — `mergeAllTables()` en
+  `database/repositories/backup.repo.ts`, unión por ID, la base local siempre gana. Ver
+  ADR en `docs/DECISIONS.md`.
 - Import de CSV/extractos bancarios.
 - Adjuntar comprobantes (imágenes) como Blobs en IndexedDB.
 - Multi-dispositivo (fuera de alcance del proyecto tal como está planteado hoy — ver

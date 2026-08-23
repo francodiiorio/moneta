@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '@/database/db'
 import { createAccount, listAccountsWithBalances } from '@/database/repositories/accounts.repo'
+import { mergeAllTables } from '@/database/repositories/backup.repo'
 import { createCategory } from '@/database/repositories/categories.repo'
 import { createRecurringPlan, listRecurringPlans, setRecurringPlanPaused } from '@/database/repositories/recurringPlans.repo'
 import { createInstallmentPlan } from '@/database/repositories/installmentPlans.repo'
+import { generateId } from '@/lib/ids'
 import { minor } from '@/domain/money'
 import type { RecurrenceRule, TransactionTemplate } from '@/domain/entities'
 import {
@@ -266,5 +268,71 @@ describe('listRecurringPlansWithNext / listInstallmentPlansWithProgress — orph
     expect(installmentItem?.id).toBe(installmentPlan.id)
     expect(installmentItem?.accountLabel).toBe('—')
     expect(installmentItem?.categoryLabel).toBe('Categoría eliminada')
+  })
+})
+
+describe('materializeDue after a backup merge', () => {
+  it('does not re-materialize occurrences merged in from another device', async () => {
+    const { account, category } = await setup()
+    const rule: RecurrenceRule = { freq: 'monthly', interval: 1, startDate: '2026-01-01' }
+    const plan = await createRecurringPlan({ template: template(account.id, category.id), rule })
+    await db.recurringPlans.update(plan.id, { lastMaterializedDate: '2026-01-01' })
+    await db.transactions.add({
+      id: generateId(),
+      date: '2026-01-01',
+      kind: 'expense',
+      description: 'Alquiler',
+      status: 'confirmed',
+      sourcePlanId: plan.id,
+      occurrenceIndex: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+
+    // Another device opened the app more recently and materialized ahead
+    // — a real device's backup carries every occurrence it produced, in
+    // order, never a gap — so its export includes both 02-01 and 03-01.
+    await mergeAllTables({
+      accounts: [],
+      categories: [],
+      transactions: [
+        {
+          id: generateId(),
+          date: '2026-02-01',
+          kind: 'expense',
+          description: 'Alquiler',
+          status: 'confirmed',
+          sourcePlanId: plan.id,
+          occurrenceIndex: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          id: generateId(),
+          date: '2026-03-01',
+          kind: 'expense',
+          description: 'Alquiler',
+          status: 'confirmed',
+          sourcePlanId: plan.id,
+          occurrenceIndex: 2,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      postings: [],
+      recurringPlans: [],
+      installmentPlans: [],
+      budgets: [],
+      exchangeRates: [],
+    })
+
+    // Without the watermark repair in mergeAllTables, lastMaterializedDate
+    // would still be the pre-merge 2026-01-01, and this would treat
+    // 2026-02-01/2026-03-01 as still due, duplicating both.
+    const { recurringCreated } = await materializeDue('2026-03-15')
+    expect(recurringCreated).toBe(0)
+
+    const planTransactions = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
+    expect(planTransactions.map((t) => t.date).sort()).toEqual(['2026-01-01', '2026-02-01', '2026-03-01'])
   })
 })

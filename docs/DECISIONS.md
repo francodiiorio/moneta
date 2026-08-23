@@ -93,6 +93,43 @@ backup lo vuelve inútil — por eso el formulario de export pide la contraseña
 No agregar un "hint" de contraseña ni ningún dato derivado más débil (reduciría la
 seguridad real a cambio de una conveniencia que no vale la pena para este caso de uso).
 
+## Merge de backup: la base local siempre gana
+
+**Decisión:** el modo merge del import (`importBackup(file, { mode: 'merge' })`) sólo
+agrega filas que no existen localmente — nunca sobrescribe ni borra una entidad que ya
+está en el dispositivo, aunque el archivo traiga una versión distinta con la misma ID.
+
+**Por qué:** es la única política que no corre riesgo de pisar una edición reciente con
+datos viejos del archivo, sin necesitar una UI de resolución de conflictos (que es una
+feature bastante más grande). Como consecuencia directa, re-importar el mismo backup (o
+uno superpuesto) en modo merge es idempotente — no duplica nada, porque todo lo que ya
+existe se salta. Esto también resuelve `Settings` sin caso especial: como esa fila
+(`id: 'singleton'`) casi siempre existe ya, la regla general la deja intacta sola.
+
+**Costo aceptado:** dos cuentas creadas independientemente en cada dispositivo (ej. dos
+"Banco" con IDs distintas) quedan duplicadas visualmente después de un merge — no hay
+deduplicación por nombre. Resolverlo bien requeriría matching difuso y una UI de
+conflictos; para el caso de uso real (consolidar dos dispositivos una sola vez, no
+sincronizarlos en curso — ver "No-objetivos" en `docs/PRODUCT.md`), el usuario
+archivando la cuenta duplicada a mano es más barato que construir esa feature.
+
+**Detalle no obvio:** "unión por ID" no alcanza para `transactions` con `sourcePlanId` —
+un `RecurringPlan` que ya existía en ambos dispositivos antes de separarse materializa la
+misma ocurrencia calendario con un `id` de transacción *distinto* en cada uno
+(`generateId()` es aleatorio, no derivado de la fecha/plan). Dedupear sólo por `id`
+duplicaría silenciosamente el monto en el balance de la cuenta — el caso de uso central
+que esta feature dice resolver. Por eso `transactions` también dedupe por el par
+`(sourcePlanId, occurrenceIndex)` cuando está presente, además de por `id`. Además, el
+merge repara `RecurringPlan.lastMaterializedDate` después de agregar transacciones — sin
+esto, `materializeDue()` duplicaría cualquier ocurrencia traída desde otro dispositivo
+cuya fecha sea posterior al watermark local, en la próxima apertura de la app. Ver
+`docs/DATA_MODEL.md` "Modo merge" para el detalle completo.
+
+**Detalle no obvio:** el merge repara `RecurringPlan.lastMaterializedDate` después de
+agregar transacciones — sin esto, `materializeDue()` duplicaría cualquier ocurrencia
+traída desde otro dispositivo cuya fecha sea posterior al watermark local, en la próxima
+apertura de la app. Ver `docs/DATA_MODEL.md` "Modo merge" para el detalle completo.
+
 ## Cuenta con moneda fija + tasas manuales, no conversión automática
 
 **Decisión:** cada `Account` tiene una `currency` fija; las tasas de cambio

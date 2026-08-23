@@ -1,14 +1,28 @@
-import { replaceAllTables } from '@/database/repositories/backup.repo'
+import { mergeAllTables, replaceAllTables, type MergeSummary } from '@/database/repositories/backup.repo'
 import { computeChecksum } from './checksum'
 import { decryptPayload, isEncryptedBackup } from './encryption'
 import { migrateToLatest } from './migrations'
 import { validateLedgerIntegrity } from './validate'
+
+export interface ImportOptions {
+  passphrase?: string
+  /** 'replace' (default) wipes the current database and writes the
+   *  file's contents in its place — the original behavior. 'merge' only
+   *  adds what's missing locally, never overwrites or deletes anything
+   *  that already exists — see database/repositories/backup.repo.ts
+   *  mergeAllTables() and docs/DECISIONS.md for why that direction is
+   *  the only one that's safe without a conflict-resolution UI. */
+  mode?: 'replace' | 'merge'
+}
 
 export interface ImportResult {
   /** false if the file's checksum didn't match its contents — still
    *  imported (data passed schema + invariant validation), but the UI
    *  should warn the user the file may have been edited or corrupted. */
   checksumMatched: boolean
+  /** Present only for mode: 'merge' — how many rows of each kind were
+   *  actually new and got added. */
+  merged?: MergeSummary
 }
 
 /** Thrown when `file` is encrypted and `importBackup` was called without
@@ -35,12 +49,15 @@ export async function peekIsEncrypted(file: File): Promise<boolean> {
 
 /**
  * Parses (decrypting first if needed), migrates, and validates `file`,
- * then atomically replaces the entire database with its contents. Does
- * not download a safety backup first — callers (the Settings UI) are
- * expected to call `exportBackup` + `downloadBackup` immediately before
- * this, so the download only happens where there's a user to hand it to.
+ * then atomically writes its contents to the database — wiping and
+ * replacing everything (`mode: 'replace'`, the default) or only adding
+ * what's missing (`mode: 'merge'`). Does not download a safety backup
+ * first — callers (the Settings UI) are expected to call `exportBackup` +
+ * `downloadBackup` immediately before this, so the download only happens
+ * where there's a user to hand it to.
  */
-export async function importBackup(file: File, passphrase?: string): Promise<ImportResult> {
+export async function importBackup(file: File, options: ImportOptions = {}): Promise<ImportResult> {
+  const { passphrase, mode = 'replace' } = options
   const text = await file.text()
 
   let outer: unknown
@@ -75,7 +92,11 @@ export async function importBackup(file: File, passphrase?: string): Promise<Imp
   const checksumMatched =
     typeof expectedChecksum === 'string' && expectedChecksum === actualChecksum
 
-  await replaceAllTables(data)
+  if (mode === 'merge') {
+    const merged = await mergeAllTables(data)
+    return { checksumMatched, merged }
+  }
 
+  await replaceAllTables(data)
   return { checksumMatched }
 }

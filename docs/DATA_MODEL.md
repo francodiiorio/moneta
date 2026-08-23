@@ -168,6 +168,48 @@ Reglas (ver `src/features/backups/`):
 - El checksum se recalcula y se compara: si no coincide, se avisa pero no se bloquea el
   import (podría ser una edición manual legítima).
 
+### Modo merge (`importBackup(file, { mode: 'merge' })`)
+
+Alternativa a *replace* para consolidar el historial de dos dispositivos usados por
+separado. Regla única: **agrega lo que falta, nunca pisa ni borra nada que ya exista
+localmente** — ver el ADR en `docs/DECISIONS.md` para el porqué.
+
+- `database/repositories/backup.repo.ts:mergeAllTables()` hace unión por ID en cada
+  tabla: sólo se agrega una fila cuya ID no esté ya presente. Con `generateId()`
+  (`lib/ids.ts`) la colisión de IDs entre dos dispositivos independientes es
+  despreciable, así que "misma ID" en la práctica significa "es la misma entidad".
+- `transactions` se dedupe por ID **y**, cuando tienen `sourcePlanId` +
+  `occurrenceIndex`, también por ese par. Un `RecurringPlan` que ya existía en ambos
+  dispositivos antes de que se usaran por separado materializa la misma ocurrencia
+  calendario con un `id` de transacción distinto en cada uno (`generateId()` es
+  aleatorio, no determinístico por fecha/plan) — dedupear sólo por `id` trataría esas dos
+  transacciones como no relacionadas y duplicaría el monto en el balance de la cuenta.
+- `postings` es la única tabla que **no** se mergea por su propia ID: una posting sólo se
+  agrega si su `transactionId` es una transacción que *también* se está agregando en ese
+  merge. Necesario porque editar una transacción (`transactions.repo.ts:writeLedgerEntry`)
+  reemplaza sus postings conservando el `id` de la transacción — un backup viejo de una
+  transacción ya editada localmente tiene postings con IDs que ya no existen en ningún
+  lado, y agregarlos por su cuenta duplicaría el monto.
+- Después de mergear, todo `RecurringPlan` (existente o recién agregado) recalcula su
+  `lastMaterializedDate` al máximo `date` real entre sus transacciones locales con ese
+  `sourcePlanId`, si es posterior al valor actual. Sin esto, `materializeDue()`
+  (`features/plans/service.ts`) — que confía ciegamente en ese watermark para decidir qué
+  falta materializar — trataría ocurrencias traídas por el merge como pendientes y las
+  duplicaría en la próxima apertura de la app.
+- `settings` (fila única `id: 'singleton'`) cae en la misma regla general sin caso
+  especial: como casi siempre existe ya localmente, el `settings` del archivo se ignora
+  por completo — la moneda base y el tema del dispositivo actual nunca cambian por un
+  merge.
+- Sin deduplicación de entidades por nombre: dos cuentas "Banco" con IDs distintas
+  (creadas independientemente en cada dispositivo) quedan duplicadas después de un merge
+  — se concilian a mano. Es una limitación de alcance deliberada, no un bug. Lo mismo
+  aplica a `ExchangeRate`: dos tasas para el mismo `(date, from, to)` cargadas por
+  separado en cada dispositivo quedan como filas distintas (a diferencia de una cuenta
+  duplicada, esto no es sólo cosmético — `resolveRate()` puede terminar usando cualquiera
+  de las dos de forma no determinística si tienen valores distintos, afectando una
+  conversión de moneda en reportes/patrimonio; conviene revisar `/ajustes/tasas` después
+  de un merge si se cargaron tasas manualmente en ambos dispositivos).
+
 ### Cifrado opcional (sobre independiente del formato de datos)
 
 El objeto de arriba (`BackupV1`) nunca cambia por esto — cifrar es una capa de transporte
