@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '../db'
 import { createAccount, listAccountsWithBalances } from './accounts.repo'
 import { createCategory } from './categories.repo'
-import { deleteTransaction, listTransactionsInRange, saveTransaction } from './transactions.repo'
-import { buildExpense, buildFxTransfer } from '@/domain/ledger'
+import { bulkSaveTransactions, deleteTransaction, listTransactionsInRange, saveTransaction } from './transactions.repo'
+import { buildExpense, buildFxTransfer, buildIncome } from '@/domain/ledger'
 import { minor, money } from '@/domain/money'
 
 afterEach(async () => {
@@ -113,6 +113,43 @@ describe('deleteTransaction', () => {
     expect(await db.postings.where('transactionId').equals(id).count()).toBe(0)
     const [accountWithBalance] = await listAccountsWithBalances()
     expect(accountWithBalance?.balance).toBe(100_000)
+  })
+})
+
+describe('bulkSaveTransactions', () => {
+  it('writes every entry atomically in one go', async () => {
+    const { account, category } = await seedAccountAndCategory()
+    await bulkSaveTransactions([
+      buildExpense({ date: '2026-08-01', description: 'Uno', accountId: account.id, categoryId: category.id, amount: money(1000, 'ARS') }),
+      buildExpense({ date: '2026-08-02', description: 'Dos', accountId: account.id, categoryId: category.id, amount: money(2000, 'ARS') }),
+      buildIncome({ date: '2026-08-03', description: 'Tres', accountId: account.id, categoryId: category.id, amount: money(500, 'ARS') }),
+    ])
+
+    const items = await listTransactionsInRange('2026-08-01', '2026-08-31')
+    expect(items).toHaveLength(3)
+    const [accountWithBalance] = await listAccountsWithBalances()
+    expect(accountWithBalance?.balance).toBe(100_000 - 1000 - 2000 + 500)
+  })
+
+  it('writes nothing if any entry is invalid (all-or-nothing)', async () => {
+    const { account, category } = await seedAccountAndCategory()
+    const other = await createAccount({ name: 'Otro banco', type: 'bank', currency: 'USD', openingBalance: minor(0) })
+
+    await expect(
+      bulkSaveTransactions([
+        buildExpense({ date: '2026-08-01', description: 'Válida', accountId: account.id, categoryId: category.id, amount: money(1000, 'ARS') }),
+        // Wrong currency for `other` (USD account, ARS posting) — writeLedgerEntry rejects this.
+        buildExpense({ date: '2026-08-02', description: 'Inválida', accountId: other.id, categoryId: category.id, amount: money(500, 'ARS') }),
+      ]),
+    ).rejects.toThrow()
+
+    expect(await db.transactions.count()).toBe(0)
+    expect(await db.postings.count()).toBe(0)
+  })
+
+  it('is a no-op given an empty list', async () => {
+    await bulkSaveTransactions([])
+    expect(await db.transactions.count()).toBe(0)
   })
 })
 

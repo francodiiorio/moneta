@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus, Receipt } from 'lucide-react'
+import { Link } from 'react-router'
+import { ChevronLeft, ChevronRight, Plus, Receipt, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -86,10 +87,18 @@ export function TransactionsPage() {
         title="Movimientos"
         description="Ingresos, gastos y transferencias."
         actions={
-          <Button onClick={() => openCreateDialog()}>
-            <Plus className="size-4" />
-            Nuevo movimiento
-          </Button>
+          <>
+            <Button variant="outline" asChild>
+              <Link to="/movimientos/importar">
+                <Upload className="size-4" />
+                Importar CSV
+              </Link>
+            </Button>
+            <Button onClick={() => openCreateDialog()}>
+              <Plus className="size-4" />
+              Nuevo movimiento
+            </Button>
+          </>
         }
       />
 

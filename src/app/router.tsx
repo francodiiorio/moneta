@@ -34,6 +34,13 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: 'movimientos/importar',
+        lazy: async () => {
+          const { ImportCsvPage } = await import('@/features/csvImport/routes/ImportCsvPage')
+          return { Component: ImportCsvPage }
+        },
+      },
+      {
         path: 'presupuestos',
         lazy: async () => {
           const { BudgetsPage } = await import('@/features/budgets/routes/BudgetsPage')

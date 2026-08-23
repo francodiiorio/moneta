@@ -113,7 +113,15 @@ cross-currency (ARS → USD).
 - ~~Modo *merge* en el import de backup~~ (hecho) — `mergeAllTables()` en
   `database/repositories/backup.repo.ts`, unión por ID, la base local siempre gana. Ver
   ADR en `docs/DECISIONS.md`.
-- Import de CSV/extractos bancarios.
+- ~~Import de CSV/extractos bancarios~~ (hecho) — `src/features/csvImport/`, ruta
+  `/movimientos/importar`. Parser `papaparse` (dependencia nueva — corre 100% local,
+  autodetecta delimitador). Flujo de dos pasos: mapear columnas (fecha con formato
+  explícito, descripción, monto en una columna con signo o débito/crédito separados) →
+  vista previa con detección de duplicados (por fecha+monto+descripción contra lo ya
+  cargado en esa cuenta, destildados por defecto) y filas inválidas marcadas y
+  deshabilitadas. Todo-o-nada al confirmar (`transactions.repo.ts:bulkSaveTransactions`).
+  Una sola categoría de gasto y una de ingreso para todo el lote — sin matching por texto
+  en esta versión, ver ADR en `docs/DECISIONS.md`.
 - Adjuntar comprobantes (imágenes) como Blobs en IndexedDB.
 - Multi-dispositivo (fuera de alcance del proyecto tal como está planteado hoy — ver
   `docs/PRODUCT.md` "No-objetivos").

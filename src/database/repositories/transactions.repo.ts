@@ -110,6 +110,21 @@ export async function saveTransaction(entry: LedgerEntryDraft, existingId?: stri
   )
 }
 
+/**
+ * Writes every entry in `entries` atomically — one Dexie `rw` transaction
+ * covering all of them, so a bulk import (CSV, etc.) either lands
+ * entirely or not at all, same guarantee as every other multi-write in
+ * this repo. Uses `writeLedgerEntry` per entry, same convention as
+ * `recurringPlans.repo.ts`/`installmentPlans.repo.ts`.
+ */
+export async function bulkSaveTransactions(entries: readonly LedgerEntryDraft[]): Promise<void> {
+  await db.transaction('rw', db.transactions, db.postings, db.accounts, async () => {
+    for (const entry of entries) {
+      await writeLedgerEntry(entry)
+    }
+  })
+}
+
 export async function deleteTransaction(id: string): Promise<void> {
   await db.transaction('rw', db.transactions, db.postings, async () => {
     await db.postings.where('transactionId').equals(id).delete()

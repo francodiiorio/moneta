@@ -2,6 +2,33 @@
 
 ADRs cortos. Cada entrada: qué se decidió, por qué, qué se descartó.
 
+## Import de CSV: una categoría por lote, duplicados destildados no bloqueados
+
+**Decisión:** `src/features/csvImport/` importa un extracto bancario a una sola cuenta
+por vez, con **una** categoría de gasto y **una** de ingreso elegidas para todo el lote
+(el `kind` de cada fila sale del signo del monto o de qué columna — débito/crédito —
+tiene valor). Las filas que parecen duplicadas de movimientos ya cargados (mismo
+día+monto+descripción normalizada, en esa cuenta) se detectan y vienen destildadas por
+defecto en la vista previa, pero el usuario puede tildarlas igual — nunca se bloquean.
+
+**Por qué:** categorizar por texto (matching de palabras clave, o peor, alguna
+heurística más compleja) es una feature bastante más grande, con riesgo real de
+categorizar mal en silencio — categorías incorrectas son más difíciles de notar que
+duplicados, que al menos son visibles y revisables en la vista previa antes de
+confirmar. Para la primera versión, una categoría por lote más recategorizar a mano lo
+que haga falta desde Movimientos es más simple y más seguro que una heurística que se
+equivoca en un caso que el usuario no llega a revisar.
+
+**Costo aceptado:** un extracto con muchas categorías reales requiere recategorizar
+manualmente después de importar. Queda en el backlog una versión con reglas de
+categorización configurables si en la práctica esto molesta.
+
+**Detalle técnico:** el parser (`papaparse`, dependencia nueva — corre 100% local, cero
+red) autodetecta el delimitador, pero el **formato de fecha nunca se autodetecta** —
+`23/08/2026` es genuinamente ambiguo entre DD/MM y MM/DD sin más contexto, así que el
+usuario lo elige explícito en el mapeo en vez de una heurística que puede acertar la
+mayoría de las veces y arruinar silenciosamente el resto.
+
 ## Ledger de partida doble ligera en vez de transacciones tipadas simples
 
 **Decisión:** toda transacción es una lista de `Posting`s con signo que suman cero, en vez
