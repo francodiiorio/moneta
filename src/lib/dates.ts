@@ -57,3 +57,8 @@ export function formatMonthLabel(month: MonthStamp): string {
 export function formatShortDate(date: DateStamp): string {
   return format(fromDateStamp(date), 'dd/MM')
 }
+
+export function formatMonthShort(month: MonthStamp): string {
+  const label = format(monthStart(month), 'LLL', { locale: es })
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}

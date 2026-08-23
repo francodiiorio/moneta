@@ -30,18 +30,29 @@ cross-currency (ARS → USD).
   guardadas por fecha) se difiere a la Etapa 3, que es donde se necesita para consolidar
   el patrimonio a una moneda base.
 
-## Etapa 2 — Categorías
+## Etapa 2 — Categorías (hecho)
 
-- CRUD completo con jerarquía de un nivel, archivar, reordenar (hoy sólo existen
-  alta + listado, usados por el selector inline de Movimientos).
+- CRUD completo con jerarquía de un nivel, archivar (bloqueado si tiene hijas activas),
+  reordenar con flechas ↑/↓ entre hermanas.
 - Seed inicial de categorías comunes en español (comida, transporte, sueldo, etc.),
-  editable/borrable por el usuario.
+  editable/borrable por el usuario — corre una sola vez, automáticamente, si la tabla
+  está vacía.
+- Gestión en `/ajustes/categorias`, sin agregar un ítem nuevo al nav principal.
 
-## Etapa 3 — Dashboard y Reportes
+## Etapa 3 — Dashboard y Reportes (hecho)
 
-- Resumen del mes actual: ingresos, gastos, balance neto.
-- Gasto por categoría (gráfico, Recharts).
-- Evolución del patrimonio total, consolidado a la moneda base usando `ExchangeRate`.
+- Resumen del mes actual: ingresos, gastos, balance neto (Dashboard, mes fijo; Reportes,
+  con selector de mes).
+- Gasto por categoría (gráfico de barras horizontal, Recharts, un solo hue tomado de
+  `--primary` — ver la skill `dataviz`).
+- Evolución del patrimonio: últimos 6 meses fijos, un punto por fin de mes (y "hoy" para
+  el mes en curso), usando `accounts.repo.ts:listAccountsWithBalances(asOfDate)` +
+  `domain/currency/rates.ts:convert()`.
+- Todo consolidado a `Settings.baseCurrency`; si falta una tasa para convertir algo
+  puntual, ese ítem se excluye del total y se muestra un aviso con el conteo
+  (`MissingRateBanner`) en vez de fallar en silencio.
+- Gestión de `ExchangeRate` en `/ajustes/tasas` (crear/listar/borrar) — le da uso real a
+  `resolveRate`/`convert`, construidos en la Etapa 0 pero sin consumidor hasta ahora.
 
 ## Etapa 4 — Presupuestos
 
@@ -61,8 +72,9 @@ reales vía `sourcePlanId`.
 
 ## Backlog / no priorizado
 
-- Code-splitting por ruta (el bundle actual es ~785 KB porque todavía no hay rutas
-  lazy — no urgente hasta que el peso real de features futuras lo justifique).
+- Code-splitting por ruta (el bundle actual es ~1.2 MB — Recharts es el salto más
+  grande desde que Reportes lo usa de verdad — porque todavía no hay rutas lazy; esto ya
+  amerita revisarlo antes de sumar más peso en etapas futuras).
 - Cifrado opcional del archivo `.finance` con passphrase (WebCrypto AES-GCM).
 - Modo *merge* en el import de backup (hoy sólo hace *replace* completo).
 - Import de CSV/extractos bancarios.

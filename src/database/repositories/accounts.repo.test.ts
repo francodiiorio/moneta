@@ -97,6 +97,47 @@ describe('listAccountsWithBalances', () => {
     expect(result?.balance).toBe(8_500) // 10000 - 1500, projected posting excluded
   })
 
+  it('asOfDate excludes postings after the cutoff (inclusive of the cutoff itself)', async () => {
+    const account = await createAccount({
+      name: 'Banco',
+      type: 'bank',
+      currency: 'ARS',
+      openingBalance: minor(10_000),
+    })
+
+    async function addExpense(date: string, amount: number) {
+      const txId = generateId()
+      await db.transactions.add({
+        id: txId,
+        date,
+        kind: 'expense',
+        description: 'x',
+        status: 'confirmed',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      await db.postings.add({
+        id: generateId(),
+        transactionId: txId,
+        target: 'account',
+        accountId: account.id,
+        amount,
+        currency: 'ARS',
+        date,
+      })
+    }
+
+    await addExpense('2026-07-15', -1000)
+    await addExpense('2026-08-01', -500) // on the cutoff itself
+    await addExpense('2026-08-15', -2000) // after the cutoff
+
+    const [asOfAugust1] = await listAccountsWithBalances('2026-08-01')
+    expect(asOfAugust1?.balance).toBe(8_500) // 10000 - 1000 - 500, cutoff included
+
+    const [current] = await listAccountsWithBalances()
+    expect(current?.balance).toBe(6_500) // all three postings
+  })
+
   it('orders accounts by their order field', async () => {
     await createAccount({
       name: 'Segunda',

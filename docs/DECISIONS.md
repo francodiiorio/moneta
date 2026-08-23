@@ -89,3 +89,25 @@ dispositivo es el perímetro.
 **Por qué:** es un requisito explícito del producto (ver `docs/PRODUCT.md`), no una
 omisión temporal. Agregar autenticación implicaría un backend, que es exactamente lo que
 este proyecto evita.
+
+## Un feature puede importar el `service.ts`/hooks de otro, nunca sus componentes
+
+**Decisión:** `features/dashboard` importa directamente `getMonthSummary`,
+`getCurrentNetWorth` y sus hooks desde `features/reports/`, en vez de duplicar esa
+lógica. En cambio, en Etapas anteriores se duplicó deliberadamente un hook trivial de una
+sola línea (`useAccounts`, wrapper de `accountsRepo.listAccountsWithBalances`) entre
+`features/accounts` y `features/transactions`.
+
+**Por qué:** la tabla de capas de `CLAUDE.md` prohíbe textualmente que un feature importe
+"otros `features/*/components` internos" — no menciona `service.ts` ni `hooks/`. Para un
+wrapper trivial de una sola función de repository, duplicar es más barato que la
+dependencia cruzada. Pero `getMonthSummary`/`getCurrentNetWorth` no son triviales: hacen
+conversión de moneda con manejo de tasas faltantes (`missingRateCount`), y esa lógica
+sería costosa y riesgosa de mantener en dos lugares (un fix tendría que aplicarse dos
+veces). El componente compartido `MissingRateBanner` que ambas páginas usan sí vive en
+`src/components/` — ahí es donde corresponde un componente puramente presentacional sin
+lógica de negocio, no en un feature.
+
+**Regla práctica:** un componente de UI nunca cruza de un feature a otro (usar
+`src/components/` si hace falta compartirlo); un `service.ts`/hook puede cruzar cuando
+duplicarlo costaría más que la dependencia — evaluar caso por caso, no por defecto.

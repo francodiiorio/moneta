@@ -2,6 +2,16 @@ import type { CurrencyCode } from '@/domain/money'
 import { applyRate, type Minor, type Money, money } from '@/domain/money'
 import type { ExchangeRate } from '@/domain/entities'
 
+/** Thrown only for a missing rate — callers that want to treat that case
+ *  specially (e.g. count it instead of aborting) can distinguish it from
+ *  any other, unexpected error `applyRate`/`convert` might raise. */
+export class MissingRateError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MissingRateError'
+  }
+}
+
 /**
  * Finds the applicable rate for `from -> to` at `date`: the most recent
  * rate on or before `date`. Falls back to the reciprocal of a `to ->
@@ -52,7 +62,7 @@ export function convert(
   if (amount.currency === toCurrency) return amount
   const rate = resolveRate(rates, amount.currency, toCurrency, date)
   if (rate === undefined) {
-    throw new Error(
+    throw new MissingRateError(
       `No exchange rate available for ${amount.currency} -> ${toCurrency} on or before ${date}`,
     )
   }

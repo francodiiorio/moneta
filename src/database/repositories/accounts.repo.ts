@@ -4,6 +4,7 @@ import type { Account } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 import { calculateAccountBalance } from '@/domain/ledger'
 import { minor, type Minor } from '@/domain/money'
+import type { DateStamp } from '@/lib/dates'
 
 export interface AccountWithBalance extends Account {
   balance: Minor
@@ -27,10 +28,10 @@ async function confirmedTransactionIds(): Promise<Set<string>> {
   return new Set(ids)
 }
 
-async function balanceFor(account: Account, confirmedIds: Set<string>): Promise<Minor> {
+async function balanceFor(account: Account, confirmedIds: Set<string>, asOfDate?: DateStamp): Promise<Minor> {
   const postings = await db.postings
     .where('[accountId+date]')
-    .between([account.id, Dexie.minKey], [account.id, Dexie.maxKey])
+    .between([account.id, Dexie.minKey], [account.id, asOfDate ?? Dexie.maxKey], true, true)
     .toArray()
   const confirmedAmounts = postings
     .filter((p) => confirmedIds.has(p.transactionId))
@@ -38,13 +39,16 @@ async function balanceFor(account: Account, confirmedIds: Set<string>): Promise<
   return calculateAccountBalance(minor(account.openingBalance), confirmedAmounts)
 }
 
-export async function listAccountsWithBalances(): Promise<AccountWithBalance[]> {
+/** @param asOfDate restricts the balance to postings on or before this date
+ *  (inclusive) — used to reconstruct historical net worth. Omit for the
+ *  current balance. */
+export async function listAccountsWithBalances(asOfDate?: DateStamp): Promise<AccountWithBalance[]> {
   const accounts = await db.accounts.orderBy('order').toArray()
   const confirmedIds = await confirmedTransactionIds()
   return Promise.all(
     accounts.map(async (account) => ({
       ...account,
-      balance: await balanceFor(account, confirmedIds),
+      balance: await balanceFor(account, confirmedIds, asOfDate),
     })),
   )
 }
