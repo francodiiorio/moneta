@@ -30,6 +30,10 @@ export async function listInvestmentAssets(): Promise<InvestmentAsset[]> {
   return db.investmentAssets.toArray()
 }
 
+export async function getInvestmentAsset(id: string): Promise<InvestmentAsset | undefined> {
+  return db.investmentAssets.get(id)
+}
+
 export async function createInvestmentAsset(input: CreateInvestmentAssetInput): Promise<InvestmentAsset> {
   const now = new Date().toISOString()
   const asset: InvestmentAsset = {
@@ -62,6 +66,10 @@ export async function deleteInvestmentAsset(id: string): Promise<void> {
 
 export async function listInvestmentHoldings(): Promise<InvestmentHolding[]> {
   return db.investmentHoldings.toArray()
+}
+
+export async function getInvestmentHolding(id: string): Promise<InvestmentHolding | undefined> {
+  return db.investmentHoldings.get(id)
 }
 
 export async function createInvestmentHolding(input: CreateInvestmentHoldingInput): Promise<InvestmentHolding> {

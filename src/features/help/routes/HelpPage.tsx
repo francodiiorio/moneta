@@ -74,8 +74,9 @@ const SECTIONS: GuideSection[] = [
     title: '6. Registrá tu patrimonio (ahorros e inversiones)',
     steps: [
       'En "Patrimonio" → pestaña Ahorros, cargá plata que tenés guardada pero no pasa por movimientos — efectivo, una caja de ahorro que no conciliás.',
+      'En la pestaña Inversiones, primero creá el activo (ej. SPY, un CEDEAR, Bitcoin) y después una posición con la cantidad que tenés. Cargá el precio a mano con "Cargar precio" — cada carga queda en el historial, nunca pisa la anterior.',
       'La pestaña Resumen consolida cuentas + ahorros + inversiones en la moneda que elijas (ARS, USD o EUR), sin modificar los importes originales.',
-      'Si falta una tasa de cambio para convertir algo, ese ítem queda afuera del total y aparece un aviso — nunca se inventa una conversión.',
+      'Si falta una tasa de cambio o un precio para convertir algo, ese ítem queda afuera del total y aparece un aviso — nunca se inventa una conversión.',
     ],
     link: { to: '/patrimonio', label: 'Ir a Patrimonio' },
   },

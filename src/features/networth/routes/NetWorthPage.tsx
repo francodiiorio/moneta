@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { PiggyBank, Plus } from 'lucide-react'
+import { LineChart, PiggyBank, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
@@ -17,6 +17,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { settingsRepo } from '@/database/repositories'
@@ -25,30 +31,65 @@ import { useNetWorthUiStore, type NetWorthTab } from '../store'
 import { useSavingsHoldings } from '../hooks/useSavingsHoldings'
 import { useNetWorthSummary } from '../hooks/useNetWorthSummary'
 import { useSettings } from '../hooks/useSettings'
+import { useInvestmentAssets } from '../hooks/useInvestmentAssets'
+import { useInvestmentHoldingsWithDetails } from '../hooks/useInvestmentHoldingsWithDetails'
 import { SavingsFormDialog } from '../components/SavingsFormDialog'
 import { SavingsRow } from '../components/SavingsRow'
 import { NetWorthDistribution } from '../components/NetWorthDistribution'
-import { deleteSavingsHolding } from '../service'
+import { InvestmentAssetFormDialog } from '../components/InvestmentAssetFormDialog'
+import { InvestmentHoldingFormDialog } from '../components/InvestmentHoldingFormDialog'
+import { InvestmentPriceDialog } from '../components/InvestmentPriceDialog'
+import { InvestmentRow } from '../components/InvestmentRow'
+import { deleteInvestmentHolding, deleteSavingsHolding } from '../service'
+
+type PendingDelete = { kind: 'savings' | 'holding'; id: string }
 
 export function NetWorthPage() {
-  const { tab, setTab, savingsDialogOpen, editingSavingsId, openCreateSavingsDialog, openEditSavingsDialog, closeSavingsDialog } =
-    useNetWorthUiStore()
+  const {
+    tab,
+    setTab,
+    savingsDialogOpen,
+    editingSavingsId,
+    openCreateSavingsDialog,
+    openEditSavingsDialog,
+    closeSavingsDialog,
+    assetDialogOpen,
+    openAssetDialog,
+    closeAssetDialog,
+    holdingDialogOpen,
+    editingHoldingId,
+    openCreateHoldingDialog,
+    openEditHoldingDialog,
+    closeHoldingDialog,
+    pricingAssetId,
+    openPriceDialog,
+    closePriceDialog,
+  } = useNetWorthUiStore()
   const savings = useSavingsHoldings()
   const summary = useNetWorthSummary()
   const settings = useSettings()
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const assets = useInvestmentAssets()
+  const holdings = useInvestmentHoldingsWithDetails()
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
 
-  const editingHolding = savings?.find((h) => h.id === editingSavingsId)
+  const editingSavings = savings?.find((h) => h.id === editingSavingsId)
+  const editingHolding = holdings?.find((h) => h.holding.id === editingHoldingId)?.holding
+  const pricingAsset = assets?.find((a) => a.id === pricingAssetId) ?? null
 
   async function handleDelete() {
-    if (!pendingDeleteId) return
+    if (!pendingDelete) return
     try {
-      await deleteSavingsHolding(pendingDeleteId)
-      toast.success('Ahorro eliminado')
+      if (pendingDelete.kind === 'savings') {
+        await deleteSavingsHolding(pendingDelete.id)
+        toast.success('Ahorro eliminado')
+      } else {
+        await deleteInvestmentHolding(pendingDelete.id)
+        toast.success('Posición eliminada')
+      }
     } catch {
       toast.error('No se pudo eliminar')
     } finally {
-      setPendingDeleteId(null)
+      setPendingDelete(null)
     }
   }
 
@@ -71,6 +112,21 @@ export function NetWorthPage() {
               <Plus className="size-4" />
               Nuevo ahorro
             </Button>
+          ) : tab === 'investments' ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <Plus className="size-4" />
+                  Nuevo
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={openAssetDialog}>Nuevo activo</DropdownMenuItem>
+                <DropdownMenuItem onClick={openCreateHoldingDialog} disabled={!assets || assets.length === 0}>
+                  Nueva posición
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : undefined
         }
       />
@@ -79,11 +135,12 @@ export function NetWorthPage() {
         <TabsList>
           <TabsTrigger value="summary">Resumen</TabsTrigger>
           <TabsTrigger value="savings">Ahorros</TabsTrigger>
+          <TabsTrigger value="investments">Inversiones</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      {tab === 'summary' ? (
-        summary === undefined ? (
+      {tab === 'summary' &&
+        (summary === undefined ? (
           <div className="h-64 animate-pulse rounded-xl bg-muted" />
         ) : (
           <div className="flex flex-col gap-4">
@@ -135,39 +192,82 @@ export function NetWorthPage() {
               </CardContent>
             </Card>
           </div>
-        )
-      ) : savings === undefined ? (
-        <div className="h-40 animate-pulse rounded-xl bg-muted" />
-      ) : savings.length === 0 ? (
-        <EmptyState
-          icon={PiggyBank}
-          title="Todavía no cargaste ahorros"
-          description="Registrá plata que tenés guardada pero no pasa por movimientos — efectivo, una caja de ahorro, etc."
-          action={<Button onClick={openCreateSavingsDialog}>Nuevo ahorro</Button>}
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          {savings.map((item) => (
-            <SavingsRow
-              key={item.id}
-              item={item}
-              onEdit={() => openEditSavingsDialog(item.id)}
-              onDelete={() => setPendingDeleteId(item.id)}
-            />
-          ))}
-        </div>
-      )}
+        ))}
+
+      {tab === 'savings' &&
+        (savings === undefined ? (
+          <div className="h-40 animate-pulse rounded-xl bg-muted" />
+        ) : savings.length === 0 ? (
+          <EmptyState
+            icon={PiggyBank}
+            title="Todavía no cargaste ahorros"
+            description="Registrá plata que tenés guardada pero no pasa por movimientos — efectivo, una caja de ahorro, etc."
+            action={<Button onClick={openCreateSavingsDialog}>Nuevo ahorro</Button>}
+          />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {savings.map((item) => (
+              <SavingsRow
+                key={item.id}
+                item={item}
+                onEdit={() => openEditSavingsDialog(item.id)}
+                onDelete={() => setPendingDelete({ kind: 'savings', id: item.id })}
+              />
+            ))}
+          </div>
+        ))}
+
+      {tab === 'investments' &&
+        (holdings === undefined ? (
+          <div className="h-40 animate-pulse rounded-xl bg-muted" />
+        ) : holdings.length === 0 ? (
+          <EmptyState
+            icon={LineChart}
+            title="Todavía no cargaste inversiones"
+            description="Creá un activo (ej. SPY, un CEDEAR, Bitcoin) y después una posición para ver cuánto tenés."
+            action={<Button onClick={openAssetDialog}>Nuevo activo</Button>}
+          />
+        ) : (
+          <div className="flex flex-col gap-3">
+            {holdings.map((item) => (
+              <InvestmentRow
+                key={item.holding.id}
+                item={item}
+                onEdit={() => openEditHoldingDialog(item.holding.id)}
+                onDelete={() => setPendingDelete({ kind: 'holding', id: item.holding.id })}
+                onLoadPrice={() => openPriceDialog(item.asset.id)}
+              />
+            ))}
+          </div>
+        ))}
 
       <SavingsFormDialog
         open={savingsDialogOpen}
-        holding={editingHolding}
+        holding={editingSavings}
         onOpenChange={(open) => (open ? undefined : closeSavingsDialog())}
       />
 
-      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
+      <InvestmentAssetFormDialog
+        open={assetDialogOpen}
+        onOpenChange={(open) => (open ? undefined : closeAssetDialog())}
+      />
+      <InvestmentHoldingFormDialog
+        open={holdingDialogOpen}
+        holding={editingHolding}
+        assets={assets}
+        onOpenChange={(open) => (open ? undefined : closeHoldingDialog())}
+      />
+      <InvestmentPriceDialog
+        asset={pricingAsset}
+        onOpenChange={(open) => (open ? undefined : closePriceDialog())}
+      />
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar este ahorro?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pendingDelete?.kind === 'savings' ? '¿Eliminar este ahorro?' : '¿Eliminar esta posición?'}
+            </AlertDialogTitle>
             <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

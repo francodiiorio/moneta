@@ -105,9 +105,17 @@ cross-currency (ARS → USD).
   USD como último recurso y preferencia por `profile` (referencia de dólar). Ruta
   `/patrimonio` con tabs Resumen/Ahorros, ítem nuevo en el nav principal — ver ADRs en
   `docs/DECISIONS.md`.
-- **6B — Inversiones (activos, posiciones, precio manual)**: pendiente. El modelo y los
-  repositories ya existen (nacieron con 6A); falta la UI para crear activos/posiciones y
-  el tab Inversiones en `/patrimonio`.
+- **6B — Inversiones: activos, posiciones, precio manual (hecho).** Tab Inversiones en
+  `/patrimonio`: diálogo para crear un `InvestmentAsset` (nombre, símbolo, tipo, moneda —
+  siempre `priceMode: 'manual'`, "auto" no significa nada hasta que exista un proveedor
+  en 6C), diálogo para crear/editar una posición (`InvestmentHolding`: activo, cantidad,
+  costo promedio opcional) y un diálogo de carga manual de precio que inserta una fila
+  nueva en `AssetPrice` (append-only, nunca reemplaza la anterior). Cada fila de la lista
+  muestra cantidad, precio unitario, valor nativo (`quantity × precio`) y su equivalente
+  en la moneda de display — `features/networth/service.ts:getInvestmentHoldingsWithDetails`
+  reusa `domain/decimal:valuePosition` + `domain/currency:convert`, mismo orden de
+  operaciones que `valuateNetWorth` (nunca un atajo activo→moneda-de-display). Borrar un
+  activo con posiciones cargadas sigue bloqueado por el repository (Etapa 6A).
 - **6C — Cotizaciones automáticas**: pendiente. `ExchangeRate`/`Settings` ya tienen los
   campos (`source`, `profile`, `autoQuotesEnabled`); falta la capa de proveedores
   (`ExchangeRateProvider`/`AssetPriceProvider`), el refresh al abrir la app, el botón

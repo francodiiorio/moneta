@@ -41,10 +41,17 @@ export function parseQuantity(input: string): Quantity {
 }
 
 /** Formats a `Quantity` for display only — trims trailing zeros past the
- *  decimal point, never feeds the result back into storage or math. */
+ *  decimal point, never feeds the result back into storage or math.
+ *  `useGrouping: false` is load-bearing: `parseQuantity` (like
+ *  `parseAmount`) treats the *last* "," or "." in the string as the
+ *  decimal separator. An integer of 1000+ formatted *with* thousands
+ *  grouping (e.g. "1.000") has no real decimal separator at all, so a
+ *  round-trip through parseQuantity would misread the grouping dot as
+ *  one and silently divide the value by 1000 — exactly the kind of
+ *  silent corruption a Quantity exists to prevent. */
 export function formatQuantity(q: Quantity): string {
   const value = q / QUANTITY_SCALE
-  return value.toLocaleString('es-AR', { maximumFractionDigits: 8 })
+  return value.toLocaleString('es-AR', { maximumFractionDigits: 8, useGrouping: false })
 }
 
 /** Values a position: `quantity × price`, in the price's currency.

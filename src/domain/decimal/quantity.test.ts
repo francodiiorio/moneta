@@ -46,6 +46,18 @@ describe('formatQuantity', () => {
   it('round-trips a fractional amount', () => {
     expect(formatQuantity(parseQuantity('0.00123456'))).toBe('0,00123456')
   })
+
+  // Regression: formatQuantity used to apply thousands grouping
+  // ("1.000"), and an integer with no real decimal separator round-tripped
+  // through parseQuantity misread the grouping dot as the decimal point,
+  // silently dividing the value by 1000 — a real bug caught before this
+  // shipped (see the "silently corrupts" comment on formatQuantity).
+  it('round-trips an integer with 4+ digits without a thousands separator confusing parseQuantity', () => {
+    for (const value of ['1000', '1500', '10000', '100000', '1000000']) {
+      expect(formatQuantity(parseQuantity(value))).toBe(value)
+      expect(parseQuantity(formatQuantity(parseQuantity(value)))).toBe(parseQuantity(value))
+    }
+  })
 })
 
 describe('valuePosition', () => {

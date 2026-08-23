@@ -1,0 +1,70 @@
+import { Pencil, RefreshCw, Trash2 } from 'lucide-react'
+import { MoneyText } from '@/components/MoneyText'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { formatQuantity, quantity } from '@/domain/decimal'
+import { money } from '@/domain/money'
+import { INVESTMENT_ASSET_TYPE_LABELS } from '../labels'
+import type { InvestmentHoldingWithDetails } from '../service'
+
+interface InvestmentRowProps {
+  item: InvestmentHoldingWithDetails
+  onEdit: () => void
+  onDelete: () => void
+  onLoadPrice: () => void
+}
+
+export function InvestmentRow({ item, onEdit, onDelete, onLoadPrice }: InvestmentRowProps) {
+  const { holding, asset, price, nativeValue, convertedValue } = item
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="truncate font-medium">{asset.symbol ?? asset.name}</p>
+            <Badge variant="secondary">{INVESTMENT_ASSET_TYPE_LABELS[asset.type]}</Badge>
+          </div>
+          {asset.symbol && <p className="truncate text-xs text-muted-foreground">{asset.name}</p>}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={onLoadPrice} title="Cargar precio">
+            <RefreshCw className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onEdit}>
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onDelete}>
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span className="text-muted-foreground">
+          {formatQuantity(quantity(holding.quantity))} unidades
+          {price && (
+            <>
+              {' '}
+              · <MoneyText value={money(price.price, price.currency)} className="inline" /> / unidad
+            </>
+          )}
+        </span>
+        <div className="text-right">
+          {nativeValue ? (
+            <p className="font-medium">
+              <MoneyText value={nativeValue} />
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">Sin precio cargado</p>
+          )}
+          {convertedValue && convertedValue.currency !== nativeValue?.currency && (
+            <p className="text-xs text-muted-foreground">
+              ≈ <MoneyText value={convertedValue} className="inline" />
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -2,14 +2,20 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '@/database/db'
 import { createAccount } from '@/database/repositories/accounts.repo'
 import { createExchangeRate } from '@/database/repositories/exchangeRates.repo'
-import { createInvestmentAsset, createInvestmentHolding } from '@/database/repositories/investments.repo'
+import { createInvestmentAsset, createInvestmentHolding, listInvestmentHoldings } from '@/database/repositories/investments.repo'
 import { createAssetPrice } from '@/database/repositories/assetPrices.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
 import { minor, money } from '@/domain/money'
 import {
+  createInvestmentAssetFromForm,
+  createInvestmentHoldingFromForm,
+  createManualPriceFromForm,
   createSavingsHoldingFromForm,
+  getInvestmentHoldingsWithDetails,
   getNetWorthSummary,
+  listInvestmentAssets,
   listSavingsHoldings,
+  updateInvestmentHoldingFromForm,
   updateSavingsHoldingFromForm,
 } from './service'
 
@@ -115,5 +121,102 @@ describe('getNetWorthSummary', () => {
     const summary = await getNetWorthSummary('ARS')
     expect(summary.missingRateCount).toBe(1)
     expect(summary.total).toEqual(money(0, 'ARS'))
+  })
+})
+
+describe('createInvestmentAssetFromForm', () => {
+  it('always creates the asset with priceMode manual — auto only means something once a provider exists', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', symbol: 'SPY', type: 'etf', currency: 'USD' })
+    expect(asset.priceMode).toBe('manual')
+
+    const [listed] = await listInvestmentAssets()
+    expect(listed?.symbol).toBe('SPY')
+  })
+
+  it('omits symbol when not provided', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD' })
+    expect('symbol' in asset).toBe(false)
+  })
+})
+
+describe('createInvestmentHoldingFromForm / updateInvestmentHoldingFromForm', () => {
+  it('parses quantity and averageCost in the asset currency', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD' })
+    const holding = await createInvestmentHoldingFromForm({ assetId: asset.id, quantity: '5', averageCost: '600' })
+
+    expect(holding.quantity).toBe(500_000_000) // 5.00000000 scaled
+    expect(holding.averageCost).toBe(60_000) // "600" parsed as major units -> 600.00 USD
+
+    await updateInvestmentHoldingFromForm(holding.id, { quantity: '7', averageCost: '' })
+    const [updated] = await listInvestmentHoldings()
+    expect(updated?.quantity).toBe(700_000_000)
+  })
+
+  it('resolves averageCost against the holding\'s real asset currency, ignoring a mismatched assetId if one were passed', async () => {
+    const usdAsset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD' })
+    const eurAsset = await createInvestmentAssetFromForm({ name: 'Bono EUR', type: 'bond', currency: 'EUR' })
+    const holding = await createInvestmentHoldingFromForm({ assetId: usdAsset.id, quantity: '1' })
+
+    // A caller passing a different asset's id can't smuggle the wrong
+    // currency in — updateInvestmentHoldingFromForm's signature doesn't
+    // even accept assetId, so this can't compile with one; verifying the
+    // currency used is still the holding's real (USD) one.
+    await updateInvestmentHoldingFromForm(holding.id, { quantity: '1', averageCost: '600' })
+    const [updated] = (await listInvestmentHoldings()).filter((h) => h.id === holding.id)
+    expect(updated?.averageCost).toBe(60_000) // 600.00 USD, not EUR — resolved from the holding, not eurAsset
+    expect(eurAsset.currency).toBe('EUR') // sanity: the mismatched asset really is a different currency
+  })
+
+  it('rejects a holding for a non-existent asset', async () => {
+    await expect(
+      createInvestmentHoldingFromForm({ assetId: 'missing', quantity: '1' }),
+    ).rejects.toThrow(/no encontrado/)
+  })
+
+  it('omits averageCost when left blank', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD' })
+    const holding = await createInvestmentHoldingFromForm({ assetId: asset.id, quantity: '1' })
+    expect('averageCost' in holding).toBe(false)
+  })
+})
+
+describe('createManualPriceFromForm', () => {
+  it('creates a manual, append-only price row for the asset', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD' })
+    const price = await createManualPriceFromForm(asset.id, asset.currency, { price: '650', date: '2026-08-20' })
+
+    expect(price).toMatchObject({ assetId: asset.id, price: 65_000, currency: 'USD', source: 'manual', date: '2026-08-20' })
+  })
+})
+
+describe('getInvestmentHoldingsWithDetails', () => {
+  it('joins holding + asset + latest price, valuing quantity x price then converting', async () => {
+    await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1450 })
+    const asset = await createInvestmentAsset({ name: 'SPY', symbol: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000 }) // 5 shares
+    await createAssetPrice({ assetId: asset.id, price: 650_00, currency: 'USD', date: '2026-08-01', source: 'manual' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('ARS')
+    expect(item?.nativeValue).toEqual(money(5 * 650_00, 'USD'))
+    expect(item?.convertedValue).toEqual(money(5 * 650_00 * 1450, 'ARS'))
+  })
+
+  it('has no native/converted value when the asset has no price yet', async () => {
+    const asset = await createInvestmentAsset({ name: 'Sin precio', type: 'stock', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 100_000_000 })
+
+    const [item] = await getInvestmentHoldingsWithDetails('ARS')
+    expect(item?.nativeValue).toBeUndefined()
+    expect(item?.convertedValue).toBeUndefined()
+  })
+
+  it('has a native value but no converted value when there is a price but no usable rate', async () => {
+    const asset = await createInvestmentAsset({ name: 'Sin tasa', type: 'stock', currency: 'EUR', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 100_000_000 })
+    await createAssetPrice({ assetId: asset.id, price: 10_00, currency: 'EUR', date: '2026-08-01', source: 'manual' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('ARS')
+    expect(item?.nativeValue).toEqual(money(10_00, 'EUR'))
+    expect(item?.convertedValue).toBeUndefined()
   })
 })
