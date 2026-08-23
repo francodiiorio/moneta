@@ -62,6 +62,13 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: 'ayuda',
+        lazy: async () => {
+          const { HelpPage } = await import('@/features/help/routes/HelpPage')
+          return { Component: HelpPage }
+        },
+      },
+      {
         path: 'ajustes',
         lazy: async () => {
           const { SettingsPage } = await import('@/features/settings/routes/SettingsPage')
