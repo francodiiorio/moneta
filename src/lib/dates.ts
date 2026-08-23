@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth, format, parse, startOfMonth } from 'date-fns'
+import { addMonths, endOfMonth, endOfYear, format, parse, startOfMonth, startOfYear } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 /** A calendar day with no timezone attached, e.g. "2026-08-23". */
@@ -7,8 +7,12 @@ export type DateStamp = string
 /** A calendar month, e.g. "2026-08". */
 export type MonthStamp = string
 
+/** A calendar year, e.g. "2026". */
+export type YearStamp = string
+
 const DATE_FORMAT = 'yyyy-MM-dd'
 const MONTH_FORMAT = 'yyyy-MM'
+const YEAR_FORMAT = 'yyyy'
 
 export function todayStamp(): DateStamp {
   return format(new Date(), DATE_FORMAT)
@@ -61,4 +65,13 @@ export function formatShortDate(date: DateStamp): string {
 export function formatMonthShort(month: MonthStamp): string {
   const label = format(monthStart(month), 'LLL', { locale: es })
   return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+export function currentYearStamp(): YearStamp {
+  return format(new Date(), YEAR_FORMAT)
+}
+
+export function yearRange(year: YearStamp): { start: DateStamp; end: DateStamp } {
+  const start = parse(year, YEAR_FORMAT, new Date())
+  return { start: toDateStamp(startOfYear(start)), end: toDateStamp(endOfYear(start)) }
 }

@@ -54,11 +54,20 @@ cross-currency (ARS → USD).
 - Gestión de `ExchangeRate` en `/ajustes/tasas` (crear/listar/borrar) — le da uso real a
   `resolveRate`/`convert`, construidos en la Etapa 0 pero sin consumidor hasta ahora.
 
-## Etapa 4 — Presupuestos
+## Etapa 4 — Presupuestos (hecho)
 
-- CRUD de `Budget` por categoría y período.
-- Progreso del mes actual vs. presupuestado, en la página de Presupuestos y como
-  indicador en el Dashboard.
+- CRUD de `Budget` por categoría y período (mensual/anual), siempre en la moneda base.
+  Editar crea una versión nueva (`startsOn` posterior) en vez de mutar el monto — se
+  resuelve la vigente por categoría+período con `domain/budgets/progress.ts:
+  resolveActiveBudget` (el `startsOn` más reciente `<=` el mes evaluado). Un presupuesto
+  anual siempre se compara contra el año calendario en curso, sin importar qué mes esté
+  navegando la página.
+- Progreso del mes/año vs. presupuestado en `/presupuestos`, con barra de color por
+  umbral (normal / ≥90% / excedido), y como indicador silencioso en el Dashboard
+  (aparece sólo si algún presupuesto está en ≥90%, hasta 3).
+- `features/reports/service.ts` expone `getExpenseByCategoryInRange(start, end)` (antes
+  sólo por mes) para que Presupuestos reutilice el mismo cálculo de gasto consolidado sin
+  duplicarlo, tanto para el rango mensual como el anual.
 
 ## Etapa 5 — Recurrentes y cuotas
 

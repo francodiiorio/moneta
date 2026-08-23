@@ -80,6 +80,13 @@ export interface ExpenseByCategory {
 
 export async function getExpenseByCategory(month: MonthStamp): Promise<ExpenseByCategory> {
   const { start, end } = monthRange(month)
+  return getExpenseByCategoryInRange(start, end)
+}
+
+/** Same as getExpenseByCategory, but over an arbitrary date range — lets
+ *  features/budgets reuse this for a yearly budget's spend-to-date
+ *  without duplicating the transaction scan + currency conversion. */
+export async function getExpenseByCategoryInRange(start: DateStamp, end: DateStamp): Promise<ExpenseByCategory> {
   const [settings, items, rates, categories] = await Promise.all([
     settingsRepo.getSettings(),
     transactionsRepo.listTransactionsInRange(start, end),
