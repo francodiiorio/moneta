@@ -180,7 +180,10 @@ export type { AccountWithBalance } from '@/database/repositories/accounts.repo'
 
 export async function listCategoriesByKind(kind: Category['kind']): Promise<Category[]> {
   const categories = await categoriesRepo.listCategories()
-  return categories.filter((c) => c.kind === kind)
+  // Archived categories can't be picked for a *new* transaction, but a past
+  // transaction that already used one still shows its name — see
+  // listAllCategories, used by the Movimientos filter, which is unfiltered.
+  return categories.filter((c) => c.kind === kind && !c.isArchived)
 }
 
 export async function listAllCategories(): Promise<Category[]> {

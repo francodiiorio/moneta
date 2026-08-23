@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '@/database/db'
 import { createAccount, listAccountsWithBalances } from '@/database/repositories/accounts.repo'
-import { createCategory } from '@/database/repositories/categories.repo'
+import { createCategory, setCategoryArchived } from '@/database/repositories/categories.repo'
 import { minor } from '@/domain/money'
 import {
+  listCategoriesByKind,
   listTransactionsForMonth,
   saveExpenseIncome,
   saveTransfer,
@@ -115,5 +116,29 @@ describe('listTransactionsForMonth', () => {
     await seedTransfer()
     const items: TransactionListItem[] = await listTransactionsForMonth('2026-07')
     expect(items).toHaveLength(0)
+  })
+
+  it('hides an archived category from the picker but keeps its name on past transactions', async () => {
+    const account = await createAccount({
+      name: 'Banco',
+      type: 'bank',
+      currency: 'ARS',
+      openingBalance: minor(1000),
+    })
+    const category = await createCategory({ name: 'Comida', kind: 'expense' })
+    const accounts = await listAccountsWithBalances()
+    await saveExpenseIncome(
+      'expense',
+      { date: '2026-08-23', description: 'Supermercado', accountId: account.id, categoryId: category.id, amount: '500' },
+      accounts,
+    )
+
+    await setCategoryArchived(category.id, true)
+
+    const pickerOptions = await listCategoriesByKind('expense')
+    expect(pickerOptions.find((c) => c.id === category.id)).toBeUndefined()
+
+    const [item] = await listTransactionsForMonth('2026-08')
+    expect(item?.categoryLabel).toBe('Comida')
   })
 })

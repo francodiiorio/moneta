@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { Category } from '@/domain/entities'
 import { useCategories } from '../hooks/useCategories'
 import { createCategoryQuick } from '../service'
+import { groupByParent } from '../tree'
 
 const NEW_CATEGORY_VALUE = '__new__'
 
@@ -16,8 +17,8 @@ interface CategoryFieldProps {
 }
 
 /** Category select with an inline "+ Nueva categoría" option — full
- *  category management (edit, archive, hierarchy) is a future stage;
- *  this is just enough to not block creating a transaction. */
+ *  category management (edit, archive, jerarquía) vive en /ajustes/categorias;
+ *  esto es sólo para no bloquear la carga de una transacción nueva. */
 export function CategoryField({ kind, value, onChange }: CategoryFieldProps) {
   const categories = useCategories(kind)
   const [isCreating, setIsCreating] = useState(false)
@@ -81,9 +82,9 @@ export function CategoryField({ kind, value, onChange }: CategoryFieldProps) {
         <SelectValue placeholder="Elegí una categoría" />
       </SelectTrigger>
       <SelectContent>
-        {categories?.map((category) => (
+        {groupByParent(categories ?? []).map(({ category, isChild }) => (
           <SelectItem key={category.id} value={category.id}>
-            {category.name}
+            {isChild ? `— ${category.name}` : category.name}
           </SelectItem>
         ))}
         <SelectItem value={NEW_CATEGORY_VALUE}>+ Nueva categoría</SelectItem>
