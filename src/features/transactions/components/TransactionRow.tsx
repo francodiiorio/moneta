@@ -1,5 +1,6 @@
 import { MoreVertical } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -37,7 +38,14 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{item.description}</p>
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium">{item.description}</p>
+          {item.status === 'projected' && (
+            <Badge variant="secondary" className="shrink-0">
+              Proyectado
+            </Badge>
+          )}
+        </div>
         <p className="truncate text-xs text-muted-foreground">
           {item.categoryLabel ? `${item.categoryLabel} · ` : ''}
           {item.accountLabel}

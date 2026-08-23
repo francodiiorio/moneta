@@ -3,6 +3,7 @@ import {
   Wallet,
   ArrowLeftRight,
   PiggyBank,
+  CalendarSync,
   BarChart3,
   Settings,
   type LucideIcon,
@@ -19,6 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/cuentas', label: 'Cuentas', icon: Wallet },
   { to: '/movimientos', label: 'Movimientos', icon: ArrowLeftRight },
   { to: '/presupuestos', label: 'Presupuestos', icon: PiggyBank },
+  { to: '/planes', label: 'Planes', icon: CalendarSync },
   { to: '/reportes', label: 'Reportes', icon: BarChart3 },
   { to: '/ajustes', label: 'Ajustes', icon: Settings },
 ]

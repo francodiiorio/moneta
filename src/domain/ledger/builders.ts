@@ -7,6 +7,12 @@ interface BaseParams {
   description: string
   notes?: string
   tags?: string[]
+  /** Defaults to 'confirmed'. A materialized recurring/installment
+   *  occurrence in the future passes 'projected' instead — see
+   *  domain/recurrence and domain/installments. */
+  status?: LedgerEntryDraft['status']
+  sourcePlanId?: string
+  occurrenceIndex?: number
 }
 
 export function buildExpense(
@@ -16,7 +22,7 @@ export function buildExpense(
   return {
     ...base,
     kind: 'expense',
-    status: 'confirmed',
+    status: base.status ?? 'confirmed',
     postings: [
       { target: 'account', accountId, amount: negate(amount).amount, currency: amount.currency },
       { target: 'category', categoryId, amount: amount.amount, currency: amount.currency },
@@ -31,7 +37,7 @@ export function buildIncome(
   return {
     ...base,
     kind: 'income',
-    status: 'confirmed',
+    status: base.status ?? 'confirmed',
     postings: [
       { target: 'account', accountId, amount: amount.amount, currency: amount.currency },
       { target: 'category', categoryId, amount: negate(amount).amount, currency: amount.currency },
@@ -47,7 +53,7 @@ export function buildTransfer(
   return {
     ...base,
     kind: 'transfer',
-    status: 'confirmed',
+    status: base.status ?? 'confirmed',
     postings: [
       {
         target: 'account',
@@ -83,7 +89,7 @@ export function buildFxTransfer(
   return {
     ...base,
     kind: 'transfer',
-    status: 'confirmed',
+    status: base.status ?? 'confirmed',
     fx: { rate, from: fromAmount.currency, to: toAmount.currency },
     postings: [
       {

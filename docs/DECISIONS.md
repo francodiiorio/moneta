@@ -53,6 +53,25 @@ recalculan retroactivamente.
 **Costo aceptado:** más filas en la base que un modelo "todo virtual". Aceptable para el
 volumen de datos de un usuario único.
 
+## Borrar un plan nunca borra plata que ya pasó
+
+**Decisión:** borrar un `RecurringPlan` deja intactas sus transacciones ya
+materializadas (siempre `confirmed`); borrar un `InstallmentPlan` borra sólo sus cuotas
+todavía `projected` y conserva las `confirmed`.
+
+**Por qué:** una transacción `confirmed` es historial real — ya movió (o va a mover, en
+el caso de una cuota futura ya vencida y confirmada) el balance de una cuenta, y borrarla
+sin que el usuario edite esa transacción puntualmente sería un cambio de plata silencioso.
+Una cuota `projected` en cambio es sólo una previsión: nunca afectó ningún balance ni
+reporte (ambos filtran por `status === 'confirmed'` desde la Etapa 0/3), así que borrarla
+junto con el plan que la generó es simplemente descartar una previsión que dejó de ser
+válida.
+
+**Costo aceptado:** el usuario que quiere "deshacer" una cuota o recurrente ya confirmado
+tiene que borrar esa transacción puntual desde Movimientos, no desde el plan — mismo
+patrón ya establecido para editar una ocurrencia sin afectar el resto (ver "Recurrentes y
+cuotas como planes + instancias materializadas" arriba).
+
 ## Cuenta con moneda fija + tasas manuales, no conversión automática
 
 **Decisión:** cada `Account` tiene una `currency` fija; las tasas de cambio

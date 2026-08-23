@@ -69,15 +69,27 @@ cross-currency (ARS → USD).
   sólo por mes) para que Presupuestos reutilice el mismo cálculo de gasto consolidado sin
   duplicarlo, tanto para el rango mensual como el anual.
 
-## Etapa 5 — Recurrentes y cuotas
+## Etapa 5 — Recurrentes y cuotas (hecho)
 
-Depende de que Movimientos esté sólido, porque ambos terminan generando `Transaction`s
-reales vía `sourcePlanId`.
-
-- `RecurringPlan`: crear la regla, materializar automáticamente al abrir la app si
-  corresponde (o mediante una acción explícita — a decidir en esa etapa).
-- `InstallmentPlan`: cargar una compra en N cuotas, generar el cronograma con
-  `allocate()`, materializar cada cuota en su fecha.
+- `RecurringPlan`: regla (`domain/recurrence/occurrences.ts:generateOccurrences`, cada
+  ocurrencia calculada desde el ancla `startDate + i*interval`, nunca acumulando sobre la
+  anterior — evita que un `dayOfMonth: 31` derive al 28 después de febrero) + plantilla de
+  transacción. Se materializa automáticamente al abrir la app (`App.tsx`, después de
+  `seedDefaultsIfEmpty()`), con un toast de resumen; correr la materialización dos veces
+  no duplica nada porque `lastMaterializedDate` avanza en la misma transacción Dexie que
+  las escrituras (`recurringPlans.repo.ts:materializePlan`).
+- `InstallmentPlan`: cronograma vía `domain/installments/schedule.ts` (`allocate()` para
+  los montos, mismas fechas-desde-el-ancla para los vencimientos). Las N cuotas se
+  escriben de una sola vez al crear el plan — las vencidas como `confirmed`, el resto como
+  `projected` — y cada cuota pasa a `confirmed` sola al llegar su fecha
+  (`transactions.repo.ts:confirmDueProjected`, corrida en cada `materializeDue`). Como
+  `projected` ya estaba excluido de balances y reportes desde la Etapa 0/3, la deuda futura
+  se puede ver sin ensuciar ningún total.
+  Movimientos marca estas transacciones con una badge "Proyectado".
+- Borrar un plan nunca borra plata que ya pasó: un `RecurringPlan` borrado deja intactas
+  sus transacciones materializadas; un `InstallmentPlan` borrado borra sólo sus cuotas
+  todavía `projected` — ver ADR en `docs/DECISIONS.md`.
+- Ruta `/planes` con tabs Recurrentes/Cuotas, ítem nuevo en el nav principal.
 
 ## Backlog / no priorizado
 

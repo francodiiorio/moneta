@@ -72,9 +72,22 @@ guardado una sola vez al crear el plan para que el cronograma no cambie si se re
 después.
 
 Cuando corresponde, un plan **materializa** una `Transaction` real (con
-`sourcePlanId` seteado). Esto es deliberado: permite editar o marcar como pagada una
-cuota puntual sin afectar el resto, y mantiene el historial inmutable — ver
-`docs/DECISIONS.md`.
+`sourcePlanId` + `occurrenceIndex` seteados). Esto es deliberado: permite editar o marcar
+como pagada una cuota puntual sin afectar el resto, y mantiene el historial inmutable —
+ver `docs/DECISIONS.md`.
+
+- Un `RecurringPlan` sólo materializa transacciones `confirmed`, al ponerse al día
+  (`lastMaterializedDate` → hoy) cada vez que se abre la app. No genera nada a futuro:
+  no tiene un total de ocurrencias conocido de antemano (salvo que tenga
+  `maxOccurrences`/`endDate`), así que no hay "cronograma completo" para previsualizar.
+- Un `InstallmentPlan`, en cambio, sí conoce sus N cuotas desde el momento en que se crea
+  (`scheduleCache` + fecha de cada una), así que las escribe todas de una vez: las que ya
+  vencieron como `confirmed`, el resto como `projected`. Cada cuota `projected` pasa sola
+  a `confirmed` el día que llega su fecha. `projected` ya estaba excluido de balances
+  (`accounts.repo.ts`) y reportes (`reports/service.ts`) desde antes de esta feature, así
+  que una cuota futura es visible (con badge en Movimientos) sin afectar ningún total.
+- Borrar un plan nunca borra una transacción `confirmed` — ver el ADR correspondiente en
+  `docs/DECISIONS.md`.
 
 ### Budget
 
