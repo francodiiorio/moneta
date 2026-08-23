@@ -13,6 +13,7 @@ import { money, parseAmount, type CurrencyCode, type Money } from '@/domain/mone
 import type { AssetPrice, InvestmentAsset, InvestmentHolding } from '@/domain/entities'
 import { todayStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
+import { NO_PROFILE, rateValueToNumber, type ExchangeRateFormValues } from './schema'
 import type {
   InvestmentAssetFormValues,
   InvestmentHoldingFormValues,
@@ -22,6 +23,24 @@ import type {
 
 export { listSavingsHoldings, deleteSavingsHolding } from '@/database/repositories/savingsHoldings.repo'
 export { listInvestmentAssets, deleteInvestmentAsset, deleteInvestmentHolding } from '@/database/repositories/investments.repo'
+export { listExchangeRates, deleteExchangeRate } from '@/database/repositories/exchangeRates.repo'
+// Cotizaciones automáticas (Etapa 6C) is a headless orchestration layer
+// with no UI of its own — the Cotizaciones tab here is its only consumer.
+// Re-exporting a service (not a component) across features is the
+// established exception — see docs/DECISIONS.md "Un feature puede
+// importar el service.ts/hooks de otro, nunca sus componentes".
+export { refreshQuotes, isStale, STALE_HOURS, type RefreshResult } from '@/features/quotes/service'
+
+export async function createExchangeRateFromForm(values: ExchangeRateFormValues) {
+  return exchangeRatesRepo.createExchangeRate({
+    date: values.date,
+    from: values.from,
+    to: values.to,
+    rate: rateValueToNumber(values.rate),
+    source: 'manual',
+    ...(values.profile !== NO_PROFILE && { profile: values.profile }),
+  })
+}
 
 export async function createSavingsHoldingFromForm(values: SavingsFormValues) {
   const amount = parseAmount(values.amount, values.currency).amount
@@ -99,15 +118,20 @@ export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode)
 
 export async function createInvestmentAssetFromForm(values: InvestmentAssetFormValues) {
   const symbol = values.symbol?.trim()
+  const externalId = values.externalId?.trim()
+  // CoinGecko is the only automatic price provider wired up (Etapa 6C),
+  // and it only covers crypto — auto only takes effect with both a
+  // crypto type and an externalId to look up; anything else falls back
+  // to manual regardless of the switch (e.g. flipping type away from
+  // crypto after checking it, or leaving externalId blank).
+  const isAuto = values.type === 'crypto' && values.autoPrice && !!externalId
   return investmentsRepo.createInvestmentAsset({
     name: values.name,
     type: values.type,
     currency: values.currency,
-    // 'auto' only means something once a quotes provider exists for this
-    // asset (Etapa 6C) — every asset created from this form starts
-    // manual, and can be switched later from the Cotizaciones tab.
-    priceMode: 'manual',
+    priceMode: isAuto ? 'auto' : 'manual',
     ...(symbol && { symbol }),
+    ...(isAuto && { externalId }),
   })
 }
 

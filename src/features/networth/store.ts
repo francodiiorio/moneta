@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type NetWorthTab = 'summary' | 'savings' | 'investments'
+export type NetWorthTab = 'summary' | 'savings' | 'investments' | 'quotes'
 
 /** UI-only state — net worth *data* always comes from useLiveQuery. */
 interface NetWorthUiState {
@@ -27,6 +27,10 @@ interface NetWorthUiState {
   pricingAssetId: string | null
   openPriceDialog: (assetId: string) => void
   closePriceDialog: () => void
+
+  rateDialogOpen: boolean
+  openRateDialog: () => void
+  closeRateDialog: () => void
 }
 
 export const useNetWorthUiStore = create<NetWorthUiState>((set) => ({
@@ -52,4 +56,8 @@ export const useNetWorthUiStore = create<NetWorthUiState>((set) => ({
   pricingAssetId: null,
   openPriceDialog: (assetId) => set({ pricingAssetId: assetId }),
   closePriceDialog: () => set({ pricingAssetId: null }),
+
+  rateDialogOpen: false,
+  openRateDialog: () => set({ rateDialogOpen: true }),
+  closeRateDialog: () => set({ rateDialogOpen: false }),
 }))

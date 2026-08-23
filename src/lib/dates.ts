@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth, endOfYear, format, parse, startOfMonth, startOfYear } from 'date-fns'
+import { addMonths, endOfMonth, endOfYear, format, formatDistanceToNow, parse, startOfMonth, startOfYear } from 'date-fns'
 import { es } from 'date-fns/locale'
 
 /** A calendar day with no timezone attached, e.g. "2026-08-23". */
@@ -65,6 +65,12 @@ export function formatShortDate(date: DateStamp): string {
 export function formatMonthShort(month: MonthStamp): string {
   const label = format(monthStart(month), 'LLL', { locale: es })
   return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+/** "hace 3 horas" style relative time from an ISO instant — used for
+ *  "última actualización" indicators (e.g. Cotizaciones). */
+export function formatRelativeTime(isoInstant: string): string {
+  return formatDistanceToNow(new Date(isoInstant), { addSuffix: true, locale: es })
 }
 
 export function currentYearStamp(): YearStamp {

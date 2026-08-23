@@ -86,11 +86,28 @@ export function resolveRate(
   return undefined
 }
 
+/** On a `date` tie (e.g. an automatic morning fetch and a manual
+ *  afternoon correction loaded the same day), `capturedAt` — full
+ *  timestamp precision — breaks it in favor of whichever was actually
+ *  entered more recently. A rate with no `capturedAt` (loaded before the
+ *  field existed) only wins a tie against another rate that also lacks
+ *  one; it never beats a rate that has one, so an old undated row can't
+ *  shadow a real correction. */
+function isMoreRecent(candidate: ExchangeRate, current: ExchangeRate): boolean {
+  if (candidate.date !== current.date) return candidate.date > current.date
+  if (candidate.capturedAt && current.capturedAt) return candidate.capturedAt > current.capturedAt
+  // Exactly one side has a capturedAt: the dated one wins regardless of
+  // which was encountered first — an old undated row can't shadow a
+  // real, timestamped correction just by iterating before it.
+  if (candidate.capturedAt && !current.capturedAt) return true
+  return false
+}
+
 function latestOnOrBefore(rates: readonly ExchangeRate[], date: string): ExchangeRate | undefined {
   return rates
     .filter((r) => r.date <= date)
     .reduce<ExchangeRate | undefined>((latest, r) => {
-      if (!latest || r.date > latest.date) return r
+      if (!latest || isMoreRecent(r, latest)) return r
       return latest
     }, undefined)
 }

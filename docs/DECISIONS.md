@@ -60,6 +60,108 @@ si se activan las cotizaciones automáticas (Etapa siguiente) — se aceptó el 
 "muerto" por ahora a cambio de no tener que migrar el schema otra vez cuando se conecten
 los proveedores.
 
+**Actualización (Etapa 6C):** los proveedores ya están conectados — ver "Cotizaciones
+automáticas: proveedores, frescura y fallos" abajo para el detalle de qué se llama, cómo
+se cachea, y cómo se degrada ante un fallo.
+
+## Cotizaciones automáticas: proveedores, frescura y fallos
+
+**Decisión:** tres proveedores, cada uno verificado a mano (request real, no sólo su
+documentación) antes de conectarlo — ver `src/features/quotes/providers/`:
+
+- **Frankfurter** (`frankfurter.ts`) para EUR/USD — gratis, sin key, CORS habilitado,
+  tasas de referencia del BCE.
+- **dolarapi.com** (`dolarApi.ts`) para USD/ARS por referencia (oficial/blue/MEP/CCL/
+  mayorista/cripto/tarjeta) — gratis, sin key, CORS habilitado, es la única fuente que
+  distingue esas referencias en vez de dar "un" dólar. Usa el valor de **venta** (lo que
+  cuesta comprar USD) como cifra representativa de cada referencia — es el número más
+  cercano a "cuánto vale un dólar" para valuar patrimonio en ARS.
+- **CoinGecko** (`coinGecko.ts`) sólo para `InvestmentAsset` de tipo `crypto` con
+  `priceMode: 'auto'` y un `externalId` cargado (el id de CoinGecko, ej. `"bitcoin"`,
+  no el símbolo) — gratis, sin key, CORS habilitado. Acciones/ETFs/CEDEARs/bonos/FCI
+  siguen manuales: no existe un proveedor gratuito, sin key y con CORS habilitado para
+  esos instrumentos (ver ADR "Modelo de dominio para inversiones").
+
+Un `InvestmentAsset` nuevo siempre arranca en `priceMode: 'manual'` — el switch "auto"
+sólo aparece en el formulario cuando el tipo es `crypto`, y sólo tiene efecto real con
+un `externalId` no vacío; cualquier otra combinación (tipo distinto, switch prendido sin
+id) cae a manual sin avisar con un error, porque no es un estado inválido, simplemente
+"todavía no configuraste el id".
+
+**Frescura:** una cotización se considera vencida a las 12 horas
+(`features/quotes/service.ts:STALE_HOURS`/`isStale`). Al abrir la app, si
+`Settings.autoQuotesEnabled` está prendido y hay algo vencido (o nunca se actualizó),
+`refreshQuotes()` corre en silencio — sin toast propio, a diferencia de
+`materializeDue()` — porque es un efecto de fondo que no necesita interrumpir al usuario;
+el tab Cotizaciones ya muestra "última actualización" de forma reactiva para quien quiera
+mirarlo. El botón "Actualizar ahora" siempre está disponible y sí muestra un toast con el
+resultado, porque ahí el usuario lo pidió explícitamente.
+
+**Fallos:** cada proveedor se llama en paralelo (`Promise.all`) y ninguno tira — un
+fallo de red, timeout (`AbortSignal.timeout(8000)`) o una respuesta con forma inesperada
+(validada con Zod) hacen que esa función devuelva `undefined`/`[]` en vez de propagar el
+error. `refreshQuotes()` nunca escribe nada por un proveedor que falló, y nunca toca ni
+borra una cotización ya cargada — la última válida en IndexedDB sigue siendo la que se
+usa. El resumen de qué proveedor falló se expone (`RefreshResult.failed`) para que la UI
+avise, en vez de fallar en silencio total.
+
+**Costo aceptado:** `ExchangeRate`/`AssetPrice` son append-only (ya decidido en Etapas
+6A/6B) — cada refresh automático inserta filas nuevas en vez de actualizar la existente,
+así que abrir la app varias veces en un día con la cotización ya vencida por poco puede
+acumular filas de más. Aceptable para el volumen de un usuario único, y es el mismo costo
+ya aceptado para una carga manual repetida.
+
+**Detalle no obvio (encontrado en revisión, corregido antes de mergear):** un precio de
+CoinGecko es un `number` de JS crudo, no texto tipeado por un usuario — pasarlo por
+`parseAmount(String(precio), moneda)` (pensado para texto locale-loose) es un error real:
+para cualquier precio por debajo de ~1e-6 (común en criptos de baja capitalización),
+`String()` produce notación científica (`"1.2e-7"`), que `parseAmount` interpreta mal
+(la regex de limpieza descarta la `"e"` pero conserva los dígitos, así que "1.2e-7" se
+lee como si fuera "1.27") — corrompe el precio en varios órdenes de magnitud sin tirar
+ningún error. `domain/money/money.ts:moneyFromNumber(valor, moneda)` reemplaza ese paso:
+convierte el `number` directo a `Minor` con `roundHalfUp`, sin pasar por texto en ningún
+momento. Regla general: `parseAmount` es sólo para texto que tipeó un usuario;
+`moneyFromNumber` es para un `number` que ya viene de código (una API, un cálculo).
+
+**Detalle no obvio (mismo hallazgo):** `refreshQuotes()` mapeaba cotizaciones cripto a
+activos con un `Map` indexado por `externalId` — si dos `InvestmentAsset` distintos
+comparten el mismo id de CoinGecko (caso real: el mismo activo separado en dos holdings,
+ej. "en el exchange" y "en cold storage"), el `Map` sólo se quedaba con el último,
+dejando al otro activo "auto" en apariencia pero sin actualizarse nunca, sin avisar en
+`RefreshResult.failed`. Se corrigió iterando sobre los activos elegibles (no sobre las
+cotizaciones recibidas) y buscando la cotización de cada uno — así todos los activos que
+comparten `externalId` reciben su propia fila de precio.
+
+**Detalle no obvio (mismo hallazgo):** `domain/currency/rates.ts:latestOnOrBefore`
+desempataba dos tasas del mismo `date` quedándose con la primera encontrada — en la
+práctica, la más vieja (Dexie itera por `id`, y `generateId()` es tipo ULID con
+timestamp al inicio, así que el orden de iteración es cronológico ascendente). Esto
+contradecía la garantía documentada de que "una carga manual posterior a un fetch
+automático la reemplaza sin mecanismo especial": con refresh automático corriendo cada
+≤12h, dos tasas del mismo día dejaron de ser un caso raro. Se agregó desempate por
+`capturedAt` (timestamp completo) cuando `date` coincide — ver la entidad `ExchangeRate`
+en `docs/DATA_MODEL.md`.
+
+## Absorber `/ajustes/tasas` en Patrimonio → Cotizaciones
+
+**Decisión:** la feature `features/exchangeRates/` (página, formulario, hook) se borró
+por completo; su ruta (`/ajustes/tasas`) redirige a `/patrimonio`. Cargar/ver/borrar una
+`ExchangeRate` a mano ahora vive en la pestaña Cotizaciones, con el campo `profile`
+agregado al formulario.
+
+**Por qué:** con cotizaciones automáticas, la carga manual de tasas y su fuente
+automática son la misma pantalla por necesidad — mostrar "última actualización",
+elegir qué referencia usar para valuar, y cargar una tasa a mano son todas decisiones
+sobre el mismo dato, y tenerlas separadas en dos rutas (`/ajustes/tasas` viejo,
+`/patrimonio` nuevo) hubiera significado mantener dos UIs para la misma tabla. El
+`database/repositories/exchangeRates.repo.ts` (la capa que sí importan Reportes/
+Presupuestos) no se tocó — sólo se movió/eliminó la UI de un único feature.
+
+**Costo aceptado:** un bookmark o link viejo a `/ajustes/tasas` cae en Patrimonio
+directo a la pestaña Resumen, no a Cotizaciones (el tab activo es estado de Zustand, no
+la URL — mismo límite que ya tienen `/planes` o `/patrimonio` mismo con sus propios
+tabs). Un clic más para llegar a Cotizaciones es un costo menor frente a duplicar la UI.
+
 ## Import de CSV: una categoría por lote, duplicados destildados no bloqueados
 
 **Decisión:** `src/features/csvImport/` importa un extracto bancario a una sola cuenta

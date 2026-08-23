@@ -6,7 +6,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { CURRENCIES } from '@/domain/money'
 import { investmentAssetTypeSchema } from '@/domain/entities'
 import { INVESTMENT_ASSET_TYPE_LABELS } from '../labels'
@@ -21,7 +23,7 @@ interface InvestmentAssetFormDialogProps {
 const ASSET_TYPES = investmentAssetTypeSchema.options
 
 function defaultValues(): InvestmentAssetFormValues {
-  return { name: '', symbol: '', type: 'stock', currency: 'USD' }
+  return { name: '', symbol: '', type: 'stock', currency: 'USD', autoPrice: false, externalId: '' }
 }
 
 export function InvestmentAssetFormDialog({ open, onOpenChange }: InvestmentAssetFormDialogProps) {
@@ -29,6 +31,8 @@ export function InvestmentAssetFormDialog({ open, onOpenChange }: InvestmentAsse
     resolver: zodResolver(investmentAssetFormSchema),
     defaultValues: defaultValues(),
   })
+  const type = form.watch('type')
+  const autoPrice = form.watch('autoPrice')
 
   useEffect(() => {
     if (open) form.reset(defaultValues())
@@ -136,6 +140,38 @@ export function InvestmentAssetFormDialog({ open, onOpenChange }: InvestmentAsse
                 )}
               />
             </div>
+
+            {type === 'crypto' && (
+              <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="auto-price"
+                    checked={autoPrice}
+                    onCheckedChange={(checked) => form.setValue('autoPrice', checked)}
+                  />
+                  <Label htmlFor="auto-price">Actualizar precio automáticamente (CoinGecko)</Label>
+                </div>
+                {autoPrice && (
+                  <FormField
+                    control={form.control}
+                    name="externalId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ID en CoinGecko</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Ej: bitcoin" {...field} />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">
+                          El id que usa CoinGecko para este activo (no el símbolo) — se ve en la URL de su página,
+                          ej. coingecko.com/en/coins/<strong>bitcoin</strong>.
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+              </div>
+            )}
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

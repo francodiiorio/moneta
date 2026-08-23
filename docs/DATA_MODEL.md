@@ -103,6 +103,11 @@ opt-in (ver ADR "Cotizaciones automáticas, opt-in" en `docs/DECISIONS.md`).
 "la más reciente con `date <= fecha buscada`", con fallback al recíproco de la tasa
 inversa si no hay una directa, y — última instancia — triangulación por USD si tampoco
 hay una tasa directa/recíproca para el par pedido (ej. EUR→ARS vía EUR→USD y USD→ARS).
+Un empate en `date` (ej. un fetch automático a la mañana y una corrección manual a la
+tarde, mismo día) se desempata por `capturedAt` — timestamp completo, no sólo el día —
+así que la carga más reciente en el tiempo real gana. Si alguna de las dos filas
+empatadas no tiene `capturedAt` (una tasa de antes de la Etapa 6C), el desempate vuelve
+a depender del orden de iteración, no determinístico.
 
 `profile`, `source` y `capturedAt` son todos opcionales (una tasa cargada antes de que
 existieran, o migrada desde un backup v1, no los tiene). `profile` identifica la
@@ -277,10 +282,12 @@ localmente** — ver el ADR en `docs/DECISIONS.md` para el porqué.
   — se concilian a mano. Es una limitación de alcance deliberada, no un bug. Lo mismo
   aplica a `ExchangeRate`: dos tasas para el mismo `(date, from, to)` cargadas por
   separado en cada dispositivo quedan como filas distintas (a diferencia de una cuenta
-  duplicada, esto no es sólo cosmético — `resolveRate()` puede terminar usando cualquiera
-  de las dos de forma no determinística si tienen valores distintos, afectando una
-  conversión de moneda en reportes/patrimonio; conviene revisar `/ajustes/tasas` después
-  de un merge si se cargaron tasas manualmente en ambos dispositivos). `AssetPrice` tiene
+  duplicada, esto no es sólo cosmético — para dos tasas del mismo `(date, from, to)` con
+  `capturedAt`, `resolveRate()` desempata por la más reciente (igual que dentro de un
+  solo dispositivo, ver más abajo); si alguna de las dos no tiene `capturedAt` (una fila
+  vieja, de antes de la Etapa 6C), el desempate vuelve a ser no determinístico. De
+  cualquier forma conviene revisar la pestaña Cotizaciones en Patrimonio después de un
+  merge si se cargaron tasas manualmente en ambos dispositivos). `AssetPrice` tiene
   la misma limitación (sin clave natural `(assetId, date)`, `generateId()` produce IDs
   distintos en cada dispositivo para lo que conceptualmente es "el mismo precio del mismo
   día") pero sin el problema de no-determinismo: `assetPrices.repo.ts:latestAssetPrices`

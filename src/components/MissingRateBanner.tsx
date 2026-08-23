@@ -24,7 +24,7 @@ export function MissingRateBanner({ count, itemLabel = DEFAULT_ITEM_LABEL }: Mis
         {count === 1
           ? `No se pudo convertir 1 ${singular} por falta de tasa de cambio.`
           : `No se pudieron convertir ${count} ${plural} por falta de tasa de cambio.`}{' '}
-        <Link to="/ajustes/tasas" className="underline underline-offset-2 hover:text-foreground">
+        <Link to="/patrimonio" className="underline underline-offset-2 hover:text-foreground">
           Cargar una tasa
         </Link>
         .

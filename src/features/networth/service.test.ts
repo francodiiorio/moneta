@@ -7,17 +7,20 @@ import { createAssetPrice } from '@/database/repositories/assetPrices.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
 import { minor, money } from '@/domain/money'
 import {
+  createExchangeRateFromForm,
   createInvestmentAssetFromForm,
   createInvestmentHoldingFromForm,
   createManualPriceFromForm,
   createSavingsHoldingFromForm,
   getInvestmentHoldingsWithDetails,
   getNetWorthSummary,
+  listExchangeRates,
   listInvestmentAssets,
   listSavingsHoldings,
   updateInvestmentHoldingFromForm,
   updateSavingsHoldingFromForm,
 } from './service'
+import { NO_PROFILE } from './schema'
 
 afterEach(async () => {
   await Promise.all([
@@ -126,7 +129,7 @@ describe('getNetWorthSummary', () => {
 
 describe('createInvestmentAssetFromForm', () => {
   it('always creates the asset with priceMode manual — auto only means something once a provider exists', async () => {
-    const asset = await createInvestmentAssetFromForm({ name: 'SPY', symbol: 'SPY', type: 'etf', currency: 'USD' })
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', symbol: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
     expect(asset.priceMode).toBe('manual')
 
     const [listed] = await listInvestmentAssets()
@@ -134,14 +137,14 @@ describe('createInvestmentAssetFromForm', () => {
   })
 
   it('omits symbol when not provided', async () => {
-    const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD' })
+    const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD', autoPrice: false })
     expect('symbol' in asset).toBe(false)
   })
 })
 
 describe('createInvestmentHoldingFromForm / updateInvestmentHoldingFromForm', () => {
   it('parses quantity and averageCost in the asset currency', async () => {
-    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD' })
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
     const holding = await createInvestmentHoldingFromForm({ assetId: asset.id, quantity: '5', averageCost: '600' })
 
     expect(holding.quantity).toBe(500_000_000) // 5.00000000 scaled
@@ -153,8 +156,8 @@ describe('createInvestmentHoldingFromForm / updateInvestmentHoldingFromForm', ()
   })
 
   it('resolves averageCost against the holding\'s real asset currency, ignoring a mismatched assetId if one were passed', async () => {
-    const usdAsset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD' })
-    const eurAsset = await createInvestmentAssetFromForm({ name: 'Bono EUR', type: 'bond', currency: 'EUR' })
+    const usdAsset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
+    const eurAsset = await createInvestmentAssetFromForm({ name: 'Bono EUR', type: 'bond', currency: 'EUR', autoPrice: false })
     const holding = await createInvestmentHoldingFromForm({ assetId: usdAsset.id, quantity: '1' })
 
     // A caller passing a different asset's id can't smuggle the wrong
@@ -174,7 +177,7 @@ describe('createInvestmentHoldingFromForm / updateInvestmentHoldingFromForm', ()
   })
 
   it('omits averageCost when left blank', async () => {
-    const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD' })
+    const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD', autoPrice: false })
     const holding = await createInvestmentHoldingFromForm({ assetId: asset.id, quantity: '1' })
     expect('averageCost' in holding).toBe(false)
   })
@@ -182,7 +185,7 @@ describe('createInvestmentHoldingFromForm / updateInvestmentHoldingFromForm', ()
 
 describe('createManualPriceFromForm', () => {
   it('creates a manual, append-only price row for the asset', async () => {
-    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD' })
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
     const price = await createManualPriceFromForm(asset.id, asset.currency, { price: '650', date: '2026-08-20' })
 
     expect(price).toMatchObject({ assetId: asset.id, price: 65_000, currency: 'USD', source: 'manual', date: '2026-08-20' })
@@ -218,5 +221,64 @@ describe('getInvestmentHoldingsWithDetails', () => {
     const [item] = await getInvestmentHoldingsWithDetails('ARS')
     expect(item?.nativeValue).toEqual(money(10_00, 'EUR'))
     expect(item?.convertedValue).toBeUndefined()
+  })
+})
+
+describe('createInvestmentAssetFromForm — auto price (crypto only)', () => {
+  it('sets priceMode auto and stores externalId when type is crypto, autoPrice is on and externalId is set', async () => {
+    const asset = await createInvestmentAssetFromForm({
+      name: 'Bitcoin',
+      type: 'crypto',
+      currency: 'USD',
+      autoPrice: true,
+      externalId: 'bitcoin',
+    })
+    expect(asset.priceMode).toBe('auto')
+    expect(asset.externalId).toBe('bitcoin')
+  })
+
+  it('falls back to manual when autoPrice is on but externalId is blank', async () => {
+    const asset = await createInvestmentAssetFromForm({
+      name: 'Bitcoin',
+      type: 'crypto',
+      currency: 'USD',
+      autoPrice: true,
+      externalId: '  ',
+    })
+    expect(asset.priceMode).toBe('manual')
+    expect('externalId' in asset).toBe(false)
+  })
+
+  it('falls back to manual when the type is not crypto, even with autoPrice on and an externalId', async () => {
+    const asset = await createInvestmentAssetFromForm({
+      name: 'SPY',
+      type: 'etf',
+      currency: 'USD',
+      autoPrice: true,
+      externalId: 'spy',
+    })
+    expect(asset.priceMode).toBe('manual')
+    expect('externalId' in asset).toBe(false)
+  })
+})
+
+describe('createExchangeRateFromForm', () => {
+  it('creates a manual rate with the chosen profile', async () => {
+    const rate = await createExchangeRateFromForm({
+      date: '2026-08-23',
+      from: 'USD',
+      to: 'ARS',
+      rate: '1.520,00',
+      profile: 'oficial',
+    })
+    expect(rate).toMatchObject({ from: 'USD', to: 'ARS', rate: 1520, profile: 'oficial', source: 'manual' })
+
+    const [listed] = await listExchangeRates()
+    expect(listed?.profile).toBe('oficial')
+  })
+
+  it('omits profile when NO_PROFILE is selected', async () => {
+    const rate = await createExchangeRateFromForm({ date: '2026-08-23', from: 'USD', to: 'ARS', rate: '1500', profile: NO_PROFILE })
+    expect('profile' in rate).toBe(false)
   })
 })

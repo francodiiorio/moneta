@@ -254,6 +254,18 @@ describe('backup round-trip', () => {
     expect(await db.transactions.count()).toBe(countBefore) // nothing was written
   })
 
+  it('rejects a backup with an "auto" priceMode investment asset that is not crypto', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    payload.data.investmentAssets[0]!.priceMode = 'auto' // seeded asset is an 'etf', not 'crypto'
+
+    const file = new File([JSON.stringify(payload)], 'broken.finance', { type: 'application/json' })
+
+    const countBefore = await db.accounts.count()
+    await expect(importBackup(file)).rejects.toThrow(/El backup no es válido/)
+    expect(await db.accounts.count()).toBe(countBefore) // nothing was written
+  })
+
   it('rejects a backup from a future format version', () => {
     expect(() => migrateToLatest({ version: 99 })).toThrow(/versión más nueva/)
   })

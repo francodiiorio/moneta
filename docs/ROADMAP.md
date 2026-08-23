@@ -91,7 +91,7 @@ cross-currency (ARS → USD).
   todavía `projected` — ver ADR en `docs/DECISIONS.md`.
 - Ruta `/planes` con tabs Recurrentes/Cuotas, ítem nuevo en el nav principal.
 
-## Etapa 6 — Patrimonio (en progreso)
+## Etapa 6 — Patrimonio (hecho)
 
 - **6A — Modelo base + Ahorros + Resumen (hecho).** Entidades nuevas (`SavingsHolding`,
   `InvestmentAsset`, `InvestmentHolding`, `AssetPrice`) y campos opcionales sobre
@@ -116,10 +116,23 @@ cross-currency (ARS → USD).
   reusa `domain/decimal:valuePosition` + `domain/currency:convert`, mismo orden de
   operaciones que `valuateNetWorth` (nunca un atajo activo→moneda-de-display). Borrar un
   activo con posiciones cargadas sigue bloqueado por el repository (Etapa 6A).
-- **6C — Cotizaciones automáticas**: pendiente. `ExchangeRate`/`Settings` ya tienen los
-  campos (`source`, `profile`, `autoQuotesEnabled`); falta la capa de proveedores
-  (`ExchangeRateProvider`/`AssetPriceProvider`), el refresh al abrir la app, el botón
-  "Actualizar ahora" y el tab Cotizaciones.
+- **6C — Cotizaciones automáticas (hecho).** `src/features/quotes/providers/`:
+  Frankfurter (EUR/USD), dolarapi.com (USD/ARS por referencia — oficial/blue/MEP/CCL/
+  mayorista/cripto/tarjeta) y CoinGecko (sólo activos `crypto` con `priceMode: 'auto'` +
+  `externalId`) — los tres gratis, sin API key, con CORS habilitado, verificados a mano
+  antes de conectarlos. `refreshQuotes()` (`features/quotes/service.ts`) llama a los tres
+  en paralelo, nunca tira, y nunca toca ni borra una cotización ya cargada — un proveedor
+  caído simplemente no aporta nada esa vez. Refresh silencioso al abrir la app si
+  `Settings.autoQuotesEnabled` (default **apagado**) y algo está vencido (>12h,
+  `isStale`); botón "Actualizar ahora" siempre disponible. Tab Cotizaciones en
+  `/patrimonio`: switch de actualización automática, selector de qué referencia de dólar
+  usar para valuar (`Settings.rateProfile`), historial de tasas con fuente/antigüedad, y
+  alta manual con `profile`. Absorbe por completo lo que era `/ajustes/tasas`
+  (`features/exchangeRates/` se borró; la ruta vieja redirige) — ver ADRs en
+  `docs/DECISIONS.md`.
+
+Con 6C cerrada, el módulo de Patrimonio queda completo: Resumen, Ahorros, Inversiones y
+Cotizaciones, todo en `/patrimonio`.
 
 ## Backlog / no priorizado
 

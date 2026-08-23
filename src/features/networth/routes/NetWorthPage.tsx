@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { LineChart, PiggyBank, Plus } from 'lucide-react'
+import { LineChart, PiggyBank, Plus, TrendingUp } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
@@ -33,6 +33,7 @@ import { useNetWorthSummary } from '../hooks/useNetWorthSummary'
 import { useSettings } from '../hooks/useSettings'
 import { useInvestmentAssets } from '../hooks/useInvestmentAssets'
 import { useInvestmentHoldingsWithDetails } from '../hooks/useInvestmentHoldingsWithDetails'
+import { useExchangeRates } from '../hooks/useExchangeRates'
 import { SavingsFormDialog } from '../components/SavingsFormDialog'
 import { SavingsRow } from '../components/SavingsRow'
 import { NetWorthDistribution } from '../components/NetWorthDistribution'
@@ -40,9 +41,12 @@ import { InvestmentAssetFormDialog } from '../components/InvestmentAssetFormDial
 import { InvestmentHoldingFormDialog } from '../components/InvestmentHoldingFormDialog'
 import { InvestmentPriceDialog } from '../components/InvestmentPriceDialog'
 import { InvestmentRow } from '../components/InvestmentRow'
-import { deleteInvestmentHolding, deleteSavingsHolding } from '../service'
+import { ExchangeRateFormDialog } from '../components/ExchangeRateFormDialog'
+import { ExchangeRateRow } from '../components/ExchangeRateRow'
+import { QuotesControls } from '../components/QuotesControls'
+import { deleteExchangeRate, deleteInvestmentHolding, deleteSavingsHolding } from '../service'
 
-type PendingDelete = { kind: 'savings' | 'holding'; id: string }
+type PendingDelete = { kind: 'savings' | 'holding' | 'rate'; id: string }
 
 export function NetWorthPage() {
   const {
@@ -64,12 +68,16 @@ export function NetWorthPage() {
     pricingAssetId,
     openPriceDialog,
     closePriceDialog,
+    rateDialogOpen,
+    openRateDialog,
+    closeRateDialog,
   } = useNetWorthUiStore()
   const savings = useSavingsHoldings()
   const summary = useNetWorthSummary()
   const settings = useSettings()
   const assets = useInvestmentAssets()
   const holdings = useInvestmentHoldingsWithDetails()
+  const rates = useExchangeRates()
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
 
   const editingSavings = savings?.find((h) => h.id === editingSavingsId)
@@ -82,9 +90,12 @@ export function NetWorthPage() {
       if (pendingDelete.kind === 'savings') {
         await deleteSavingsHolding(pendingDelete.id)
         toast.success('Ahorro eliminado')
-      } else {
+      } else if (pendingDelete.kind === 'holding') {
         await deleteInvestmentHolding(pendingDelete.id)
         toast.success('Posición eliminada')
+      } else {
+        await deleteExchangeRate(pendingDelete.id)
+        toast.success('Tasa eliminada')
       }
     } catch {
       toast.error('No se pudo eliminar')
@@ -127,6 +138,11 @@ export function NetWorthPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : tab === 'quotes' ? (
+            <Button onClick={openRateDialog}>
+              <Plus className="size-4" />
+              Nueva tasa
+            </Button>
           ) : undefined
         }
       />
@@ -136,6 +152,7 @@ export function NetWorthPage() {
           <TabsTrigger value="summary">Resumen</TabsTrigger>
           <TabsTrigger value="savings">Ahorros</TabsTrigger>
           <TabsTrigger value="investments">Inversiones</TabsTrigger>
+          <TabsTrigger value="quotes">Cotizaciones</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -241,6 +258,41 @@ export function NetWorthPage() {
           </div>
         ))}
 
+      {tab === 'quotes' &&
+        (settings === undefined ? (
+          <div className="h-40 animate-pulse rounded-xl bg-muted" />
+        ) : (
+          <div className="flex flex-col gap-4">
+            <QuotesControls settings={settings} />
+
+            {rates === undefined ? (
+              <div className="h-40 animate-pulse rounded-xl bg-muted" />
+            ) : rates.length === 0 ? (
+              <EmptyState
+                icon={TrendingUp}
+                title="Todavía no cargaste ninguna tasa"
+                description="Sin tasas, las cuentas e inversiones en otra moneda no se pueden consolidar."
+                action={<Button onClick={openRateDialog}>Nueva tasa</Button>}
+              />
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Historial de tasas</CardTitle>
+                </CardHeader>
+                <CardContent className="px-3">
+                  {rates.map((rate) => (
+                    <ExchangeRateRow
+                      key={rate.id}
+                      item={rate}
+                      onDelete={() => setPendingDelete({ kind: 'rate', id: rate.id })}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        ))}
+
       <SavingsFormDialog
         open={savingsDialogOpen}
         holding={editingSavings}
@@ -261,12 +313,20 @@ export function NetWorthPage() {
         asset={pricingAsset}
         onOpenChange={(open) => (open ? undefined : closePriceDialog())}
       />
+      <ExchangeRateFormDialog
+        open={rateDialogOpen}
+        onOpenChange={(open) => (open ? undefined : closeRateDialog())}
+      />
 
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pendingDelete?.kind === 'savings' ? '¿Eliminar este ahorro?' : '¿Eliminar esta posición?'}
+              {pendingDelete?.kind === 'savings'
+                ? '¿Eliminar este ahorro?'
+                : pendingDelete?.kind === 'holding'
+                  ? '¿Eliminar esta posición?'
+                  : '¿Eliminar esta tasa?'}
             </AlertDialogTitle>
             <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
           </AlertDialogHeader>

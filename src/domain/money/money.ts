@@ -105,6 +105,20 @@ export function parseAmount(input: string, currency: CurrencyCode): Money {
   return money(isNegative ? -amount : amount, currency)
 }
 
+/**
+ * Converts a raw JS number (already in major units — e.g. `77408.12`
+ * parsed from an API's JSON response) into Money, rounding half-up.
+ * Never use `parseAmount` for this: it's built for locale-loose text a
+ * user typed, and `String(aVerySmallNumber)` can produce scientific
+ * notation ("1.2e-7") that `parseAmount`'s decimal-separator parsing
+ * silently mangles into a wildly wrong amount instead of failing loud.
+ * This function skips string round-tripping entirely.
+ */
+export function moneyFromNumber(value: number, currency: CurrencyCode): Money {
+  const info = getCurrency(currency)
+  return money(roundHalfUp(value * 10 ** info.decimals), currency)
+}
+
 /** Formats Money for display only. Never feed the result back into
  *  storage or arithmetic — the division below is float-precision. */
 export function formatMoney(value: Money): string {

@@ -2,8 +2,9 @@ import { useEffect } from 'react'
 import { RouterProvider } from 'react-router'
 import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
-import { categoriesRepo } from '@/database/repositories'
+import { categoriesRepo, settingsRepo } from '@/database/repositories'
 import { materializeDue } from '@/features/plans/service'
+import { isStale, refreshQuotes } from '@/features/quotes/service'
 import { ThemeProvider } from './theme-provider'
 import { router } from './router'
 
@@ -11,6 +12,8 @@ import { router } from './router'
 // call from React 18 StrictMode's dev-only double-invoke so the summary
 // toast doesn't fire twice for the same app load.
 let materializedThisLoad = false
+// Same reasoning, for the quotes refresh below.
+let quotesRefreshedThisLoad = false
 
 export function App() {
   useEffect(() => {
@@ -43,6 +46,25 @@ export function App() {
         .catch((error: unknown) => {
           console.error('materializeDue falló por completo', error)
           toast.error('No se pudieron poner al día los recurrentes ni las cuotas')
+        })
+    }
+
+    if (!quotesRefreshedThisLoad) {
+      quotesRefreshedThisLoad = true
+      // Opt-in and silent: never runs unless the user turned it on
+      // (Patrimonio → Cotizaciones), and never shows a toast on its own
+      // — a failure here shouldn't interrupt opening the app, and the
+      // Cotizaciones tab already surfaces "última actualización"
+      // reactively for whoever cares to look.
+      void settingsRepo
+        .getSettings()
+        .then((settings) => {
+          if (!settings.autoQuotesEnabled) return
+          if (!isStale(settings.quotesRefreshedAt)) return
+          return refreshQuotes()
+        })
+        .catch((error: unknown) => {
+          console.error('refreshQuotes falló al abrir la app', error)
         })
     }
   }, [])

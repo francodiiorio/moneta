@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router'
+import { createBrowserRouter, Navigate } from 'react-router'
 import { AppLayout } from './layout/AppLayout'
 import { RootFallback } from './RootFallback'
 
@@ -90,11 +90,10 @@ export const router = createBrowserRouter([
         },
       },
       {
+        // Absorbed into Patrimonio → Cotizaciones (Etapa 6C) — old
+        // bookmarks/links to this URL still land somewhere useful.
         path: 'ajustes/tasas',
-        lazy: async () => {
-          const { ExchangeRatesPage } = await import('@/features/exchangeRates/routes/ExchangeRatesPage')
-          return { Component: ExchangeRatesPage }
-        },
+        Component: () => <Navigate to="/patrimonio" replace />,
       },
     ],
   },

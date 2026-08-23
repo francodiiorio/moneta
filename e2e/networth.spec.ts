@@ -57,3 +57,44 @@ test('creates an investment asset, a position and a price, and sees the valued t
   await page.getByRole('option', { name: 'USD' }).click()
   await expect(page.getByText(/500[.,]00/).first()).toBeVisible()
 })
+
+test('/ajustes/tasas redirects to Patrimonio, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {
+  await page.goto('/ajustes/tasas')
+  await expect(page).toHaveURL('/patrimonio')
+
+  await page.getByRole('tab', { name: 'Cotizaciones' }).click()
+  await expect(page.getByText('Actualización automática', { exact: true })).toBeVisible()
+  await expect(page.getByText('Cotización USD para valuar tu patrimonio')).toBeVisible()
+
+  // Two "Nueva tasa" buttons exist while the list is empty (PageHeader's
+  // action + EmptyState's own CTA) — .first() picks the header one.
+  await page.getByRole('button', { name: 'Nueva tasa' }).first().click()
+  // Radix Select's hidden native <select> also matches "Tasa" via the
+  // dialog's own aria-labelledby ("Nueva tasa") — scope to the textbox.
+  await page.getByRole('textbox', { name: 'Tasa', exact: true }).fill('1520')
+  await page.getByLabel('Referencia (opcional)').click()
+  await page.getByRole('option', { name: 'Oficial' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await expect(page.getByText('USD → ARS')).toBeVisible()
+  await expect(page.getByText('1.520')).toBeVisible()
+})
+
+test('a crypto asset offers the automatic price toggle with a CoinGecko id field', async ({ page }) => {
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('Bitcoin')
+
+  await page.getByLabel('Tipo').click()
+  await page.getByRole('option', { name: 'Cripto' }).click()
+  await expect(page.getByText('Actualizar precio automáticamente')).toBeVisible()
+
+  await page.getByLabel('Actualizar precio automáticamente (CoinGecko)').click()
+  await expect(page.getByLabel('ID en CoinGecko')).toBeVisible()
+  await page.getByLabel('ID en CoinGecko').fill('bitcoin')
+
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+})

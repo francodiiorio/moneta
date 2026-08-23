@@ -74,7 +74,8 @@ const SECTIONS: GuideSection[] = [
     title: '6. Registrá tu patrimonio (ahorros e inversiones)',
     steps: [
       'En "Patrimonio" → pestaña Ahorros, cargá plata que tenés guardada pero no pasa por movimientos — efectivo, una caja de ahorro que no conciliás.',
-      'En la pestaña Inversiones, primero creá el activo (ej. SPY, un CEDEAR, Bitcoin) y después una posición con la cantidad que tenés. Cargá el precio a mano con "Cargar precio" — cada carga queda en el historial, nunca pisa la anterior.',
+      'En la pestaña Inversiones, primero creá el activo (ej. SPY, un CEDEAR, Bitcoin) y después una posición con la cantidad que tenés. Cargá el precio a mano con "Cargar precio" — cada carga queda en el historial, nunca pisa la anterior. Para cripto, podés activar "Actualizar precio automáticamente" con el id de CoinGecko.',
+      'En la pestaña Cotizaciones elegís qué referencia de dólar usar para valuar (oficial, blue, MEP, CCL, etc.) y podés prender la actualización automática — trae el dólar y el euro solos cada tanto, o los actualizás vos con "Actualizar ahora". Apagada por defecto: sin activarla, la app no consulta nada por internet.',
       'La pestaña Resumen consolida cuentas + ahorros + inversiones en la moneda que elijas (ARS, USD o EUR), sin modificar los importes originales.',
       'Si falta una tasa de cambio o un precio para convertir algo, ese ítem queda afuera del total y aparece un aviso — nunca se inventa una conversión.',
     ],

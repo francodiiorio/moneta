@@ -8,6 +8,7 @@ import {
   isZero,
   minor,
   money,
+  moneyFromNumber,
   negate,
   parseAmount,
   roundHalfUp,
@@ -96,6 +97,34 @@ describe('parseAmount', () => {
 
   it('pads a short fraction', () => {
     expect(parseAmount('10,5', 'ARS')).toEqual(money(1050, 'ARS'))
+  })
+
+  // Regression: parseAmount is for user-typed text, not a raw JS number.
+  // String(aVerySmallNumber) can produce scientific notation, which
+  // parseAmount's decimal-separator heuristic silently misreads instead
+  // of failing — this is exactly why moneyFromNumber exists below, for
+  // any caller (e.g. an API response) that has a real number, not text.
+  it('documents the scientific-notation trap: do not feed a raw number through String() into this', () => {
+    expect(parseAmount(String(1.2e-7), 'USD')).toEqual(money(127, 'USD')) // wrong on purpose, see moneyFromNumber
+  })
+})
+
+describe('moneyFromNumber', () => {
+  it('converts a plain float to Minor, rounding half-up', () => {
+    expect(moneyFromNumber(1050.5, 'ARS')).toEqual(money(105050, 'ARS'))
+  })
+
+  it('rounds a tiny value that has no representable minor unit down to zero, never a wrong huge amount', () => {
+    // The exact scenario parseAmount(String(...)) gets wrong above.
+    expect(moneyFromNumber(1.2e-7, 'USD')).toEqual(money(0, 'USD'))
+  })
+
+  it('handles negative numbers', () => {
+    expect(moneyFromNumber(-10.5, 'ARS')).toEqual(money(-1050, 'ARS'))
+  })
+
+  it('matches parseAmount for a normal, non-scientific-notation value', () => {
+    expect(moneyFromNumber(77408.12, 'USD')).toEqual(parseAmount('77408.12', 'USD'))
   })
 })
 

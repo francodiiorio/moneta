@@ -206,19 +206,29 @@ export const investmentAssetTypeSchema = z.enum(['etf', 'stock', 'cedear', 'bond
 
 export const priceModeSchema = z.enum(['manual', 'auto'])
 
-export const investmentAssetSchema = z.object({
-  id,
-  name: z.string().min(1),
-  symbol: z.string().optional(),
-  type: investmentAssetTypeSchema,
-  currency: currencyCode,
-  priceMode: priceModeSchema,
-  // Provider-specific identifier (e.g. CoinGecko's coin id) — set only
-  // when priceMode is 'auto' and a provider exists for this asset's type.
-  externalId: z.string().optional(),
-  createdAt: isoInstant,
-  updatedAt: isoInstant,
-})
+export const investmentAssetSchema = z
+  .object({
+    id,
+    name: z.string().min(1),
+    symbol: z.string().optional(),
+    type: investmentAssetTypeSchema,
+    currency: currencyCode,
+    priceMode: priceModeSchema,
+    // Provider-specific identifier (e.g. CoinGecko's coin id) — set only
+    // when priceMode is 'auto' and a provider exists for this asset's type.
+    externalId: z.string().optional(),
+    createdAt: isoInstant,
+    updatedAt: isoInstant,
+  })
+  // Defense in depth: today only crypto (via CoinGecko) has an automatic
+  // provider — see features/quotes/providers/. Without this, a backup
+  // import/merge could otherwise slip in an 'auto' non-crypto asset that
+  // refreshQuotes() would then silently never update (it's not eligible
+  // for any provider, but nothing would say so).
+  .refine((a) => a.priceMode !== 'auto' || (a.type === 'crypto' && !!a.externalId), {
+    message: "priceMode 'auto' requires type 'crypto' and a non-empty externalId",
+    path: ['priceMode'],
+  })
 export type InvestmentAsset = z.infer<typeof investmentAssetSchema>
 
 export const investmentHoldingSchema = z.object({

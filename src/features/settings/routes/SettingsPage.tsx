@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTheme } from 'next-themes'
 import { Link } from 'react-router'
-import { ChevronRight, HelpCircle, Tag, TrendingUp } from 'lucide-react'
+import { ChevronRight, HelpCircle, Tag } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -103,16 +103,6 @@ export function SettingsPage() {
           <div className="min-w-0 flex-1">
             <p className="font-medium">Categorías</p>
             <p className="text-sm text-muted-foreground">Organizá tus categorías de gasto e ingreso.</p>
-          </div>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-        </Link>
-        <Link to="/ajustes/tasas" className="flex items-center gap-3 border-t border-border px-6 py-4">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted">
-            <TrendingUp className="size-4 text-muted-foreground" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">Tasas de cambio</p>
-            <p className="text-sm text-muted-foreground">Para consolidar cuentas en distintas monedas.</p>
           </div>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         </Link>

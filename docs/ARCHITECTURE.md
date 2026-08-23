@@ -72,8 +72,14 @@ Ver `docs/DATA_MODEL.md` para el formato exacto y las reglas de versionado.
 
 `vite-plugin-pwa` en modo `generateSW` con `registerType: 'autoUpdate'`. El service
 worker sólo precachea el app shell (JS/CSS/HTML/íconos) — **no** hay runtime caching de
-red, porque la app no hace requests de red. Esto la hace instalable y usable offline por
-diseño, no como feature aparte.
+red. Esto la hace instalable y usable offline por diseño, no como feature aparte.
+
+La única red que la app hace es opt-in: cotizaciones automáticas
+(`src/features/quotes/providers/`, `Settings.autoQuotesEnabled`, default `false` — ver
+"Privacidad" en `CLAUDE.md` y el ADR en `docs/DECISIONS.md`). No pasa por el service
+worker en absoluto — sin conexión, un fetch de cotización simplemente falla (capturado,
+nunca se propaga) y la app sigue funcionando con la última cotización válida en
+IndexedDB. Offline sigue siendo el caso normal, no uno que haya que manejar aparte.
 
 ## Testing por capa
 

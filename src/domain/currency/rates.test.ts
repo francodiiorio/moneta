@@ -52,6 +52,29 @@ describe('resolveRate — profile', () => {
   })
 })
 
+describe('resolveRate — same-day tie-break by capturedAt', () => {
+  it('a later capturedAt wins over an earlier one on the same date, regardless of array order', () => {
+    const sameDay: ExchangeRate[] = [
+      { id: '1', date: '2026-08-23', from: 'USD', to: 'ARS', rate: 1500, capturedAt: '2026-08-23T09:00:00.000Z' },
+      { id: '2', date: '2026-08-23', from: 'USD', to: 'ARS', rate: 1550, capturedAt: '2026-08-23T15:00:00.000Z' },
+    ]
+    expect(resolveRate(sameDay, 'USD', 'ARS', '2026-08-23')).toBe(1550)
+    // Order in the array must not matter — a manual correction loaded
+    // after an automatic fetch has to win no matter which was inserted
+    // (and therefore iterated) first.
+    expect(resolveRate([...sameDay].reverse(), 'USD', 'ARS', '2026-08-23')).toBe(1550)
+  })
+
+  it('a rate without capturedAt never beats one that has it', () => {
+    const withAndWithout: ExchangeRate[] = [
+      { id: '1', date: '2026-08-23', from: 'USD', to: 'ARS', rate: 1550, capturedAt: '2026-08-23T09:00:00.000Z' },
+      { id: '2', date: '2026-08-23', from: 'USD', to: 'ARS', rate: 1500 }, // no capturedAt (pre-6C row)
+    ]
+    expect(resolveRate(withAndWithout, 'USD', 'ARS', '2026-08-23')).toBe(1550)
+    expect(resolveRate([...withAndWithout].reverse(), 'USD', 'ARS', '2026-08-23')).toBe(1550)
+  })
+})
+
 describe('resolveRate — triangulation through USD', () => {
   const triRates: ExchangeRate[] = [
     { id: '1', date: '2026-06-01', from: 'EUR', to: 'USD', rate: 1.1 },
