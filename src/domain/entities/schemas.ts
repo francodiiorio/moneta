@@ -5,6 +5,7 @@ const monthStamp = z.string().regex(/^\d{4}-\d{2}$/, 'Expected YYYY-MM')
 const isoInstant = z.string().datetime()
 const currencyCode = z.string().min(3).max(8)
 const minorAmount = z.number().int()
+const quantityScaled = z.number().int().nonnegative()
 const id = z.string().min(1)
 
 export const accountTypeSchema = z.enum(['cash', 'bank', 'card', 'investment', 'loan', 'other'])
@@ -151,12 +152,25 @@ export const budgetSchema = z.object({
 })
 export type Budget = z.infer<typeof budgetSchema>
 
+/** How a quote (exchange rate or asset price) was obtained — 'automatic'
+ *  only exists once a quotes provider is wired up (Etapa 6C), but the
+ *  field is added now so both a manually-loaded rate today and a
+ *  provider-fetched one later share the same shape. */
+export const quoteSourceSchema = z.enum(['manual', 'automatic'])
+
 export const exchangeRateSchema = z.object({
   id,
   date: dateStamp,
   from: currencyCode,
   to: currencyCode,
   rate: z.number().positive(),
+  // All optional: a rate loaded before this field existed (or by a v1
+  // backup migrated to v2) has none of these, and still works — resolveRate
+  // treats a rate without `profile` as a wildcard match. See
+  // domain/currency/rates.ts.
+  profile: z.string().optional(),
+  source: quoteSourceSchema.optional(),
+  capturedAt: isoInstant.optional(),
 })
 export type ExchangeRate = z.infer<typeof exchangeRateSchema>
 
@@ -169,5 +183,65 @@ export const settingsSchema = z.object({
   firstDayOfMonth: z.number().int().min(1).max(28),
   theme: themeSchema,
   schemaVersion: z.number().int().nonnegative(),
+  displayCurrency: currencyCode.optional(),
+  rateProfile: z.string().optional(),
+  autoQuotesEnabled: z.boolean().optional(),
+  quotesRefreshedAt: isoInstant.optional(),
 })
 export type Settings = z.infer<typeof settingsSchema>
+
+export const savingsHoldingSchema = z.object({
+  id,
+  name: z.string().min(1),
+  currency: currencyCode,
+  amount: minorAmount,
+  location: z.string().optional(),
+  notes: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type SavingsHolding = z.infer<typeof savingsHoldingSchema>
+
+export const investmentAssetTypeSchema = z.enum(['etf', 'stock', 'cedear', 'bond', 'fund', 'crypto', 'other'])
+
+export const priceModeSchema = z.enum(['manual', 'auto'])
+
+export const investmentAssetSchema = z.object({
+  id,
+  name: z.string().min(1),
+  symbol: z.string().optional(),
+  type: investmentAssetTypeSchema,
+  currency: currencyCode,
+  priceMode: priceModeSchema,
+  // Provider-specific identifier (e.g. CoinGecko's coin id) — set only
+  // when priceMode is 'auto' and a provider exists for this asset's type.
+  externalId: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type InvestmentAsset = z.infer<typeof investmentAssetSchema>
+
+export const investmentHoldingSchema = z.object({
+  id,
+  assetId: id,
+  // Scaled integer, same idea as Minor for money — see
+  // domain/decimal/quantity.ts. Never a float: 8 decimals of precision
+  // fit in a safe integer for any realistic position size.
+  quantity: quantityScaled,
+  averageCost: minorAmount.optional(),
+  notes: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type InvestmentHolding = z.infer<typeof investmentHoldingSchema>
+
+export const assetPriceSchema = z.object({
+  id,
+  assetId: id,
+  price: minorAmount.positive(),
+  currency: currencyCode,
+  date: dateStamp,
+  capturedAt: isoInstant,
+  source: quoteSourceSchema,
+})
+export type AssetPrice = z.infer<typeof assetPriceSchema>

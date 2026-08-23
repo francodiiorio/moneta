@@ -1,11 +1,11 @@
 import { minor, type CurrencyCode } from '@/domain/money'
 import { validateLedgerEntry, type PostingDraft } from '@/domain/ledger'
-import type { BackupDataV1 } from './schemas/v1'
+import type { BackupDataV2 } from './schemas/v2'
 
 /** Re-validates every transaction's postings using the same domain
  *  invariants applied on normal writes — a backup file is untrusted
  *  input and must prove itself before it replaces the live database. */
-export function validateLedgerIntegrity(data: BackupDataV1): void {
+export function validateLedgerIntegrity(data: BackupDataV2): void {
   const accountCurrencies = new Map<string, CurrencyCode>(
     data.accounts.map((a) => [a.id, a.currency]),
   )

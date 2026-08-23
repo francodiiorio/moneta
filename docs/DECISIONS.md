@@ -2,6 +2,64 @@
 
 ADRs cortos. Cada entrada: qué se decidió, por qué, qué se descartó.
 
+## Patrimonio: separar `SavingsHolding`, `InvestmentAsset`, `InvestmentHolding` y `AssetPrice`
+
+**Decisión:** una inversión nunca se modela como si fuera simplemente una moneda o un
+ahorro. Cuatro entidades separadas: `SavingsHolding` (plata que no pasa por el ledger),
+`InvestmentAsset` (el instrumento — SPY, un CEDEAR, Bitcoin), `InvestmentHolding` (cuánto
+tiene el usuario de ese activo) y `AssetPrice` (el precio del activo en una fecha,
+**append-only** — cada actualización inserta una fila nueva, nunca pisa la anterior).
+
+**Por qué:** el precio de un activo cambia todos los días y es independiente de cuánto
+tiene el usuario; mezclar "cantidad" y "precio" en una sola entidad obligaría a reescribir
+la posición completa cada vez que se actualiza una cotización, y perdería el historial de
+precios en el proceso. Separar `AssetPrice` como su propia tabla append-only da el
+historial gratis (necesario para poder reconstruir "patrimonio de enero" más adelante) y
+deja que una carga manual de precio y un fetch automático (Etapa de cotizaciones
+automáticas) convivan sin caso especial: la fila más reciente por fecha gana, sin importar
+su `source`.
+
+**Costo aceptado:** más tablas y un join extra (activo → última fila de precio → posición)
+para calcular una valuación, en vez de un único registro "inversión" con todo adentro. Se
+resuelve en una sola función de dominio (`domain/networth/valuation.ts:valuateNetWorth`),
+así que el costo no se repite en cada componente que necesita el total.
+
+**Cantidades como enteros escalados, nunca float:** `InvestmentHolding.quantity` es un
+`Quantity` (`domain/decimal/quantity.ts`) — entero escalado por `1e8` (8 decimales,
+suficiente para un satoshi), mismo espíritu que `Minor` para plata. Una cantidad
+fraccionaria de un activo (`0.00123456 BTC`) alimenta directamente un cálculo monetario
+(`quantity × precio`), así que aplica la misma regla de "Reglas financieras" en
+`CLAUDE.md` que prohíbe float para cualquier cifra que termine en una cuenta de plata.
+`domain/decimal/quantity.ts:valuePosition(quantity, price)` es la única función que hace
+esa multiplicación, con un guard explícito contra overflow de `Number.MAX_SAFE_INTEGER` en
+vez de dejar que el resultado se corrompa en silencio.
+
+## Cotizaciones: extender `ExchangeRate`, no un modelo aparte — automáticas, opt-in
+
+**Decisión:** en vez de crear un modelo de "cotización" paralelo para patrimonio, se
+extendió la `ExchangeRate` que ya usan Dashboard/Reportes con tres campos opcionales:
+`profile` (qué referencia — oficial/MEP/CCL/blue/cripto/mayorista/tarjeta/una propia),
+`source` (`'manual' | 'automatic'`) y `capturedAt`. `Settings.autoQuotesEnabled` (default
+**`false`**) es el opt-in explícito para completar tasas automáticamente; sin activarlo,
+la app hace exactamente cero requests de red, igual que siempre.
+
+**Por qué:** una segunda fuente de verdad para "cuánto vale un USD" — una para
+Dashboard/Reportes, otra para Patrimonio — arriesgaba mostrar dos números distintos para
+la misma pregunta según qué pantalla mirás. Extender la entidad existente hace que
+`resolveRate`/`convert` (`domain/currency/rates.ts`) sigan siendo el único lugar que
+resuelve una tasa, para todo el consumidor que exista hoy o después.
+
+`resolveRate` ahora también triangula por USD como último recurso (sólo cuando no hay
+tasa directa ni recíproca para el par pedido) y prefiere el `profile` pedido, cayendo a
+una tasa sin `profile` si no hay match — nunca a la de otra referencia distinta. Ambos
+cambios son estrictamente aditivos: un caller que nunca pasa `profile` ni depende de
+triangulación (todo el código anterior a esta feature) se comporta exactamente igual.
+
+**Costo aceptado:** el schema de `ExchangeRate` crece con campos que sólo tienen sentido
+si se activan las cotizaciones automáticas (Etapa siguiente) — se aceptó el campo
+"muerto" por ahora a cambio de no tener que migrar el schema otra vez cuando se conecten
+los proveedores.
+
 ## Import de CSV: una categoría por lote, duplicados destildados no bloqueados
 
 **Decisión:** `src/features/csvImport/` importa un extracto bancario a una sola cuenta
@@ -166,6 +224,12 @@ API de cotizaciones.
 **Por qué:** privacidad (cero requests de red, ver `CLAUDE.md`) y simplicidad — el usuario
 en Argentina ya sabe qué tasa usó para una operación real (oficial, blue, tarjeta, etc.),
 que casi nunca coincide con "la" cotización de una API.
+
+**Actualización (Patrimonio):** "no hay integración con ninguna API" dejó de ser
+absoluto — ver "Cotizaciones: extender `ExchangeRate`, no un modelo aparte" abajo. La
+cuenta con moneda fija y la carga manual como comportamiento por defecto siguen intactas;
+lo que cambió es que ahora existe una opción opt-in (apagada por defecto) para completar
+`ExchangeRate` con proveedores automáticos, siempre encima de la misma entidad.
 
 ## Dexie sobre IndexedDB crudo
 

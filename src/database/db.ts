@@ -1,12 +1,16 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type {
   Account,
+  AssetPrice,
   Budget,
   Category,
   ExchangeRate,
   InstallmentPlan,
+  InvestmentAsset,
+  InvestmentHolding,
   Posting,
   RecurringPlan,
+  SavingsHolding,
   Settings,
   Transaction,
 } from '@/domain/entities'
@@ -29,6 +33,10 @@ export class MonetaDatabase extends Dexie {
   budgets!: EntityTable<Budget, 'id'>
   exchangeRates!: EntityTable<ExchangeRate, 'id'>
   settings!: EntityTable<Settings, 'id'>
+  savingsHoldings!: EntityTable<SavingsHolding, 'id'>
+  investmentAssets!: EntityTable<InvestmentAsset, 'id'>
+  investmentHoldings!: EntityTable<InvestmentHolding, 'id'>
+  assetPrices!: EntityTable<AssetPrice, 'id'>
 
   constructor(name = 'moneta') {
     super(name)
@@ -42,6 +50,14 @@ export class MonetaDatabase extends Dexie {
       budgets: 'id, categoryId, [categoryId+startsOn]',
       exchangeRates: 'id, [from+to+date], date',
       settings: 'id',
+    })
+    // Patrimonio: ahorros e inversiones — todas nacen vacías, no hace
+    // falta .upgrade(). Ver docs/DATA_MODEL.md "Versionado".
+    this.version(2).stores({
+      savingsHoldings: 'id, currency',
+      investmentAssets: 'id, type, symbol',
+      investmentHoldings: 'id, assetId',
+      assetPrices: 'id, [assetId+date], assetId, date',
     })
   }
 }

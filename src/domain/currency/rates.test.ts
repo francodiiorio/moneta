@@ -31,6 +31,52 @@ describe('resolveRate', () => {
   })
 })
 
+describe('resolveRate — profile', () => {
+  const profiledRates: ExchangeRate[] = [
+    { id: '1', date: '2026-06-01', from: 'USD', to: 'ARS', rate: 1000, profile: 'oficial' },
+    { id: '2', date: '2026-06-01', from: 'USD', to: 'ARS', rate: 1450, profile: 'mep' },
+    { id: '3', date: '2026-06-01', from: 'USD', to: 'ARS', rate: 1300 }, // no profile — the wildcard
+  ]
+
+  it('prefers the requested profile when it exists', () => {
+    expect(resolveRate(profiledRates, 'USD', 'ARS', '2026-06-01', 'mep')).toBe(1450)
+    expect(resolveRate(profiledRates, 'USD', 'ARS', '2026-06-01', 'oficial')).toBe(1000)
+  })
+
+  it('falls back to a rate with no profile when the requested one has none', () => {
+    expect(resolveRate(profiledRates, 'USD', 'ARS', '2026-06-01', 'blue')).toBe(1300)
+  })
+
+  it('with no profile requested, only considers rates with no profile set', () => {
+    expect(resolveRate(profiledRates, 'USD', 'ARS', '2026-06-01')).toBe(1300)
+  })
+})
+
+describe('resolveRate — triangulation through USD', () => {
+  const triRates: ExchangeRate[] = [
+    { id: '1', date: '2026-06-01', from: 'EUR', to: 'USD', rate: 1.1 },
+    { id: '2', date: '2026-06-01', from: 'USD', to: 'ARS', rate: 1000 },
+  ]
+
+  it('triangulates when there is no direct or reciprocal rate for the pair', () => {
+    expect(resolveRate(triRates, 'EUR', 'ARS', '2026-06-01')).toBeCloseTo(1.1 * 1000)
+  })
+
+  it('triangulates in the reverse direction too', () => {
+    expect(resolveRate(triRates, 'ARS', 'EUR', '2026-06-01')).toBeCloseTo(1 / (1.1 * 1000))
+  })
+
+  it('does not triangulate when a direct rate already exists', () => {
+    const withDirect: ExchangeRate[] = [...triRates, { id: '3', date: '2026-06-01', from: 'EUR', to: 'ARS', rate: 999 }]
+    expect(resolveRate(withDirect, 'EUR', 'ARS', '2026-06-01')).toBe(999)
+  })
+
+  it('does not triangulate when one leg is missing', () => {
+    const onlyOneLeg: ExchangeRate[] = [{ id: '1', date: '2026-06-01', from: 'EUR', to: 'USD', rate: 1.1 }]
+    expect(resolveRate(onlyOneLeg, 'EUR', 'ARS', '2026-06-01')).toBeUndefined()
+  })
+})
+
 describe('convert', () => {
   it('is a no-op for the same currency', () => {
     const amount = money(500, 'ARS')

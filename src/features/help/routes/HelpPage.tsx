@@ -4,6 +4,7 @@ import {
   Tag,
   PiggyBank,
   CalendarSync,
+  Landmark,
   BarChart3,
   Upload,
   Save,
@@ -69,8 +70,18 @@ const SECTIONS: GuideSection[] = [
     link: { to: '/planes', label: 'Ir a Planes' },
   },
   {
+    icon: Landmark,
+    title: '6. Registrá tu patrimonio (ahorros e inversiones)',
+    steps: [
+      'En "Patrimonio" → pestaña Ahorros, cargá plata que tenés guardada pero no pasa por movimientos — efectivo, una caja de ahorro que no conciliás.',
+      'La pestaña Resumen consolida cuentas + ahorros + inversiones en la moneda que elijas (ARS, USD o EUR), sin modificar los importes originales.',
+      'Si falta una tasa de cambio para convertir algo, ese ítem queda afuera del total y aparece un aviso — nunca se inventa una conversión.',
+    ],
+    link: { to: '/patrimonio', label: 'Ir a Patrimonio' },
+  },
+  {
     icon: BarChart3,
-    title: '6. Mirá tus reportes',
+    title: '7. Mirá tus reportes',
     steps: [
       'El Dashboard resume el mes en curso: ingresos, gastos y balance neto, de un vistazo.',
       '"Reportes" tiene el detalle: gasto por categoría y la evolución de tu patrimonio total (todas las cuentas, convertidas a tu moneda base) en los últimos 6 meses.',
@@ -79,7 +90,7 @@ const SECTIONS: GuideSection[] = [
   },
   {
     icon: Upload,
-    title: '7. Importá un extracto bancario',
+    title: '8. Importá un extracto bancario',
     steps: [
       'Desde "Movimientos" → "Importar CSV", subís el archivo y le indicás qué columna es cuál (fecha, descripción, monto) y una cuenta destino.',
       'Elegís una categoría para todos los gastos del lote y otra para todos los ingresos.',
@@ -89,7 +100,7 @@ const SECTIONS: GuideSection[] = [
   },
   {
     icon: Save,
-    title: '8. Hacé backup de tus datos',
+    title: '9. Hacé backup de tus datos',
     steps: [
       'Todo vive únicamente en tu navegador — no hay ningún servidor. En Ajustes, "Exportar backup" genera un archivo .finance con todos tus datos: es tu única copia de seguridad real.',
       '"Importar backup" te deja reemplazar todo o fusionar con lo que ya tenés (si hay un conflicto, tus datos locales siempre ganan).',

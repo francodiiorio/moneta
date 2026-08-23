@@ -16,6 +16,10 @@ afterEach(async () => {
     db.budgets.clear(),
     db.exchangeRates.clear(),
     db.settings.clear(),
+    db.savingsHoldings.clear(),
+    db.investmentAssets.clear(),
+    db.investmentHoldings.clear(),
+    db.assetPrices.clear(),
   ])
 })
 
@@ -97,6 +101,76 @@ async function seedFullDatabase() {
     updatedAt: now,
   })
 
+  await db.recurringPlans.add({
+    id: generateId(),
+    template: {
+      description: 'Alquiler',
+      kind: 'expense' as const,
+      accountId: account.id,
+      categoryId: category.id,
+      amount: 200_000,
+      currency: 'ARS',
+    },
+    rule: { freq: 'monthly' as const, interval: 1, startDate: '2026-01-01' },
+    isPaused: false,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  await db.installmentPlans.add({
+    id: generateId(),
+    description: 'Heladera en 3 cuotas',
+    accountId: account.id,
+    categoryId: category.id,
+    totalAmount: 300_000,
+    currency: 'ARS',
+    count: 3,
+    firstDueDate: '2026-08-01',
+    purchaseDate: '2026-07-15',
+    scheduleCache: [100_000, 100_000, 100_000],
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  const asset = {
+    id: generateId(),
+    name: 'SPDR S&P 500',
+    symbol: 'SPY',
+    type: 'etf' as const,
+    currency: 'USD',
+    priceMode: 'manual' as const,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.investmentAssets.add(asset)
+
+  await db.investmentHoldings.add({
+    id: generateId(),
+    assetId: asset.id,
+    quantity: 500_000_000, // 5.00000000 shares
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  await db.assetPrices.add({
+    id: generateId(),
+    assetId: asset.id,
+    price: 65_000_00,
+    currency: 'USD',
+    date: '2026-08-20',
+    capturedAt: now,
+    source: 'manual' as const,
+  })
+
+  await db.savingsHoldings.add({
+    id: generateId(),
+    name: 'USD efectivo',
+    currency: 'USD',
+    amount: 250_000,
+    createdAt: now,
+    updatedAt: now,
+  })
+
   await db.settings.add({
     id: 'singleton',
     baseCurrency: 'ARS',
@@ -113,48 +187,57 @@ function sortById<T extends { id: string }>(items: T[]): T[] {
   return [...items].sort((a, b) => a.id.localeCompare(b.id))
 }
 
+async function snapshotAllTables() {
+  return {
+    accounts: sortById(await db.accounts.toArray()),
+    categories: sortById(await db.categories.toArray()),
+    transactions: sortById(await db.transactions.toArray()),
+    postings: sortById(await db.postings.toArray()),
+    recurringPlans: sortById(await db.recurringPlans.toArray()),
+    installmentPlans: sortById(await db.installmentPlans.toArray()),
+    budgets: sortById(await db.budgets.toArray()),
+    exchangeRates: sortById(await db.exchangeRates.toArray()),
+    savingsHoldings: sortById(await db.savingsHoldings.toArray()),
+    investmentAssets: sortById(await db.investmentAssets.toArray()),
+    investmentHoldings: sortById(await db.investmentHoldings.toArray()),
+    assetPrices: sortById(await db.assetPrices.toArray()),
+    settings: await db.settings.get('singleton'),
+  }
+}
+
+async function clearAllTables() {
+  await Promise.all([
+    db.accounts.clear(),
+    db.categories.clear(),
+    db.transactions.clear(),
+    db.postings.clear(),
+    db.recurringPlans.clear(),
+    db.installmentPlans.clear(),
+    db.budgets.clear(),
+    db.exchangeRates.clear(),
+    db.settings.clear(),
+    db.savingsHoldings.clear(),
+    db.investmentAssets.clear(),
+    db.investmentHoldings.clear(),
+    db.assetPrices.clear(),
+  ])
+}
+
 describe('backup round-trip', () => {
   it('reconstructs an identical database state after export -> wipe -> import', async () => {
     await seedFullDatabase()
-
-    const before = {
-      accounts: sortById(await db.accounts.toArray()),
-      categories: sortById(await db.categories.toArray()),
-      transactions: sortById(await db.transactions.toArray()),
-      postings: sortById(await db.postings.toArray()),
-      budgets: sortById(await db.budgets.toArray()),
-      exchangeRates: sortById(await db.exchangeRates.toArray()),
-      settings: await db.settings.get('singleton'),
-    }
+    const before = await snapshotAllTables()
 
     const exported = await exportBackup()
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
 
-    await Promise.all([
-      db.accounts.clear(),
-      db.categories.clear(),
-      db.transactions.clear(),
-      db.postings.clear(),
-      db.budgets.clear(),
-      db.exchangeRates.clear(),
-      db.settings.clear(),
-    ])
+    await clearAllTables()
     expect(await db.accounts.count()).toBe(0)
 
     const result = await importBackup(file)
     expect(result.checksumMatched).toBe(true)
 
-    const after = {
-      accounts: sortById(await db.accounts.toArray()),
-      categories: sortById(await db.categories.toArray()),
-      transactions: sortById(await db.transactions.toArray()),
-      postings: sortById(await db.postings.toArray()),
-      budgets: sortById(await db.budgets.toArray()),
-      exchangeRates: sortById(await db.exchangeRates.toArray()),
-      settings: await db.settings.get('singleton'),
-    }
-
-    expect(after).toEqual(before)
+    expect(await snapshotAllTables()).toEqual(before)
   })
 
   it('rejects a backup with unbalanced postings before writing anything', async () => {
@@ -184,16 +267,7 @@ describe('backup round-trip', () => {
 describe('backup round-trip — encrypted', () => {
   it('reconstructs an identical database state after export(passphrase) -> wipe -> import(passphrase)', async () => {
     await seedFullDatabase()
-
-    const before = {
-      accounts: sortById(await db.accounts.toArray()),
-      categories: sortById(await db.categories.toArray()),
-      transactions: sortById(await db.transactions.toArray()),
-      postings: sortById(await db.postings.toArray()),
-      budgets: sortById(await db.budgets.toArray()),
-      exchangeRates: sortById(await db.exchangeRates.toArray()),
-      settings: await db.settings.get('singleton'),
-    }
+    const before = await snapshotAllTables()
 
     const exported = await exportBackup('correcto-caballo-batería-grapa')
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
@@ -206,30 +280,12 @@ describe('backup round-trip — encrypted', () => {
 
     expect(await peekIsEncrypted(file)).toBe(true)
 
-    await Promise.all([
-      db.accounts.clear(),
-      db.categories.clear(),
-      db.transactions.clear(),
-      db.postings.clear(),
-      db.budgets.clear(),
-      db.exchangeRates.clear(),
-      db.settings.clear(),
-    ])
+    await clearAllTables()
 
     const result = await importBackup(file, { passphrase: 'correcto-caballo-batería-grapa' })
     expect(result.checksumMatched).toBe(true)
 
-    const after = {
-      accounts: sortById(await db.accounts.toArray()),
-      categories: sortById(await db.categories.toArray()),
-      transactions: sortById(await db.transactions.toArray()),
-      postings: sortById(await db.postings.toArray()),
-      budgets: sortById(await db.budgets.toArray()),
-      exchangeRates: sortById(await db.exchangeRates.toArray()),
-      settings: await db.settings.get('singleton'),
-    }
-
-    expect(after).toEqual(before)
+    expect(await snapshotAllTables()).toEqual(before)
   })
 
   it('requires a passphrase for an encrypted file, and does not write anything without one', async () => {
@@ -270,15 +326,7 @@ describe('backup round-trip — merge', () => {
     const exportedA = await exportBackup()
     const file = new File([exportedA.blob], exportedA.filename, { type: 'application/json' })
 
-    await Promise.all([
-      db.accounts.clear(),
-      db.categories.clear(),
-      db.transactions.clear(),
-      db.postings.clear(),
-      db.budgets.clear(),
-      db.exchangeRates.clear(),
-      db.settings.clear(),
-    ])
+    await clearAllTables()
 
     // A second, independent dataset — seedFullDatabase() mints fresh ids
     // every call, so this never collides with deviceA's.
@@ -290,10 +338,14 @@ describe('backup round-trip — merge', () => {
       accounts: { added: 1, skipped: 0 },
       categories: { added: 1, skipped: 0 },
       transactions: { added: 1, skipped: 0 },
-      recurringPlans: { added: 0, skipped: 0 },
-      installmentPlans: { added: 0, skipped: 0 },
+      recurringPlans: { added: 1, skipped: 0 },
+      installmentPlans: { added: 1, skipped: 0 },
       budgets: { added: 1, skipped: 0 },
       exchangeRates: { added: 1, skipped: 0 },
+      savingsHoldings: { added: 1, skipped: 0 },
+      investmentAssets: { added: 1, skipped: 0 },
+      investmentHoldings: { added: 1, skipped: 0 },
+      assetPrices: { added: 1, skipped: 0 },
     })
 
     const accountIds = (await db.accounts.toArray()).map((a) => a.id).sort()
@@ -318,11 +370,72 @@ describe('backup round-trip — merge', () => {
       accounts: { added: 0, skipped: 1 },
       categories: { added: 0, skipped: 1 },
       transactions: { added: 0, skipped: 1 },
-      recurringPlans: { added: 0, skipped: 0 },
-      installmentPlans: { added: 0, skipped: 0 },
+      recurringPlans: { added: 0, skipped: 1 },
+      installmentPlans: { added: 0, skipped: 1 },
       budgets: { added: 0, skipped: 1 },
       exchangeRates: { added: 0, skipped: 1 },
+      savingsHoldings: { added: 0, skipped: 1 },
+      investmentAssets: { added: 0, skipped: 1 },
+      investmentHoldings: { added: 0, skipped: 1 },
+      assetPrices: { added: 0, skipped: 1 },
     })
     expect(await db.transactions.count()).toBe(countBefore)
+  })
+})
+
+describe('migration — v1 to v2', () => {
+  it('migrates a v1 backup (no patrimonio tables) to v2 with them empty', () => {
+    const v1Payload = {
+      format: 'moneta-backup' as const,
+      version: 1 as const,
+      exportedAt: new Date().toISOString(),
+      app: { name: 'moneta', version: '0.0.0' },
+      checksum: 'irrelevant-for-this-test',
+      data: {
+        accounts: [],
+        categories: [],
+        transactions: [],
+        postings: [],
+        recurringPlans: [],
+        installmentPlans: [],
+        budgets: [],
+        exchangeRates: [],
+      },
+    }
+
+    const migrated = migrateToLatest(v1Payload)
+
+    expect(migrated.savingsHoldings).toEqual([])
+    expect(migrated.investmentAssets).toEqual([])
+    expect(migrated.investmentHoldings).toEqual([])
+    expect(migrated.assetPrices).toEqual([])
+  })
+
+  it('importing a v1 .finance file (via importBackup) lands with the patrimonio tables empty', async () => {
+    const v1Payload = {
+      format: 'moneta-backup' as const,
+      version: 1 as const,
+      exportedAt: new Date().toISOString(),
+      app: { name: 'moneta', version: '0.0.0' },
+      checksum: 'irrelevant-for-this-test',
+      data: {
+        accounts: [],
+        categories: [],
+        transactions: [],
+        postings: [],
+        recurringPlans: [],
+        installmentPlans: [],
+        budgets: [],
+        exchangeRates: [],
+      },
+    }
+    const file = new File([JSON.stringify(v1Payload)], 'old.finance', { type: 'application/json' })
+
+    await importBackup(file)
+
+    expect(await db.savingsHoldings.count()).toBe(0)
+    expect(await db.investmentAssets.count()).toBe(0)
+    expect(await db.investmentHoldings.count()).toBe(0)
+    expect(await db.assetPrices.count()).toBe(0)
   })
 })

@@ -61,7 +61,7 @@ export function AccountFormDialog({ open, account, onOpenChange }: AccountFormDi
         ? {
             name: account.name,
             type: account.type,
-            currency: account.currency as AccountFormValues['currency'],
+            currency: account.currency,
             openingBalance: formatMoney(money(account.openingBalance, account.currency)).replace(
               /[^\d,.-]/g,
               '',

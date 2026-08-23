@@ -91,6 +91,28 @@ cross-currency (ARS → USD).
   todavía `projected` — ver ADR en `docs/DECISIONS.md`.
 - Ruta `/planes` con tabs Recurrentes/Cuotas, ítem nuevo en el nav principal.
 
+## Etapa 6 — Patrimonio (en progreso)
+
+- **6A — Modelo base + Ahorros + Resumen (hecho).** Entidades nuevas (`SavingsHolding`,
+  `InvestmentAsset`, `InvestmentHolding`, `AssetPrice`) y campos opcionales sobre
+  `ExchangeRate`/`Settings`, todo en `db.version(2)` de Dexie (primera versión aditiva del
+  repo) y en `schemas/v2.ts` del backup, con su migración `v1_to_v2.ts`. `EUR` se suma a
+  las monedas soportadas. `domain/networth/valuation.ts:valuateNetWorth` consolida
+  Cuentas + Ahorros + Inversiones en la moneda de display elegida por el usuario
+  (`Settings.displayCurrency`), sin tocar los importes guardados — misma política de
+  "falta una tasa → se excluye y se cuenta" que Reportes
+  (`MissingRateBanner`). `domain/currency/rates.ts:resolveRate` suma triangulación por
+  USD como último recurso y preferencia por `profile` (referencia de dólar). Ruta
+  `/patrimonio` con tabs Resumen/Ahorros, ítem nuevo en el nav principal — ver ADRs en
+  `docs/DECISIONS.md`.
+- **6B — Inversiones (activos, posiciones, precio manual)**: pendiente. El modelo y los
+  repositories ya existen (nacieron con 6A); falta la UI para crear activos/posiciones y
+  el tab Inversiones en `/patrimonio`.
+- **6C — Cotizaciones automáticas**: pendiente. `ExchangeRate`/`Settings` ya tienen los
+  campos (`source`, `profile`, `autoQuotesEnabled`); falta la capa de proveedores
+  (`ExchangeRateProvider`/`AssetPriceProvider`), el refresh al abrir la app, el botón
+  "Actualizar ahora" y el tab Cotizaciones.
+
 ## Backlog / no priorizado
 
 - ~~Code-splitting por ruta~~ (hecho) — `src/app/router.tsx` usa `lazy` de React Router

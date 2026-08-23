@@ -1,3 +1,3 @@
 export * from './export'
 export * from './import'
-export * from './schemas/v1'
+export * from './schemas/v2'

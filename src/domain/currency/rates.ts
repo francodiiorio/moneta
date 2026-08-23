@@ -12,32 +12,76 @@ export class MissingRateError extends Error {
   }
 }
 
+/** Narrows `pairs` to the rate(s) matching `profile` (e.g. 'mep', 'blue')
+ *  when one is requested and at least one such rate exists; otherwise
+ *  falls back to rates with no `profile` at all — a rate loaded before
+ *  the field existed, or entered as a generic one-off, still matches any
+ *  request. A profile request never silently falls back to a *different*
+ *  profile's rate. */
+function candidatesFor(pairs: readonly ExchangeRate[], profile: string | undefined): readonly ExchangeRate[] {
+  if (profile) {
+    const withProfile = pairs.filter((r) => r.profile === profile)
+    if (withProfile.length > 0) return withProfile
+  }
+  return pairs.filter((r) => r.profile === undefined)
+}
+
+function directOrReciprocal(
+  rates: readonly ExchangeRate[],
+  from: CurrencyCode,
+  to: CurrencyCode,
+  date: string,
+  profile: string | undefined,
+): number | undefined {
+  if (from === to) return 1
+
+  const direct = latestOnOrBefore(
+    candidatesFor(
+      rates.filter((r) => r.from === from && r.to === to),
+      profile,
+    ),
+    date,
+  )
+  if (direct) return direct.rate
+
+  const reciprocal = latestOnOrBefore(
+    candidatesFor(
+      rates.filter((r) => r.from === to && r.to === from),
+      profile,
+    ),
+    date,
+  )
+  if (reciprocal) return 1 / reciprocal.rate
+
+  return undefined
+}
+
 /**
  * Finds the applicable rate for `from -> to` at `date`: the most recent
- * rate on or before `date`. Falls back to the reciprocal of a `to ->
- * from` rate if no direct rate exists. Returns undefined if neither is
- * available — callers decide how to handle a missing rate (the domain
- * layer never invents one).
+ * rate on or before `date` (direct, or the reciprocal of `to -> from` if
+ * no direct rate exists), preferring `profile` when given (see
+ * `candidatesFor`). If neither side has a usable rate, triangulates
+ * through USD as a last resort — e.g. EUR -> ARS via EUR -> USD and
+ * USD -> ARS — since that's the one pivot currency the app assumes
+ * everyone has *some* rate against. Returns undefined only if even that
+ * fails; callers decide how to handle a missing rate (the domain layer
+ * never invents one).
  */
 export function resolveRate(
   rates: readonly ExchangeRate[],
   from: CurrencyCode,
   to: CurrencyCode,
   date: string,
+  profile?: string,
 ): number | undefined {
-  if (from === to) return 1
+  const direct = directOrReciprocal(rates, from, to, date, profile)
+  if (direct !== undefined) return direct
 
-  const direct = latestOnOrBefore(
-    rates.filter((r) => r.from === from && r.to === to),
-    date,
-  )
-  if (direct) return direct.rate
-
-  const reciprocal = latestOnOrBefore(
-    rates.filter((r) => r.from === to && r.to === from),
-    date,
-  )
-  if (reciprocal) return 1 / reciprocal.rate
+  if (from !== 'USD' && to !== 'USD') {
+    const toUsd = directOrReciprocal(rates, from, 'USD', date, profile)
+    const fromUsd = directOrReciprocal(rates, 'USD', to, date, profile)
+    if (toUsd !== undefined && fromUsd !== undefined) return toUsd * fromUsd
+  }
 
   return undefined
 }
@@ -58,9 +102,10 @@ export function convert(
   toCurrency: CurrencyCode,
   rates: readonly ExchangeRate[],
   date: string,
+  profile?: string,
 ): Money {
   if (amount.currency === toCurrency) return amount
-  const rate = resolveRate(rates, amount.currency, toCurrency, date)
+  const rate = resolveRate(rates, amount.currency, toCurrency, date, profile)
   if (rate === undefined) {
     throw new MissingRateError(
       `No exchange rate available for ${amount.currency} -> ${toCurrency} on or before ${date}`,

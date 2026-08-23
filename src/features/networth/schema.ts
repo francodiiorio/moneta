@@ -1,17 +1,17 @@
 import { z } from 'zod'
-import { accountTypeSchema } from '@/domain/entities'
 import { CURRENCIES } from '@/domain/money'
 
-export const ACCOUNT_CURRENCIES = Object.keys(CURRENCIES)
+export const NETWORTH_CURRENCIES = Object.keys(CURRENCIES)
 
-export const accountFormSchema = z.object({
+export const savingsFormSchema = z.object({
   name: z.string().min(1, 'El nombre es obligatorio').max(60),
-  type: accountTypeSchema,
   currency: z.string().min(1, 'Elegí una moneda'),
-  openingBalance: z
+  amount: z
     .string()
     .min(1, 'Ingresá un monto')
     .refine((v) => /\d/.test(v), { message: 'Ingresá un monto válido' }),
+  location: z.string().max(60).optional(),
+  notes: z.string().max(280).optional(),
 })
 
-export type AccountFormValues = z.infer<typeof accountFormSchema>
+export type SavingsFormValues = z.infer<typeof savingsFormSchema>

@@ -97,17 +97,73 @@ con `startsOn` posterior en vez de editar el existente.
 
 ### ExchangeRate
 
-Tasas cargadas manualmente por el usuario, nunca por una API externa (ver "Privacidad" en
-`CLAUDE.md`). `src/domain/currency/rates.ts` resuelve la tasa vigente para una fecha como
+Tasas cargadas manualmente por el usuario **o** traídas por un proveedor automático
+opt-in (ver ADR "Cotizaciones automáticas, opt-in" en `docs/DECISIONS.md`).
+`src/domain/currency/rates.ts:resolveRate` resuelve la tasa vigente para una fecha como
 "la más reciente con `date <= fecha buscada`", con fallback al recíproco de la tasa
-inversa si no hay una directa.
+inversa si no hay una directa, y — última instancia — triangulación por USD si tampoco
+hay una tasa directa/recíproca para el par pedido (ej. EUR→ARS vía EUR→USD y USD→ARS).
+
+`profile`, `source` y `capturedAt` son todos opcionales (una tasa cargada antes de que
+existieran, o migrada desde un backup v1, no los tiene). `profile` identifica la
+referencia (`'oficial' | 'mep' | 'ccl' | 'blue' | 'cripto' | 'mayorista' | 'tarjeta'` o
+un string propio) — necesario porque en Argentina "1 USD = X ARS" no es una sola cifra.
+`resolveRate` acepta un `profile` opcional: si se pide uno y existe, lo usa; si no, cae a
+una tasa sin `profile` (el comodín histórico), nunca a la de otra referencia distinta.
+`source` distingue `'manual'` de `'automatic'` sólo para mostrarlo en la UI de
+Cotizaciones — no cambia cómo se resuelve la tasa vigente (la más reciente gana, sea cual
+sea su fuente, así que una carga manual posterior a un fetch automático la reemplaza sin
+mecanismo especial).
+
+### SavingsHolding
+
+Ahorros que no pasan por el ledger: plata que el usuario tiene pero no registra como
+movimientos (efectivo, una caja de ahorro que no concilia). `amount` es el importe
+completo en `currency` — no hay concepto de "postings" ni de historial de movimientos
+para un ahorro, es un valor que se edita directamente.
+
+### InvestmentAsset / InvestmentHolding / AssetPrice
+
+Tres entidades separadas a propósito (ver ADR "Modelo de dominio para inversiones" en
+`docs/DECISIONS.md`) — nunca se modela una inversión como si fuera simplemente una
+moneda:
+
+- **`InvestmentAsset`** es el instrumento (SPY, un CEDEAR, Bitcoin) — símbolo, tipo
+  (`investmentAssetTypeSchema`: `etf | stock | cedear | bond | fund | crypto | other`), y
+  la moneda en la que cotiza. `priceMode` (`'manual' | 'auto'`) decide si un refresh
+  automático de cotizaciones lo toca.
+- **`InvestmentHolding`** es la posición del usuario: cuánto tiene de ese activo.
+  `quantity` es un entero escalado (`domain/decimal/quantity.ts:Quantity`, 8 decimales,
+  mismo espíritu que `Minor` para plata) — nunca un float, porque una cantidad
+  fraccionaria de un activo alimenta un cálculo monetario (`quantity × precio`).
+- **`AssetPrice`** es el precio del activo en una fecha, **append-only**: cada
+  actualización (manual o automática) inserta una fila nueva, nunca pisa la anterior — da
+  el historial de precios gratis y permite que una carga manual y el último fetch
+  automático convivan sin caso especial (la más reciente por `date`/`capturedAt` gana).
+
+El valor de una posición nunca es un atajo directo "activo → moneda de display": siempre
+`quantity → domain/decimal:valuePosition(quantity, price)` (valor en la moneda del
+activo) `→ domain/currency:convert(...)` (moneda de display) —
+`domain/networth/valuation.ts:valuateNetWorth` es la única función que hace este cálculo.
 
 ### Settings
 
 Documento único (`id: 'singleton'`). `baseCurrency` es la moneda a la que se consolidan
-los totales de patrimonio/reportes.
+los reportes (Dashboard/Reportes). `displayCurrency` y `rateProfile` son la preferencia
+independiente de patrimonio (moneda de visualización y qué referencia de tasa usar para
+valuarlo) — si no están seteados, caen a `baseCurrency` y a "sin profile" respectivamente.
+`autoQuotesEnabled` (default `false`) es el opt-in de cotizaciones automáticas;
+`quotesRefreshedAt` es sólo para la UI ("última actualización hace X").
 
-## Índices Dexie (versión 1)
+Los cuatro son opcionales — agregados sobre un documento que ya existía, así que una fila
+persistida antes de que existieran no los tiene.
+`database/repositories/settings.repo.ts:getSettings()` los completa con
+`{ ...DEFAULT_SETTINGS, ...existing }` en vez de `existing ?? DEFAULT_SETTINGS`,
+justamente para que una fila vieja herede los defaults de campos que no tenía.
+
+## Índices Dexie
+
+**Versión 1:**
 
 ```
 accounts:          id, name, type, currency, isArchived, order
@@ -119,6 +175,15 @@ installmentPlans:  id, accountId, firstDueDate
 budgets:           id, categoryId, [categoryId+startsOn]
 exchangeRates:     id, [from+to+date], date
 settings:          id
+```
+
+**Versión 2** (patrimonio — tablas nuevas, todas nacen vacías, sin `.upgrade()`):
+
+```
+savingsHoldings:     id, currency
+investmentAssets:    id, type, symbol
+investmentHoldings:  id, assetId
+assetPrices:         id, [assetId+date], assetId, date
 ```
 
 Dexie omite del índice las claves `undefined`, así que el índice compuesto
@@ -135,30 +200,37 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
 - Un cambio de forma (agregar un índice, cambiar un campo) es una versión nueva, con su
   `.upgrade()` si hace falta migrar datos existentes.
 - Bajar `LATEST_VERSION` o reordenar versiones corrompe las bases de usuarios existentes.
+- Agregar una tabla completamente nueva (el caso de la versión 2) no necesita
+  `.upgrade()` — Dexie la crea vacía; sólo hace falta uno si una versión nueva transforma
+  datos que ya existían en una tabla previa.
 
 ## Formato de backup (independiente del schema de Dexie)
 
 ```jsonc
 {
   "format": "moneta-backup",
-  "version": 1,
+  "version": 2,
   "exportedAt": "2026-08-23T14:03:11.000Z",
   "app": { "name": "moneta", "version": "0.0.0" },
   "checksum": "sha256 hex sobre `data` canonicalizado",
   "data": {
     "accounts": [], "categories": [], "transactions": [], "postings": [],
     "recurringPlans": [], "installmentPlans": [], "budgets": [],
-    "exchangeRates": [], "settings": {}
+    "exchangeRates": [], "settings": {},
+    "savingsHoldings": [], "investmentAssets": [], "investmentHoldings": [],
+    "assetPrices": []
   }
 }
 ```
 
 Reglas (ver `src/features/backups/`):
 
-- Cada versión tiene su propio Zod schema (`schemas/v1.ts`, futuro `schemas/v2.ts`, ...).
+- Cada versión tiene su propio Zod schema (`schemas/v1.ts`, `schemas/v2.ts`, ...).
   **Un schema publicado no se edita nunca** — un archivo `.finance` viejo tiene que poder
   importarse siempre. Un cambio de formato agrega una versión nueva más su migración
-  (`migrations/vN_to_vN+1.ts`).
+  (`migrations/vN_to_vN+1.ts`). La v2 (patrimonio) migra un v1 agregando las cuatro tablas
+  nuevas como arrays vacíos (`migrations/v1_to_v2.ts`) — un `.finance` viejo se sigue
+  pudiendo importar siempre, sólo que sin ahorros/inversiones porque nunca existieron.
 - `migrateToLatest()` corre la cadena hasta la versión más reciente y falla explícito si
   el archivo es de una versión más nueva que la app instalada (mensaje claro, no un
   crash).
@@ -208,7 +280,15 @@ localmente** — ver el ADR en `docs/DECISIONS.md` para el porqué.
   duplicada, esto no es sólo cosmético — `resolveRate()` puede terminar usando cualquiera
   de las dos de forma no determinística si tienen valores distintos, afectando una
   conversión de moneda en reportes/patrimonio; conviene revisar `/ajustes/tasas` después
-  de un merge si se cargaron tasas manualmente en ambos dispositivos).
+  de un merge si se cargaron tasas manualmente en ambos dispositivos). `AssetPrice` tiene
+  la misma limitación (sin clave natural `(assetId, date)`, `generateId()` produce IDs
+  distintos en cada dispositivo para lo que conceptualmente es "el mismo precio del mismo
+  día") pero sin el problema de no-determinismo: `assetPrices.repo.ts:latestAssetPrices`
+  siempre elige la fila con `date` más reciente y desempata por `capturedAt`, así que el
+  resultado es estable — el costo es sólo acumular filas de precio duplicadas/en
+  conflicto para el mismo día tras un merge entre dispositivos, no una valuación que
+  cambia sola. Se revisita si Etapa 6C (cotizaciones automáticas, refrescos diarios en
+  cada dispositivo abierto) hace que este caso se vuelva frecuente.
 
 ### Cifrado opcional (sobre independiente del formato de datos)
 

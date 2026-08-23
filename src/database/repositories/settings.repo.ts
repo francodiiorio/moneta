@@ -8,11 +8,15 @@ const DEFAULT_SETTINGS: Settings = {
   firstDayOfMonth: 1,
   theme: 'system',
   schemaVersion: 1,
+  autoQuotesEnabled: false,
 }
 
 export async function getSettings(): Promise<Settings> {
   const existing = await db.settings.get('singleton')
-  return existing ?? DEFAULT_SETTINGS
+  // Merge, not `?? DEFAULT_SETTINGS`: a row persisted before a field
+  // existed (e.g. autoQuotesEnabled) would otherwise never pick up its
+  // default just because *some* fields are already saved.
+  return existing ? { ...DEFAULT_SETTINGS, ...existing } : DEFAULT_SETTINGS
 }
 
 export async function updateSettings(patch: Partial<Omit<Settings, 'id'>>): Promise<Settings> {
