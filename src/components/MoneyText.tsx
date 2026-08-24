@@ -15,7 +15,7 @@ export function MoneyText({ value, className, signColor = false }: MoneyTextProp
   return (
     <span
       className={cn(
-        'tabular-nums',
+        'font-mono tabular-nums',
         signColor && isPositive(value) && 'text-positive',
         signColor && isNegative(value) && 'text-negative',
         className,

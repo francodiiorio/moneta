@@ -1,11 +1,21 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* Self-hosted (no CDN — see CLAUDE.md "Privacidad"): bundled by Vite from
+   node_modules, never fetched from fonts.googleapis.com at runtime. */
+@import '@fontsource/space-grotesk/400.css';
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/600.css';
+@import '@fontsource/space-grotesk/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
+  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -36,72 +46,74 @@
 }
 
 :root {
-  --radius: 0.75rem;
+  /* Denser, sharper corners than the previous 0.75rem — part of the
+     "fintech densa" direction (see docs/DECISIONS.md). */
+  --radius: 0.5rem;
 
-  --background: oklch(0.99 0.002 260);
-  --foreground: oklch(0.18 0.01 260);
+  --background: oklch(0.995 0.002 264);
+  --foreground: oklch(0.16 0.012 264);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.01 260);
+  --card-foreground: oklch(0.16 0.012 264);
 
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.01 260);
+  --popover-foreground: oklch(0.16 0.012 264);
 
-  --primary: oklch(0.4 0.16 275);
+  --primary: oklch(0.44 0.17 275);
   --primary-foreground: oklch(0.98 0.01 275);
 
-  --secondary: oklch(0.96 0.005 260);
-  --secondary-foreground: oklch(0.25 0.01 260);
+  --secondary: oklch(0.955 0.006 264);
+  --secondary-foreground: oklch(0.24 0.012 264);
 
-  --muted: oklch(0.96 0.005 260);
-  --muted-foreground: oklch(0.5 0.01 260);
+  --muted: oklch(0.955 0.006 264);
+  --muted-foreground: oklch(0.48 0.014 264);
 
-  --accent: oklch(0.94 0.02 275);
-  --accent-foreground: oklch(0.3 0.08 275);
+  --accent: oklch(0.93 0.025 275);
+  --accent-foreground: oklch(0.3 0.09 275);
 
-  --destructive: oklch(0.55 0.18 25);
+  --destructive: oklch(0.55 0.19 25);
   --destructive-foreground: oklch(0.98 0.01 25);
 
-  --border: oklch(0.92 0.005 260);
-  --input: oklch(0.92 0.005 260);
-  --ring: oklch(0.6 0.1 275);
+  --border: oklch(0.9 0.006 264);
+  --input: oklch(0.9 0.006 264);
+  --ring: oklch(0.58 0.12 275);
 
   /* Financial semantics: muted, not neon — legible without shouting. */
-  --positive: oklch(0.48 0.1 155);
-  --negative: oklch(0.5 0.12 25);
+  --positive: oklch(0.46 0.11 155);
+  --negative: oklch(0.52 0.13 25);
 }
 
 .dark {
-  --background: oklch(0.16 0.008 260);
-  --foreground: oklch(0.93 0.005 260);
+  --background: oklch(0.14 0.012 264);
+  --foreground: oklch(0.94 0.006 264);
 
-  --card: oklch(0.19 0.008 260);
-  --card-foreground: oklch(0.93 0.005 260);
+  --card: oklch(0.185 0.014 264);
+  --card-foreground: oklch(0.94 0.006 264);
 
-  --popover: oklch(0.19 0.008 260);
-  --popover-foreground: oklch(0.93 0.005 260);
+  --popover: oklch(0.185 0.014 264);
+  --popover-foreground: oklch(0.94 0.006 264);
 
-  --primary: oklch(0.75 0.13 275);
-  --primary-foreground: oklch(0.16 0.02 275);
+  --primary: oklch(0.72 0.16 275);
+  --primary-foreground: oklch(0.14 0.02 275);
 
-  --secondary: oklch(0.24 0.008 260);
-  --secondary-foreground: oklch(0.93 0.005 260);
+  --secondary: oklch(0.22 0.012 264);
+  --secondary-foreground: oklch(0.94 0.006 264);
 
-  --muted: oklch(0.24 0.008 260);
-  --muted-foreground: oklch(0.65 0.01 260);
+  --muted: oklch(0.22 0.012 264);
+  --muted-foreground: oklch(0.6 0.016 264);
 
-  --accent: oklch(0.28 0.03 275);
-  --accent-foreground: oklch(0.88 0.03 275);
+  --accent: oklch(0.26 0.035 275);
+  --accent-foreground: oklch(0.82 0.06 275);
 
-  --destructive: oklch(0.6 0.17 25);
-  --destructive-foreground: oklch(0.16 0.01 25);
+  --destructive: oklch(0.62 0.18 25);
+  --destructive-foreground: oklch(0.15 0.01 25);
 
-  --border: oklch(0.28 0.008 260 / 60%);
-  --input: oklch(0.28 0.008 260 / 60%);
-  --ring: oklch(0.55 0.1 275);
+  --border: oklch(0.25 0.014 264 / 70%);
+  --input: oklch(0.25 0.014 264 / 70%);
+  --ring: oklch(0.58 0.12 275);
 
-  --positive: oklch(0.68 0.11 155);
-  --negative: oklch(0.68 0.13 25);
+  --positive: oklch(0.74 0.15 155);
+  --negative: oklch(0.72 0.16 25);
 }
 
 @layer base {
