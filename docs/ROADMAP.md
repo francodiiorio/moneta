@@ -134,6 +134,17 @@ cross-currency (ARS → USD).
 Con 6C cerrada, el módulo de Patrimonio queda completo: Resumen, Ahorros, Inversiones y
 Cotizaciones, todo en `/patrimonio`.
 
+**Post-6C — Dashboard consolidado con Patrimonio.** La tarjeta "Patrimonio total" del
+Dashboard usaba `features/reports/service.ts:getCurrentNetWorth` — una función de la
+Etapa 3, anterior al módulo de Patrimonio, que sólo suma Cuentas. Mostraba un número
+distinto al de `/patrimonio` (que sí suma Cuentas + Ahorros + Inversiones) bajo el mismo
+nombre. El Dashboard ahora usa `features/networth/service.ts:getNetWorthSummary` — la
+misma fuente que `/patrimonio` — así que los dos siempre coinciden. **Fuera de alcance a
+propósito:** el gráfico "Evolución del patrimonio" de Reportes (últimos 6 meses) sigue
+siendo sólo-Cuentas — extenderlo requiere agregar soporte de fecha pasada a Ahorros/
+Inversiones, que hoy no existe (`assetPricesRepo`/`accountsRepo` sí lo tienen,
+`savingsHoldingsRepo`/`investmentsRepo` no).
+
 ## Backlog / no priorizado
 
 - ~~Code-splitting por ruta~~ (hecho) — `src/app/router.tsx` usa `lazy` de React Router

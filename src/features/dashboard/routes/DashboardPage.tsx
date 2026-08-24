@@ -6,7 +6,7 @@ import { MoneyText } from '@/components/MoneyText'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { currentMonthStamp, formatMonthLabel } from '@/lib/dates'
 import { useMonthSummary } from '@/features/reports/hooks/useMonthSummary'
-import { useCurrentNetWorth } from '@/features/reports/hooks/useCurrentNetWorth'
+import { useNetWorthSummary } from '@/features/networth/hooks/useNetWorthSummary'
 import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithProgress'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
 import { useHasAccounts } from '../hooks/useHasAccounts'
@@ -17,7 +17,10 @@ export function DashboardPage() {
   const hasAccounts = useHasAccounts()
   const month = currentMonthStamp()
   const summary = useMonthSummary(month)
-  const netWorth = useCurrentNetWorth()
+  // Same source of truth as /patrimonio — Cuentas + Ahorros + Inversiones,
+  // not just Cuentas (features/reports:getCurrentNetWorth predates the
+  // Patrimonio module and never learned about the other two).
+  const netWorth = useNetWorthSummary()
   const budgets = useBudgetsWithProgress(month)
   const budgetsToReview = budgets?.items.filter((b) => b.progress.percentUsed >= BUDGET_ALERT_THRESHOLD).slice(0, 3)
 
@@ -78,7 +81,7 @@ export function DashboardPage() {
           <CardContent>
             <p className="text-xs text-muted-foreground">Patrimonio total</p>
             <p className="mt-1 text-xl font-semibold">
-              {netWorth ? <MoneyText value={netWorth.netWorth} /> : <span className="text-muted-foreground">—</span>}
+              {netWorth ? <MoneyText value={netWorth.total} /> : <span className="text-muted-foreground">—</span>}
             </p>
           </CardContent>
         </Card>
