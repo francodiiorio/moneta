@@ -29,3 +29,28 @@ test('Dashboard "Patrimonio total" includes savings, matching /patrimonio', asyn
   await expect(page.getByText('Patrimonio total', { exact: true })).toBeVisible()
   await expect(page.getByText(/1[.,]500,00/).first()).toBeVisible()
 })
+
+test('Dashboard shows expense-by-category chart and a recent expenses list', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Banco Prueba')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByLabel('Descripción').fill('Supermercado')
+  await page.getByLabel('Monto').fill('1500')
+  await page.getByRole('combobox', { name: 'Cuenta' }).click()
+  await page.getByRole('option', { name: 'Banco Prueba' }).click()
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Comida' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/')
+  await expect(page.getByText('Gasto por categoría este mes', { exact: true })).toBeVisible()
+  await expect(page.getByText('Últimos gastos del mes', { exact: true })).toBeVisible()
+  await expect(page.getByText('Comida · Banco Prueba')).toBeVisible()
+  await expect(page.getByText('Supermercado')).toBeVisible()
+})

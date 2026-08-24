@@ -1,12 +1,17 @@
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { formatMoney } from '@/domain/money'
-import type { CategoryExpense } from '../service'
+import { formatMoney, type Money } from '@/domain/money'
 
-interface ExpenseByCategoryChartProps {
-  items: CategoryExpense[]
+export interface CategoryAmount {
+  categoryId: string
+  categoryName: string
+  amount: Money
 }
 
-interface ChartRow extends CategoryExpense {
+interface ExpenseByCategoryChartProps {
+  items: CategoryAmount[]
+}
+
+interface ChartRow extends CategoryAmount {
   amountValue: number
   amountLabel: string
 }

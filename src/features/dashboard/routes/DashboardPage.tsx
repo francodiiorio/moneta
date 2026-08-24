@@ -4,12 +4,16 @@ import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ExpenseByCategoryChart } from '@/components/ExpenseByCategoryChart'
+import { MissingRateBanner } from '@/components/MissingRateBanner'
 import { currentMonthStamp, formatMonthLabel } from '@/lib/dates'
 import { useMonthSummary } from '@/features/reports/hooks/useMonthSummary'
+import { useExpenseByCategory } from '@/features/reports/hooks/useExpenseByCategory'
 import { useNetWorthSummary } from '@/features/networth/hooks/useNetWorthSummary'
 import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithProgress'
-import { MissingRateBanner } from '@/components/MissingRateBanner'
 import { useHasAccounts } from '../hooks/useHasAccounts'
+import { useRecentExpenses } from '../hooks/useRecentExpenses'
+import { RecentExpensesList } from '../components/RecentExpensesList'
 
 const BUDGET_ALERT_THRESHOLD = 90
 
@@ -21,6 +25,8 @@ export function DashboardPage() {
   // not just Cuentas (features/reports:getCurrentNetWorth predates the
   // Patrimonio module and never learned about the other two).
   const netWorth = useNetWorthSummary()
+  const expenseByCategory = useExpenseByCategory(month)
+  const recentExpenses = useRecentExpenses(month)
   const budgets = useBudgetsWithProgress(month)
   const budgetsToReview = budgets?.items.filter((b) => b.progress.percentUsed >= BUDGET_ALERT_THRESHOLD).slice(0, 3)
 
@@ -111,6 +117,34 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Gasto por categoría este mes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {expenseByCategory === undefined ? (
+              <div className="h-48 animate-pulse rounded-lg bg-muted" />
+            ) : (
+              <ExpenseByCategoryChart items={expenseByCategory.items} />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Últimos gastos del mes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentExpenses === undefined ? (
+              <div className="h-48 animate-pulse rounded-lg bg-muted" />
+            ) : (
+              <RecentExpensesList items={recentExpenses} />
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

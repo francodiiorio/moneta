@@ -4,14 +4,14 @@ import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ExpenseByCategoryChart } from '@/components/ExpenseByCategoryChart'
+import { MissingRateBanner } from '@/components/MissingRateBanner'
 import { formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { useReportsUiStore } from '../store'
 import { useMonthSummary } from '../hooks/useMonthSummary'
 import { useExpenseByCategory } from '../hooks/useExpenseByCategory'
 import { useNetWorthHistory } from '../hooks/useNetWorthHistory'
-import { ExpenseByCategoryChart } from '../components/ExpenseByCategoryChart'
 import { NetWorthChart } from '../components/NetWorthChart'
-import { MissingRateBanner } from '@/components/MissingRateBanner'
 
 export function ReportsPage() {
   const month = useReportsUiStore((s) => s.month)
