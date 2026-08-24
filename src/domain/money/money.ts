@@ -119,6 +119,25 @@ export function moneyFromNumber(value: number, currency: CurrencyCode): Money {
   return money(roundHalfUp(value * 10 ** info.decimals), currency)
 }
 
+/** Percent change from `previous` to `current`, for display only (a
+ *  "+12% vs. mes anterior" badge) — never stored or fed back into a
+ *  monetary calculation, same exception as `formatMoney`. Returns
+ *  `undefined` when `previous` is zero: "up 100%", "up infinitely",
+ *  and "up from nothing" all round to the same unhelpful number, so
+ *  callers should render nothing rather than a misleading percentage.
+ *  Meaningful only for non-negative magnitudes (e.g. income, expense
+ *  totals) — a signed amount that can cross zero (e.g. net balance)
+ *  makes the sign of the result flip in confusing ways. */
+export function percentChange(previous: Money, current: Money): number | undefined {
+  assertSameCurrency(previous, current)
+  invariant(
+    previous.amount >= 0 && current.amount >= 0,
+    'percentChange expects non-negative magnitudes (e.g. income/expense totals), not a signed balance',
+  )
+  if (previous.amount === 0) return undefined
+  return ((current.amount - previous.amount) / previous.amount) * 100
+}
+
 /** Formats Money for display only. Never feed the result back into
  *  storage or arithmetic — the division below is float-precision. */
 export function formatMoney(value: Money): string {

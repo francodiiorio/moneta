@@ -11,6 +11,7 @@ import {
   moneyFromNumber,
   negate,
   parseAmount,
+  percentChange,
   roundHalfUp,
   sub,
   sumMoney,
@@ -138,5 +139,33 @@ describe('formatMoney', () => {
     // 'AR' isn't a well-formed 3-letter ISO 4217 code, so Intl throws.
     const formatted = formatMoney(money(1050, 'AR'))
     expect(formatted).toBe('AR 10.50')
+  })
+})
+
+describe('percentChange', () => {
+  it('computes a positive change', () => {
+    expect(percentChange(money(1000, 'ARS'), money(1200, 'ARS'))).toBe(20)
+  })
+
+  it('computes a negative change', () => {
+    expect(percentChange(money(1000, 'ARS'), money(800, 'ARS'))).toBe(-20)
+  })
+
+  it('returns 0 for no change', () => {
+    expect(percentChange(money(1000, 'ARS'), money(1000, 'ARS'))).toBe(0)
+  })
+
+  it('returns undefined when previous is zero, instead of dividing by zero', () => {
+    expect(percentChange(money(0, 'ARS'), money(500, 'ARS'))).toBeUndefined()
+    expect(percentChange(money(0, 'ARS'), money(0, 'ARS'))).toBeUndefined()
+  })
+
+  it('rejects comparing across currencies', () => {
+    expect(() => percentChange(money(1000, 'ARS'), money(10, 'USD'))).toThrow(/currencies/)
+  })
+
+  it('rejects a negative amount, e.g. a signed net balance instead of a non-negative total', () => {
+    expect(() => percentChange(money(-1000, 'ARS'), money(-500, 'ARS'))).toThrow(/non-negative/)
+    expect(() => percentChange(money(1000, 'ARS'), money(-500, 'ARS'))).toThrow(/non-negative/)
   })
 })

@@ -4,14 +4,12 @@ import { formatShortDate } from '@/lib/dates'
 import type { TransactionListItem } from '@/features/transactions/service'
 
 interface RecentExpensesListProps {
+  /** Non-empty — the caller gates rendering on having data (see
+   *  `hasRecentExpenses` in `DashboardPage`), so there's no empty state here. */
   items: TransactionListItem[]
 }
 
 export function RecentExpensesList({ items }: RecentExpensesListProps) {
-  if (items.length === 0) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">Sin gastos este mes.</p>
-  }
-
   return (
     <div className="flex flex-col">
       {items.map((item) => (

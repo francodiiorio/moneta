@@ -6,7 +6,9 @@ import { MoneyText } from '@/components/MoneyText'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ExpenseByCategoryChart } from '@/components/ExpenseByCategoryChart'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
-import { currentMonthStamp, formatMonthLabel } from '@/lib/dates'
+import { cn } from '@/lib/cn'
+import { currentMonthStamp, formatMonthLabel, shiftMonth } from '@/lib/dates'
+import { percentChange } from '@/domain/money'
 import { useMonthSummary } from '@/features/reports/hooks/useMonthSummary'
 import { useExpenseByCategory } from '@/features/reports/hooks/useExpenseByCategory'
 import { useNetWorthSummary } from '@/features/networth/hooks/useNetWorthSummary'
@@ -14,6 +16,7 @@ import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithP
 import { useHasAccounts } from '../hooks/useHasAccounts'
 import { useRecentExpenses } from '../hooks/useRecentExpenses'
 import { RecentExpensesList } from '../components/RecentExpensesList'
+import { VariationBadge } from '../components/VariationBadge'
 
 const BUDGET_ALERT_THRESHOLD = 90
 
@@ -21,6 +24,7 @@ export function DashboardPage() {
   const hasAccounts = useHasAccounts()
   const month = currentMonthStamp()
   const summary = useMonthSummary(month)
+  const previousSummary = useMonthSummary(shiftMonth(month, -1))
   // Same source of truth as /patrimonio — Cuentas + Ahorros + Inversiones,
   // not just Cuentas (features/reports:getCurrentNetWorth predates the
   // Patrimonio module and never learned about the other two).
@@ -29,6 +33,13 @@ export function DashboardPage() {
   const recentExpenses = useRecentExpenses(month)
   const budgets = useBudgetsWithProgress(month)
   const budgetsToReview = budgets?.items.filter((b) => b.progress.percentUsed >= BUDGET_ALERT_THRESHOLD).slice(0, 3)
+  const hasCategoryData = expenseByCategory !== undefined && expenseByCategory.items.length > 0
+  const hasRecentExpenses = recentExpenses !== undefined && recentExpenses.length > 0
+
+  const incomeChange =
+    summary && previousSummary ? percentChange(previousSummary.income, summary.income) : undefined
+  const expenseChange =
+    summary && previousSummary ? percentChange(previousSummary.expense, summary.expense) : undefined
 
   const missingRateCount = (summary?.missingRateCount ?? 0) + (netWorth?.missingRateCount ?? 0)
 
@@ -61,6 +72,7 @@ export function DashboardPage() {
             <p className="mt-1 text-xl font-semibold">
               {summary ? <MoneyText value={summary.income} /> : <span className="text-muted-foreground">—</span>}
             </p>
+            {incomeChange !== undefined && <VariationBadge percent={incomeChange} />}
           </CardContent>
         </Card>
         <Card>
@@ -69,6 +81,7 @@ export function DashboardPage() {
             <p className="mt-1 text-xl font-semibold">
               {summary ? <MoneyText value={summary.expense} /> : <span className="text-muted-foreground">—</span>}
             </p>
+            {expenseChange !== undefined && <VariationBadge percent={expenseChange} invert />}
           </CardContent>
         </Card>
         <Card>
@@ -118,33 +131,31 @@ export function DashboardPage() {
         </Card>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Gasto por categoría este mes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {expenseByCategory === undefined ? (
-              <div className="h-48 animate-pulse rounded-lg bg-muted" />
-            ) : (
-              <ExpenseByCategoryChart items={expenseByCategory.items} />
-            )}
-          </CardContent>
-        </Card>
+      {(hasCategoryData || hasRecentExpenses) && (
+        <div className={cn('grid gap-3', hasCategoryData && hasRecentExpenses && 'lg:grid-cols-2')}>
+          {hasCategoryData && expenseByCategory && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Gasto por categoría este mes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ExpenseByCategoryChart items={expenseByCategory.items} />
+              </CardContent>
+            </Card>
+          )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Últimos gastos del mes</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentExpenses === undefined ? (
-              <div className="h-48 animate-pulse rounded-lg bg-muted" />
-            ) : (
-              <RecentExpensesList items={recentExpenses} />
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          {hasRecentExpenses && recentExpenses && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Últimos gastos del mes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RecentExpensesList items={recentExpenses} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   )
 }
