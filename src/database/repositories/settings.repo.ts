@@ -9,6 +9,13 @@ const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   schemaVersion: 1,
   autoQuotesEnabled: false,
+  // Matches the fallback the Cotizaciones select already shows
+  // (`settings.rateProfile ?? 'oficial'`) — without this, that visual
+  // default was never actually persisted, and `candidatesFor` in
+  // domain/currency/rates.ts only matches untagged rates when `profile`
+  // is undefined, so every ARS<->USD conversion silently failed once all
+  // loaded rates carried an explicit profile.
+  rateProfile: 'oficial',
 }
 
 export async function getSettings(): Promise<Settings> {
