@@ -1,8 +1,22 @@
-import { NavLink, Outlet } from 'react-router'
+import { useState } from 'react'
+import { MoreHorizontal } from 'lucide-react'
+import { NavLink, Outlet, useLocation } from 'react-router'
 import { NAV_ITEMS } from '../nav-items'
 import { cn } from '@/lib/cn'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetClose } from '@/components/ui/sheet'
+
+// El bottom nav mobile sólo tiene lugar cómodo para ~5 items sin etiqueta
+// (ver docs de usabilidad mobile: más que eso, los targets se apretujan y
+// se pierde legibilidad). Se muestran los 4 de uso más frecuente y el
+// resto se agrupa en la hoja "Más".
+const MOBILE_PRIMARY_ITEMS = NAV_ITEMS.slice(0, 4)
+const MOBILE_OVERFLOW_ITEMS = NAV_ITEMS.slice(4)
 
 export function AppLayout() {
+  const location = useLocation()
+  const [moreOpen, setMoreOpen] = useState(false)
+  const isOverflowActive = MOBILE_OVERFLOW_ITEMS.some((item) => location.pathname.startsWith(item.to))
+
   return (
     <div className="flex min-h-svh bg-background">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-border px-2.5 py-5 md:flex">
@@ -41,7 +55,7 @@ export function AppLayout() {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-card/95 backdrop-blur md:hidden">
-        {NAV_ITEMS.map((item) => (
+        {MOBILE_PRIMARY_ITEMS.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -57,7 +71,46 @@ export function AppLayout() {
             <item.icon className="size-5" />
           </NavLink>
         ))}
+        <button
+          type="button"
+          aria-label="Más"
+          onClick={() => setMoreOpen(true)}
+          className={cn(
+            'flex flex-1 items-center justify-center py-3',
+            isOverflowActive ? 'text-primary' : 'text-muted-foreground',
+          )}
+        >
+          <MoreHorizontal className="size-5" />
+        </button>
       </nav>
+
+      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        <SheetContent side="bottom" className="rounded-t-xl md:hidden">
+          <SheetHeader>
+            <SheetTitle>Más</SheetTitle>
+          </SheetHeader>
+          <nav className="flex flex-col gap-1 px-4 pb-4">
+            {MOBILE_OVERFLOW_ITEMS.map((item) => (
+              <SheetClose asChild key={item.to}>
+                <NavLink
+                  to={item.to}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-accent text-accent-foreground'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )
+                  }
+                >
+                  <item.icon className="size-4" />
+                  {item.label}
+                </NavLink>
+              </SheetClose>
+            ))}
+          </nav>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
