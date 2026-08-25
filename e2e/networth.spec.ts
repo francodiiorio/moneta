@@ -58,6 +58,39 @@ test('creates an investment asset, a position and a price, and sees the valued t
   await expect(page.getByText(/500[.,]00/).first()).toBeVisible()
 })
 
+test('shows unrealized gain/loss vs. the average cost once both a cost and a price are loaded', async ({ page }) => {
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('SPY Prueba')
+  await page.getByLabel('Símbolo').fill('SPYT')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo').click()
+  await page.getByRole('option', { name: /SPYT/ }).click()
+  await page.getByLabel('Cantidad').fill('5')
+  await page.getByLabel(/Costo promedio/).fill('600')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // No price yet: a costBasis exists but there's nothing to compare it
+  // against, so no gain/loss should render (equivalent case covered at
+  // the unit level in service.test.ts).
+  await expect(page.getByText('Sin precio cargado')).toBeVisible()
+
+  await page.getByTitle('Cargar precio').click()
+  await page.getByLabel(/Precio/).fill('650')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // 5 * (650 - 600) = 250, / (5*600=3000) * 100 = 8.33% -> rounds to 8%.
+  await expect(page.getByText(/\+\$\s?250[.,]00\s?\(\+8%\)/)).toBeVisible()
+})
+
 test('/ajustes/tasas redirects to Patrimonio, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {
   await page.goto('/ajustes/tasas')
   await expect(page).toHaveURL('/patrimonio')

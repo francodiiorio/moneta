@@ -6,6 +6,7 @@ import { createInvestmentAsset, createInvestmentHolding, listInvestmentHoldings 
 import { createAssetPrice } from '@/database/repositories/assetPrices.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
 import { minor, money } from '@/domain/money'
+import { generateId } from '@/lib/ids'
 import {
   createExchangeRateFromForm,
   createInvestmentAssetFromForm,
@@ -221,6 +222,120 @@ describe('getInvestmentHoldingsWithDetails', () => {
     const [item] = await getInvestmentHoldingsWithDetails('ARS')
     expect(item?.nativeValue).toEqual(money(10_00, 'EUR'))
     expect(item?.convertedValue).toBeUndefined()
+  })
+
+  it('computes an unrealized gain when the price is above averageCost', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000, averageCost: 600_00 }) // 5 shares @ 600
+    await createAssetPrice({ assetId: asset.id, price: 650_00, currency: 'USD', date: '2026-08-01', source: 'manual' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('USD')
+    expect(item?.costBasis).toEqual(money(5 * 600_00, 'USD'))
+    expect(item?.gainLoss).toEqual(money(5 * 50_00, 'USD')) // (650-600) * 5
+    expect(item?.gainLossPercent).toBeCloseTo((50 / 600) * 100)
+  })
+
+  it('computes an unrealized loss when the price is below averageCost', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000, averageCost: 600_00 })
+    await createAssetPrice({ assetId: asset.id, price: 500_00, currency: 'USD', date: '2026-08-01', source: 'manual' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('USD')
+    expect(item?.gainLoss).toEqual(money(-5 * 100_00, 'USD'))
+    expect(item?.gainLossPercent).toBeLessThan(0)
+  })
+
+  it('has no gain/loss fields when the holding has no averageCost on file', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000 })
+    await createAssetPrice({ assetId: asset.id, price: 650_00, currency: 'USD', date: '2026-08-01', source: 'manual' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('USD')
+    expect(item?.nativeValue).toBeDefined()
+    expect(item?.costBasis).toBeUndefined()
+    expect(item?.gainLoss).toBeUndefined()
+    expect(item?.gainLossPercent).toBeUndefined()
+  })
+
+  it('has a costBasis but no gain/loss when averageCost is on file but no price has been loaded yet', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000, averageCost: 600_00 })
+
+    const [item] = await getInvestmentHoldingsWithDetails('USD')
+    expect(item?.costBasis).toEqual(money(5 * 600_00, 'USD'))
+    expect(item?.nativeValue).toBeUndefined()
+    expect(item?.gainLoss).toBeUndefined()
+  })
+
+  it('treats a corrupted negative averageCost (not reachable via the form) as absent instead of crashing', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000, averageCost: -600_00 })
+    await createAssetPrice({ assetId: asset.id, price: 650_00, currency: 'USD', date: '2026-08-01', source: 'manual' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('USD')
+    expect(item?.nativeValue).toBeDefined()
+    expect(item?.costBasis).toBeUndefined()
+    expect(item?.gainLoss).toBeUndefined()
+  })
+
+  it('treats a corrupted non-positive price as absent instead of crashing', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000, averageCost: 600_00 })
+    // createAssetPrice's own `price > 0` invariant doesn't run on a
+    // backup import, which writes assetPrices rows directly — inserted
+    // the same way here to simulate that, rather than going through the
+    // repo (which would reject it before this code ever sees it).
+    await db.assetPrices.add({
+      id: generateId(),
+      assetId: asset.id,
+      price: 0,
+      currency: 'USD',
+      date: '2026-08-01',
+      source: 'manual',
+      capturedAt: new Date().toISOString(),
+    })
+
+    const [item] = await getInvestmentHoldingsWithDetails('USD')
+    expect(item?.nativeValue).toBeUndefined()
+    expect(item?.costBasis).toEqual(money(5 * 600_00, 'USD'))
+    expect(item?.gainLoss).toBeUndefined()
+  })
+
+  // Reachable in practice: a crypto asset can be set to any currency
+  // while CoinGecko's auto-refresh always writes a USD price row —
+  // without the currency guard this crashed sub()/percentChange() (both
+  // assert same-currency) and took down every holding in the list, not
+  // just this one.
+  it('treats a price whose currency differs from the asset currency as absent instead of crashing', async () => {
+    const asset = await createInvestmentAsset({ name: 'Bitcoin', type: 'crypto', currency: 'ARS', priceMode: 'auto' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 100_000_000, averageCost: 50_000_00 })
+    await createAssetPrice({ assetId: asset.id, price: 60_000, currency: 'USD', date: '2026-08-01', source: 'automatic' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('ARS')
+    expect(item?.nativeValue).toBeUndefined()
+    expect(item?.costBasis).toEqual(money(50_000_00, 'ARS'))
+    expect(item?.gainLoss).toBeUndefined()
+  })
+
+  it('reports an exact break-even as a zero gainLoss and a 0% gainLossPercent, not undefined', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000, averageCost: 600_00 })
+    await createAssetPrice({ assetId: asset.id, price: 600_00, currency: 'USD', date: '2026-08-01', source: 'manual' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('USD')
+    expect(item?.gainLoss).toEqual(money(0, 'USD'))
+    expect(item?.gainLossPercent).toBe(0)
+  })
+
+  it('has a full gainLoss but no percent when averageCost is exactly zero (e.g. a gifted position)', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 500_000_000, averageCost: 0 })
+    await createAssetPrice({ assetId: asset.id, price: 650_00, currency: 'USD', date: '2026-08-01', source: 'manual' })
+
+    const [item] = await getInvestmentHoldingsWithDetails('USD')
+    expect(item?.costBasis).toEqual(money(0, 'USD'))
+    expect(item?.gainLoss).toEqual(money(5 * 650_00, 'USD'))
+    expect(item?.gainLossPercent).toBeUndefined()
   })
 })
 

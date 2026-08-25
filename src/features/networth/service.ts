@@ -9,7 +9,7 @@ import {
 import { quantity, parseQuantity, valuePosition } from '@/domain/decimal'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { convert, MissingRateError } from '@/domain/currency'
-import { money, parseAmount, type CurrencyCode, type Money } from '@/domain/money'
+import { money, parseAmount, percentChange, sub, type CurrencyCode, type Money } from '@/domain/money'
 import type { AssetPrice, InvestmentAsset, InvestmentHolding } from '@/domain/entities'
 import { todayStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
@@ -195,6 +195,19 @@ export interface InvestmentHoldingWithDetails {
   /** `nativeValue` converted to the display currency — undefined if
    *  there's no price, or no usable exchange rate for it. */
   convertedValue?: Money
+  /** `quantity × averageCost`, in the asset's own currency — undefined
+   *  unless the holding has a valid (non-negative) `averageCost` on
+   *  file; a negative one is treated as absent, see the comment where
+   *  this is computed. */
+  costBasis?: Money
+  /** `nativeValue - costBasis`, in the asset's own currency — undefined
+   *  unless both a usable price and a `costBasis` are available. */
+  gainLoss?: Money
+  /** Percent change from `costBasis` to `nativeValue`, display-only —
+   *  see `domain/money:percentChange`. Undefined whenever `gainLoss` is
+   *  undefined (no usable price or no costBasis), or when `costBasis`
+   *  is zero. */
+  gainLossPercent?: number
 }
 
 /** Per-position detail for the Inversiones tab — the aggregate total for
@@ -225,16 +238,43 @@ export async function getInvestmentHoldingsWithDetails(
       const asset = assetById.get(holding.assetId)
       if (!asset) return undefined // asset was deleted out from under the holding — shouldn't happen, repo forbids it
 
+      // A negative averageCost can only reach here from a corrupted or
+      // hand-edited backup (the form and the Zod schema both reject one
+      // going forward) — treated as absent rather than fed into
+      // percentChange, which rejects a negative magnitude outright.
+      const costBasis =
+        holding.averageCost !== undefined && holding.averageCost >= 0
+          ? valuePosition(quantity(holding.quantity), money(holding.averageCost, asset.currency))
+          : undefined
+
+      // A priceRow whose currency doesn't match the asset's own currency
+      // (reachable today: a crypto asset can be set to any currency while
+      // CoinGecko's auto-refresh always writes a USD price) or a
+      // corrupted non-positive price (a hand-edited backup bypasses
+      // assetPrices.repo.ts's own `price > 0` invariant) would otherwise
+      // feed a mismatched or invalid Money into valuePosition/sub/
+      // percentChange below, which both assert on it — treated as no
+      // usable price instead, same as an asset with no price loaded yet.
       const priceRow = latestPrices.get(asset.id)
-      if (!priceRow) return { holding, asset }
+      if (!priceRow || priceRow.currency !== asset.currency || priceRow.price <= 0) {
+        return { holding, asset, ...(costBasis && { costBasis }) }
+      }
 
       const price = money(priceRow.price, priceRow.currency)
       const nativeValue = valuePosition(quantity(holding.quantity), price)
+      const gainLoss = costBasis ? sub(nativeValue, costBasis) : undefined
+      const gainLossPercent = costBasis ? percentChange(costBasis, nativeValue) : undefined
+      const gainLossFields = {
+        ...(costBasis && { costBasis }),
+        ...(gainLoss && { gainLoss }),
+        ...(gainLossPercent !== undefined && { gainLossPercent }),
+      }
+
       try {
         const convertedValue = convert(nativeValue, displayCurrency, rates, date, settings.rateProfile)
-        return { holding, asset, price: priceRow, nativeValue, convertedValue }
+        return { holding, asset, price: priceRow, nativeValue, convertedValue, ...gainLossFields }
       } catch (error) {
-        if (error instanceof MissingRateError) return { holding, asset, price: priceRow, nativeValue }
+        if (error instanceof MissingRateError) return { holding, asset, price: priceRow, nativeValue, ...gainLossFields }
         throw error
       }
     })

@@ -3,7 +3,8 @@ import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatQuantity, quantity } from '@/domain/decimal'
-import { money } from '@/domain/money'
+import { isNegative, isPositive, money, roundHalfUp } from '@/domain/money'
+import { cn } from '@/lib/cn'
 import { INVESTMENT_ASSET_TYPE_LABELS } from '../labels'
 import type { InvestmentHoldingWithDetails } from '../service'
 
@@ -15,7 +16,10 @@ interface InvestmentRowProps {
 }
 
 export function InvestmentRow({ item, onEdit, onDelete, onLoadPrice }: InvestmentRowProps) {
-  const { holding, asset, price, nativeValue, convertedValue } = item
+  const { holding, asset, price, nativeValue, convertedValue, gainLoss, gainLossPercent } = item
+  const isGain = gainLoss !== undefined && isPositive(gainLoss)
+  const isLoss = gainLoss !== undefined && isNegative(gainLoss)
+  const gainSign = isGain ? '+' : ''
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
@@ -61,6 +65,13 @@ export function InvestmentRow({ item, onEdit, onDelete, onLoadPrice }: Investmen
           {convertedValue && convertedValue.currency !== nativeValue?.currency && (
             <p className="text-xs text-muted-foreground">
               ≈ <MoneyText value={convertedValue} className="inline" />
+            </p>
+          )}
+          {gainLoss && (
+            <p className={cn('text-xs font-medium', isGain && 'text-positive', isLoss && 'text-negative')}>
+              {gainSign}
+              <MoneyText value={gainLoss} className="inline" />
+              {gainLossPercent !== undefined && ` (${gainSign}${roundHalfUp(gainLossPercent)}%)`}
             </p>
           )}
         </div>
