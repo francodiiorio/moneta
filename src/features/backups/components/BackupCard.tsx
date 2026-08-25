@@ -236,7 +236,12 @@ export function BackupCard() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".finance,application/json"
+            // Extension only — mixing it with a MIME type (e.g.
+            // "application/json") makes iOS's Files picker gray out any
+            // .finance file, since it resolves the MIME entry to a UTI
+            // that a custom extension doesn't match. Content is still
+            // fully Zod-validated after selection either way.
+            accept=".finance"
             className="hidden"
             onChange={(e) => void handleFileSelected(e)}
           />
