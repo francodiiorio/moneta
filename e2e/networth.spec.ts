@@ -37,7 +37,9 @@ test('creates an investment asset, a position and a price, and sees the valued t
   // "Nuevo activo" button, still in the DOM since the list is empty.
   await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
-  await page.getByLabel('Activo').click()
+  // exact: true — InvestmentAssetRow's delete button is labeled "Eliminar
+  // activo", which otherwise substring-matches this field's "Activo" label.
+  await page.getByLabel('Activo', { exact: true }).click()
   await page.getByRole('option', { name: /SPYT/ }).click()
   await page.getByLabel('Cantidad').fill('5')
   await page.getByRole('button', { name: 'Guardar' }).click()
@@ -58,6 +60,50 @@ test('creates an investment asset, a position and a price, and sees the valued t
   await expect(page.getByText(/500[.,]00/).first()).toBeVisible()
 })
 
+test('a newly-created asset with no position shows up right away, instead of looking like nothing happened', async ({ page }) => {
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('S&P 500')
+  await page.getByLabel('Símbolo').fill('SPYT')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // Regression: this used to still show the tab's empty state, as if
+  // creating the asset had done nothing — see InvestmentAssetRow.
+  await expect(page.getByText('Todavía no cargaste inversiones')).not.toBeVisible()
+  await expect(page.getByText('SPYT')).toBeVisible()
+  await expect(page.getByText('Sin posición cargada')).toBeVisible()
+
+  // "Agregar posición" from the asset's own row preselects it.
+  await page.getByRole('button', { name: 'Agregar posición' }).click()
+  await expect(page.getByRole('combobox', { name: 'Activo' })).toContainText('SPYT')
+  await page.getByLabel('Cantidad').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await expect(page.getByText('Sin posición cargada')).not.toBeVisible()
+  await expect(page.getByText('5 unidades')).toBeVisible()
+})
+
+test('deletes an asset that has no position yet', async ({ page }) => {
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('Activo a borrar')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText('Activo a borrar')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Eliminar activo' }).click()
+  await page.getByRole('button', { name: 'Eliminar' }).click()
+
+  await expect(page.getByText('Activo a borrar')).not.toBeVisible()
+  await expect(page.getByText('Todavía no cargaste inversiones')).toBeVisible()
+})
+
 test('shows unrealized gain/loss vs. the average cost once both a cost and a price are loaded', async ({ page }) => {
   await page.goto('/patrimonio')
   await page.getByRole('tab', { name: 'Inversiones' }).click()
@@ -70,7 +116,7 @@ test('shows unrealized gain/loss vs. the average cost once both a cost and a pri
 
   await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
-  await page.getByLabel('Activo').click()
+  await page.getByLabel('Activo', { exact: true }).click()
   await page.getByRole('option', { name: /SPYT/ }).click()
   await page.getByLabel('Cantidad').fill('5')
   await page.getByLabel(/Costo promedio/).fill('600')

@@ -41,12 +41,13 @@ import { InvestmentAssetFormDialog } from '../components/InvestmentAssetFormDial
 import { InvestmentHoldingFormDialog } from '../components/InvestmentHoldingFormDialog'
 import { InvestmentPriceDialog } from '../components/InvestmentPriceDialog'
 import { InvestmentRow } from '../components/InvestmentRow'
+import { InvestmentAssetRow } from '../components/InvestmentAssetRow'
 import { ExchangeRateFormDialog } from '../components/ExchangeRateFormDialog'
 import { ExchangeRateRow } from '../components/ExchangeRateRow'
 import { QuotesControls } from '../components/QuotesControls'
-import { deleteExchangeRate, deleteInvestmentHolding, deleteSavingsHolding } from '../service'
+import { deleteExchangeRate, deleteInvestmentAsset, deleteInvestmentHolding, deleteSavingsHolding } from '../service'
 
-type PendingDelete = { kind: 'savings' | 'holding' | 'rate'; id: string }
+type PendingDelete = { kind: 'savings' | 'holding' | 'rate' | 'asset'; id: string }
 
 export function NetWorthPage() {
   const {
@@ -62,6 +63,7 @@ export function NetWorthPage() {
     closeAssetDialog,
     holdingDialogOpen,
     editingHoldingId,
+    newHoldingAssetId,
     openCreateHoldingDialog,
     openEditHoldingDialog,
     closeHoldingDialog,
@@ -83,6 +85,10 @@ export function NetWorthPage() {
   const editingSavings = savings?.find((h) => h.id === editingSavingsId)
   const editingHolding = holdings?.find((h) => h.holding.id === editingHoldingId)?.holding
   const pricingAsset = assets?.find((a) => a.id === pricingAssetId) ?? null
+  // An asset the user just created has no holding yet, so it never shows
+  // up in `holdings` — without this, creating one looked like it silently
+  // did nothing (see InvestmentAssetRow's docstring).
+  const assetsWithoutHolding = assets?.filter((a) => !holdings?.some((h) => h.asset.id === a.id))
 
   async function handleDelete() {
     if (!pendingDelete) return
@@ -93,6 +99,9 @@ export function NetWorthPage() {
       } else if (pendingDelete.kind === 'holding') {
         await deleteInvestmentHolding(pendingDelete.id)
         toast.success('Posición eliminada')
+      } else if (pendingDelete.kind === 'asset') {
+        await deleteInvestmentAsset(pendingDelete.id)
+        toast.success('Activo eliminado')
       } else {
         await deleteExchangeRate(pendingDelete.id)
         toast.success('Tasa eliminada')
@@ -133,7 +142,7 @@ export function NetWorthPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={openAssetDialog}>Nuevo activo</DropdownMenuItem>
-                <DropdownMenuItem onClick={openCreateHoldingDialog} disabled={!assets || assets.length === 0}>
+                <DropdownMenuItem onClick={() => openCreateHoldingDialog()} disabled={!assets || assets.length === 0}>
                   Nueva posición
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -235,9 +244,9 @@ export function NetWorthPage() {
         ))}
 
       {tab === 'investments' &&
-        (holdings === undefined ? (
+        (holdings === undefined || assets === undefined ? (
           <div className="h-40 animate-pulse rounded-xl bg-muted" />
-        ) : holdings.length === 0 ? (
+        ) : assets.length === 0 ? (
           <EmptyState
             icon={LineChart}
             title="Todavía no cargaste inversiones"
@@ -253,6 +262,14 @@ export function NetWorthPage() {
                 onEdit={() => openEditHoldingDialog(item.holding.id)}
                 onDelete={() => setPendingDelete({ kind: 'holding', id: item.holding.id })}
                 onLoadPrice={() => openPriceDialog(item.asset.id)}
+              />
+            ))}
+            {assetsWithoutHolding?.map((asset) => (
+              <InvestmentAssetRow
+                key={asset.id}
+                asset={asset}
+                onAddHolding={() => openCreateHoldingDialog(asset.id)}
+                onDelete={() => setPendingDelete({ kind: 'asset', id: asset.id })}
               />
             ))}
           </div>
@@ -307,6 +324,7 @@ export function NetWorthPage() {
         open={holdingDialogOpen}
         holding={editingHolding}
         assets={assets}
+        {...(newHoldingAssetId !== null && { initialAssetId: newHoldingAssetId })}
         onOpenChange={(open) => (open ? undefined : closeHoldingDialog())}
       />
       <InvestmentPriceDialog
@@ -326,7 +344,9 @@ export function NetWorthPage() {
                 ? '¿Eliminar este ahorro?'
                 : pendingDelete?.kind === 'holding'
                   ? '¿Eliminar esta posición?'
-                  : '¿Eliminar esta tasa?'}
+                  : pendingDelete?.kind === 'asset'
+                    ? '¿Eliminar este activo?'
+                    : '¿Eliminar esta tasa?'}
             </AlertDialogTitle>
             <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
           </AlertDialogHeader>

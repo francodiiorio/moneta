@@ -18,14 +18,23 @@ interface InvestmentHoldingFormDialogProps {
   /** undefined = create mode, defined = editing that holding. */
   holding: InvestmentHolding | undefined
   assets: InvestmentAsset[] | undefined
+  /** Pre-selects this asset in create mode — e.g. opening "Agregar
+   *  posición" from an asset that doesn't have one yet. Ignored while editing. */
+  initialAssetId?: string
   onOpenChange: (open: boolean) => void
 }
 
-function defaultValues(): InvestmentHoldingFormValues {
-  return { assetId: '', quantity: '', averageCost: '' }
+function defaultValues(initialAssetId?: string): InvestmentHoldingFormValues {
+  return { assetId: initialAssetId ?? '', quantity: '', averageCost: '' }
 }
 
-export function InvestmentHoldingFormDialog({ open, holding, assets, onOpenChange }: InvestmentHoldingFormDialogProps) {
+export function InvestmentHoldingFormDialog({
+  open,
+  holding,
+  assets,
+  initialAssetId,
+  onOpenChange,
+}: InvestmentHoldingFormDialogProps) {
   const isEditing = !!holding
 
   const form = useForm<InvestmentHoldingFormValues>({
@@ -48,9 +57,9 @@ export function InvestmentHoldingFormDialog({ open, holding, assets, onOpenChang
                 ? formatMoney(money(holding.averageCost, asset.currency)).replace(/[^\d,.-]/g, '')
                 : '',
           }
-        : defaultValues(),
+        : defaultValues(initialAssetId),
     )
-  }, [open, holding, assets, form])
+  }, [open, holding, assets, initialAssetId, form])
 
   async function onSubmit(values: InvestmentHoldingFormValues) {
     try {

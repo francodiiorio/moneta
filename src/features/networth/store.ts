@@ -19,7 +19,10 @@ interface NetWorthUiState {
 
   holdingDialogOpen: boolean
   editingHoldingId: string | null
-  openCreateHoldingDialog: () => void
+  /** Pre-selects the asset when opening "Nueva posición" from an
+   *  asset row that has none yet — null otherwise. */
+  newHoldingAssetId: string | null
+  openCreateHoldingDialog: (assetId?: string) => void
   openEditHoldingDialog: (id: string) => void
   closeHoldingDialog: () => void
 
@@ -49,9 +52,11 @@ export const useNetWorthUiStore = create<NetWorthUiState>((set) => ({
 
   holdingDialogOpen: false,
   editingHoldingId: null,
-  openCreateHoldingDialog: () => set({ holdingDialogOpen: true, editingHoldingId: null }),
-  openEditHoldingDialog: (id) => set({ holdingDialogOpen: true, editingHoldingId: id }),
-  closeHoldingDialog: () => set({ holdingDialogOpen: false, editingHoldingId: null }),
+  newHoldingAssetId: null,
+  openCreateHoldingDialog: (assetId) =>
+    set({ holdingDialogOpen: true, editingHoldingId: null, newHoldingAssetId: assetId ?? null }),
+  openEditHoldingDialog: (id) => set({ holdingDialogOpen: true, editingHoldingId: id, newHoldingAssetId: null }),
+  closeHoldingDialog: () => set({ holdingDialogOpen: false, editingHoldingId: null, newHoldingAssetId: null }),
 
   pricingAssetId: null,
   openPriceDialog: (assetId) => set({ pricingAssetId: assetId }),
