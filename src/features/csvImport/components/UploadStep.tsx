@@ -1,9 +1,9 @@
+import { useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
 import type { AccountWithBalance } from '@/database/repositories/accounts.repo'
 import type { Category } from '@/domain/entities'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
@@ -76,6 +76,14 @@ export function UploadStep({
   onContinue,
   isBusy,
 }: UploadStepProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [fileName, setFileName] = useState<string | null>(null)
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    setFileName(event.target.files?.[0]?.name ?? null)
+    onFileChange(event)
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -86,7 +94,27 @@ export function UploadStep({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="csv-file">Extracto (CSV)</Label>
-              <Input id="csv-file" type="file" accept=".csv,text/csv" onChange={onFileChange} />
+              <div className="flex items-center gap-2">
+                <Button
+                  id="csv-file"
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="size-4" />
+                  Elegir archivo
+                </Button>
+                <span className="truncate text-sm text-muted-foreground">
+                  {fileName ?? 'Ningún archivo elegido'}
+                </span>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={handleFileChange}
+              />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Codificación</Label>
