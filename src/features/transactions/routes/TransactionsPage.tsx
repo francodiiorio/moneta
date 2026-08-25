@@ -82,7 +82,7 @@ export function TransactionsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
         title="Movimientos"
         description="Ingresos, gastos y transferencias."
@@ -158,7 +158,7 @@ export function TransactionsPage() {
           action={<Button onClick={() => openCreateDialog()}>Nuevo movimiento</Button>}
         />
       ) : (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4">
           {groups.map(([date, items]) => (
             <div key={date}>
               <p className="mb-1 text-xs font-medium text-muted-foreground">{dateLabel(date)}</p>

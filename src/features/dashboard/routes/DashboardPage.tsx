@@ -45,7 +45,7 @@ export function DashboardPage() {
 
   if (hasAccounts === false) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
         <PageHeader title="Dashboard" description="Resumen del mes y evolución de tu patrimonio." />
         <EmptyState
           icon={LayoutDashboard}
@@ -57,7 +57,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
         title="Dashboard"
         description={`Resumen de ${formatMonthLabel(month).toLowerCase()} y tu patrimonio total.`}

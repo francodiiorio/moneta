@@ -19,7 +19,7 @@ export function CategoriesPage() {
   const hasAnyForTab = categories?.some((c) => c.kind === tab)
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <Link to="/ajustes" className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ChevronLeft className="size-4" />
         Ajustes

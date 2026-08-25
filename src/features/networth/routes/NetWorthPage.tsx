@@ -113,7 +113,7 @@ export function NetWorthPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
         title="Patrimonio"
         description="Ahorros e inversiones, y tu patrimonio total consolidado."

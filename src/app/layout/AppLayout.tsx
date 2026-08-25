@@ -5,8 +5,8 @@ import { cn } from '@/lib/cn'
 export function AppLayout() {
   return (
     <div className="flex min-h-svh bg-background">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border px-3 py-6 md:flex">
-        <div className="mb-6 flex items-center gap-2 px-3">
+      <aside className="hidden w-56 shrink-0 flex-col border-r border-border px-2.5 py-5 md:flex">
+        <div className="mb-5 flex items-center gap-2 px-2.5">
           <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <span className="text-xs font-bold">M</span>
           </div>
@@ -20,7 +20,7 @@ export function AppLayout() {
               end={item.to === '/'}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
                   isActive
                     ? 'bg-accent text-accent-foreground'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -35,7 +35,7 @@ export function AppLayout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-6 pb-24 md:px-8 md:pb-10">
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-5 pb-24 md:px-6 md:pb-8">
           <Outlet />
         </main>
       </div>

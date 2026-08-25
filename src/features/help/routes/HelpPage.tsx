@@ -114,7 +114,7 @@ const SECTIONS: GuideSection[] = [
 
 export function HelpPage() {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader
         title="Cómo usar Moneta"
         description="Guía paso a paso de las funciones principales de la app."

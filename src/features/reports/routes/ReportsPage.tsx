@@ -30,7 +30,7 @@ export function ReportsPage() {
   const hasMovementsThisMonth = summary && (summary.income.amount > 0 || summary.expense.amount > 0)
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <PageHeader title="Reportes" description="Gasto por categoría y evolución de tu patrimonio." />
 
       <MissingRateBanner count={missingRateCount} />
