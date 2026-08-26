@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
+import { ChevronRight } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -15,7 +16,9 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DateField } from '@/components/DateField'
+import { cn } from '@/lib/cn'
 import { todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
@@ -62,9 +65,18 @@ export function RecurringPlanFormDialog({ open, onOpenChange }: RecurringPlanFor
     defaultValues: defaultValues(),
   })
 
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+
   useEffect(() => {
-    if (open) form.reset(defaultValues())
+    if (open) {
+      form.reset(defaultValues())
+      setAdvancedOpen(false)
+    }
   }, [open, form])
+
+  // Forces the section open if a submit attempt left an error inside it —
+  // otherwise a hidden field could block the form with no visible feedback.
+  const hasAdvancedError = !!(form.formState.errors.endDate || form.formState.errors.maxOccurrences)
 
   const kind = form.watch('kind')
   const freq = form.watch('freq')
@@ -288,34 +300,54 @@ export function RecurringPlanFormDialog({ open, onOpenChange }: RecurringPlanFor
               )}
             />
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="endDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Termina (opcional)</FormLabel>
-                    <FormControl>
-                      <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="maxOccurrences"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Máximo de veces (opcional)</FormLabel>
-                    <FormControl>
-                      <Input inputMode="numeric" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            <Collapsible open={advancedOpen || hasAdvancedError} onOpenChange={setAdvancedOpen}>
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronRight
+                    className={cn('size-4 transition-transform', (advancedOpen || hasAdvancedError) && 'rotate-90')}
+                  />
+                  Opciones avanzadas
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Termina (opcional)</FormLabel>
+                        <FormControl>
+                          <DateField
+                            value={field.value}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            ref={field.ref}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="maxOccurrences"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Máximo de veces (opcional)</FormLabel>
+                        <FormControl>
+                          <Input inputMode="numeric" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
