@@ -1,4 +1,5 @@
 import { mergeAllTables, replaceAllTables, type MergeSummary } from '@/database/repositories/backup.repo'
+import { settingsRepo } from '@/database/repositories'
 import { computeChecksum } from './checksum'
 import { decryptPayload, isEncryptedBackup } from './encryption'
 import { migrateToLatest } from './migrations'
@@ -92,11 +93,32 @@ export async function importBackup(file: File, options: ImportOptions = {}): Pro
   const checksumMatched =
     typeof expectedChecksum === 'string' && expectedChecksum === actualChecksum
 
+  // lastBackupExportedAt/lastBackupImportedAt are facts about this device,
+  // never something an imported file gets to decide — strip them (after
+  // checksum verification, which must see the file exactly as exported)
+  // so a file exported elsewhere can't overwrite this device's own history.
+  if (data.settings) {
+    delete data.settings.lastBackupExportedAt
+    delete data.settings.lastBackupImportedAt
+  }
+
   if (mode === 'merge') {
     const merged = await mergeAllTables(data)
+    await recordImport()
     return { checksumMatched, merged }
   }
 
   await replaceAllTables(data)
+  await recordImport()
   return { checksumMatched }
+}
+
+/** Best-effort: the data itself is already durably written by the time
+ *  this runs, so a failure here must never surface as "import failed". */
+async function recordImport(): Promise<void> {
+  try {
+    await settingsRepo.updateSettings({ lastBackupImportedAt: new Date().toISOString() })
+  } catch (error) {
+    console.error('No se pudo guardar la fecha de import', error)
+  }
 }

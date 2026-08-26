@@ -17,8 +17,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { settingsRepo } from '@/database/repositories'
+import { formatRelativeTime } from '@/lib/dates'
 import { downloadBackup, exportBackup } from '../export'
 import { importBackup, peekIsEncrypted } from '../import'
+import { useSettings } from '../hooks/useSettings'
 import type { MergeCounts, MergeSummary } from '@/database/repositories/backup.repo'
 
 const MIN_PASSPHRASE_LENGTH = 8
@@ -72,6 +75,7 @@ function describeMergeSummary(summary: MergeSummary): string {
 }
 
 export function BackupCard() {
+  const settings = useSettings()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isBusy, setIsBusy] = useState(false)
 
@@ -106,6 +110,10 @@ export function BackupCard() {
     try {
       const backup = await exportBackup(encryptOnExport ? exportPassphrase : undefined)
       downloadBackup(backup)
+      // Only this deliberate export counts — the automatic safety-net
+      // snapshot in confirmImport() calls exportBackup() directly and
+      // must not touch this timestamp.
+      await settingsRepo.updateSettings({ lastBackupExportedAt: new Date().toISOString() })
       toast.success('Backup exportado')
       resetExportPassphrase()
     } catch {
@@ -246,6 +254,17 @@ export function BackupCard() {
             onChange={(e) => void handleFileSelected(e)}
           />
         </div>
+
+        {(settings?.lastBackupExportedAt || settings?.lastBackupImportedAt) && (
+          <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+            {settings.lastBackupExportedAt && (
+              <p>Último export: {formatRelativeTime(settings.lastBackupExportedAt)}</p>
+            )}
+            {settings.lastBackupImportedAt && (
+              <p>Último import: {formatRelativeTime(settings.lastBackupImportedAt)}</p>
+            )}
+          </div>
+        )}
       </CardContent>
 
       <AlertDialog open={!!pendingFile} onOpenChange={(open) => !open && closeImportDialog()}>

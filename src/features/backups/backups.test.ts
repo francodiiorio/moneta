@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '@/database/db'
+import { settingsRepo } from '@/database/repositories'
 import { generateId } from '@/lib/ids'
 import { buildBackupPayload, exportBackup } from './export'
 import { importBackup, PassphraseRequiredError, peekIsEncrypted } from './import'
@@ -227,6 +228,7 @@ describe('backup round-trip', () => {
   it('reconstructs an identical database state after export -> wipe -> import', async () => {
     await seedFullDatabase()
     const before = await snapshotAllTables()
+    const settingsWithDefaults = await settingsRepo.getSettings()
 
     const exported = await exportBackup()
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
@@ -237,7 +239,37 @@ describe('backup round-trip', () => {
     const result = await importBackup(file)
     expect(result.checksumMatched).toBe(true)
 
-    expect(await snapshotAllTables()).toEqual(before)
+    // importBackup() stamps lastBackupImportedAt after the write completes,
+    // via settingsRepo.updateSettings() — which also materializes any
+    // still-implicit DEFAULT_SETTINGS fields into the row. Compare against
+    // that same merge (computed from the pre-wipe state) rather than the
+    // raw pre-export row, so the assertion isn't coupled to what happens to
+    // be in DEFAULT_SETTINGS today.
+    const after = await snapshotAllTables()
+    expect(after.settings?.lastBackupImportedAt).toEqual(expect.any(String))
+    expect(after).toEqual({
+      ...before,
+      settings: { ...settingsWithDefaults, lastBackupImportedAt: after.settings?.lastBackupImportedAt },
+    })
+  })
+
+  it("never inherits the imported file's own lastBackupExportedAt/lastBackupImportedAt — those are local-device facts", async () => {
+    await seedFullDatabase()
+    // deviceA: exported a while ago, and that export timestamp is part of
+    // what's about to be written to the backup file's settings.
+    await settingsRepo.updateSettings({ lastBackupExportedAt: '2020-01-01T00:00:00.000Z' })
+    const exported = await exportBackup()
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+
+    await clearAllTables()
+    // deviceB: this device has never exported.
+    await seedFullDatabase()
+
+    await importBackup(file) // mode: 'replace', the default
+
+    const settings = await db.settings.get('singleton')
+    expect(settings?.lastBackupExportedAt).toBeUndefined()
+    expect(settings?.lastBackupImportedAt).toEqual(expect.any(String))
   })
 
   it('rejects a backup with unbalanced postings before writing anything', async () => {
@@ -280,6 +312,7 @@ describe('backup round-trip — encrypted', () => {
   it('reconstructs an identical database state after export(passphrase) -> wipe -> import(passphrase)', async () => {
     await seedFullDatabase()
     const before = await snapshotAllTables()
+    const settingsWithDefaults = await settingsRepo.getSettings()
 
     const exported = await exportBackup('correcto-caballo-batería-grapa')
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
@@ -297,7 +330,18 @@ describe('backup round-trip — encrypted', () => {
     const result = await importBackup(file, { passphrase: 'correcto-caballo-batería-grapa' })
     expect(result.checksumMatched).toBe(true)
 
-    expect(await snapshotAllTables()).toEqual(before)
+    // importBackup() stamps lastBackupImportedAt after the write completes,
+    // via settingsRepo.updateSettings() — which also materializes any
+    // still-implicit DEFAULT_SETTINGS fields into the row. Compare against
+    // that same merge (computed from the pre-wipe state) rather than the
+    // raw pre-export row, so the assertion isn't coupled to what happens to
+    // be in DEFAULT_SETTINGS today.
+    const after = await snapshotAllTables()
+    expect(after.settings?.lastBackupImportedAt).toEqual(expect.any(String))
+    expect(after).toEqual({
+      ...before,
+      settings: { ...settingsWithDefaults, lastBackupImportedAt: after.settings?.lastBackupImportedAt },
+    })
   })
 
   it('requires a passphrase for an encrypted file, and does not write anything without one', async () => {

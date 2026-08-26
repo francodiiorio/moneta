@@ -159,8 +159,14 @@ independiente de patrimonio (moneda de visualización y qué referencia de tasa 
 valuarlo) — si no están seteados, caen a `baseCurrency` y a "sin profile" respectivamente.
 `autoQuotesEnabled` (default `false`) es el opt-in de cotizaciones automáticas;
 `quotesRefreshedAt` es sólo para la UI ("última actualización hace X").
+`lastBackupExportedAt`/`lastBackupImportedAt` son, de la misma forma, sólo para la UI de
+Backup ("último export/import hace X") — se escriben desde `BackupCard.tsx` tras un
+export deliberado del usuario (nunca desde el snapshot de seguridad automático previo a
+un import, que llama a `exportBackup()` directamente) y desde `importBackup()` una vez
+completada la escritura (`replaceAllTables`/`mergeAllTables`), para que no quede pisado
+por lo que traiga el archivo importado.
 
-Los cuatro son opcionales — agregados sobre un documento que ya existía, así que una fila
+Los seis son opcionales — agregados sobre un documento que ya existía, así que una fila
 persistida antes de que existieran no los tiene.
 `database/repositories/settings.repo.ts:getSettings()` los completa con
 `{ ...DEFAULT_SETTINGS, ...existing }` en vez de `existing ?? DEFAULT_SETTINGS`,

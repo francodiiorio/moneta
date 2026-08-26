@@ -187,6 +187,8 @@ export const settingsSchema = z.object({
   rateProfile: z.string().optional(),
   autoQuotesEnabled: z.boolean().optional(),
   quotesRefreshedAt: isoInstant.optional(),
+  lastBackupExportedAt: isoInstant.optional(),
+  lastBackupImportedAt: isoInstant.optional(),
 })
 export type Settings = z.infer<typeof settingsSchema>
 
