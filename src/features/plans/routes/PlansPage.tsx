@@ -20,6 +20,7 @@ import { useRecurringPlans } from '../hooks/useRecurringPlans'
 import { useInstallmentPlans } from '../hooks/useInstallmentPlans'
 import { RecurringPlanFormDialog } from '../components/RecurringPlanFormDialog'
 import { InstallmentPlanFormDialog } from '../components/InstallmentPlanFormDialog'
+import { InstallmentPlanEditDialog } from '../components/InstallmentPlanEditDialog'
 import { RecurringPlanRow } from '../components/RecurringPlanRow'
 import { InstallmentPlanRow } from '../components/InstallmentPlanRow'
 import { removeInstallmentPlan, removeRecurringPlan, setRecurringPlanPaused } from '../service'
@@ -29,15 +30,23 @@ export function PlansPage() {
     tab,
     setTab,
     recurringDialogOpen,
-    openRecurringDialog,
+    editingRecurringId,
+    openCreateRecurringDialog,
+    openEditRecurringDialog,
     closeRecurringDialog,
     installmentDialogOpen,
     openInstallmentDialog,
     closeInstallmentDialog,
+    installmentEditId,
+    openInstallmentEditDialog,
+    closeInstallmentEditDialog,
   } = usePlansUiStore()
   const recurringPlans = useRecurringPlans()
   const installmentPlans = useInstallmentPlans()
   const [pendingDelete, setPendingDelete] = useState<{ kind: PlansTab; id: string } | null>(null)
+
+  const editingRecurringPlan = recurringPlans?.find((item) => item.id === editingRecurringId)?.plan
+  const editingInstallmentPlan = installmentPlans?.find((item) => item.id === installmentEditId)?.plan ?? null
 
   async function handleTogglePaused(id: string, isPaused: boolean) {
     try {
@@ -69,7 +78,7 @@ export function PlansPage() {
         title="Planes"
         description="Recurrentes y compras en cuotas."
         actions={
-          <Button onClick={tab === 'recurring' ? openRecurringDialog : openInstallmentDialog}>
+          <Button onClick={tab === 'recurring' ? openCreateRecurringDialog : openInstallmentDialog}>
             <Plus className="size-4" />
             {tab === 'recurring' ? 'Nuevo recurrente' : 'Nueva compra en cuotas'}
           </Button>
@@ -91,7 +100,7 @@ export function PlansPage() {
             icon={CalendarSync}
             title="Todavía no tenés recurrentes"
             description="Creá uno para que un movimiento se genere solo cada vez que corresponda."
-            action={<Button onClick={openRecurringDialog}>Nuevo recurrente</Button>}
+            action={<Button onClick={openCreateRecurringDialog}>Nuevo recurrente</Button>}
           />
         ) : (
           <div className="flex flex-col gap-3">
@@ -99,6 +108,7 @@ export function PlansPage() {
               <RecurringPlanRow
                 key={item.id}
                 item={item}
+                onEdit={() => openEditRecurringDialog(item.id)}
                 onTogglePaused={() => void handleTogglePaused(item.id, item.isPaused)}
                 onDelete={() => setPendingDelete({ kind: 'recurring', id: item.id })}
               />
@@ -120,6 +130,7 @@ export function PlansPage() {
             <InstallmentPlanRow
               key={item.id}
               item={item}
+              onEdit={() => openInstallmentEditDialog(item.id)}
               onDelete={() => setPendingDelete({ kind: 'installments', id: item.id })}
             />
           ))}
@@ -128,11 +139,16 @@ export function PlansPage() {
 
       <RecurringPlanFormDialog
         open={recurringDialogOpen}
+        plan={editingRecurringPlan}
         onOpenChange={(open) => (open ? undefined : closeRecurringDialog())}
       />
       <InstallmentPlanFormDialog
         open={installmentDialogOpen}
         onOpenChange={(open) => (open ? undefined : closeInstallmentDialog())}
+      />
+      <InstallmentPlanEditDialog
+        plan={editingInstallmentPlan}
+        onOpenChange={(open) => (open ? undefined : closeInstallmentEditDialog())}
       />
 
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>

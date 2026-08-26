@@ -31,6 +31,37 @@ export async function createRecurringPlan(input: CreateRecurringPlanInput): Prom
   return plan
 }
 
+/**
+ * Overwrites the plan's template/rule going forward — never touches any
+ * transaction already materialized from it (see docs/DECISIONS.md
+ * "Recurrentes y cuotas como planes + instancias materializadas": a rule
+ * change never recalculates past occurrences). `materializeDue` only ever
+ * reads the plan's *current* template/rule for dates after
+ * `lastMaterializedDate`, so this takes effect on the very next run.
+ *
+ * A patch via `Table.update()`, not `get` + spread + `put`: the latter
+ * would round-trip every field on `existing`, including
+ * `lastMaterializedDate` — if a `materializePlan()` write for this same
+ * plan (another tab, the app's own startup sweep) lands between that `get`
+ * and the `put`, its advanced watermark would get overwritten back to the
+ * stale value this function read, and the next materialization would
+ * re-create — and re-confirm — transactions that already happened.
+ */
+export async function updateRecurringPlan(id: string, input: CreateRecurringPlanInput): Promise<RecurringPlan> {
+  invariant(input.template.amount > 0, `El monto debe ser mayor a cero, recibido: ${input.template.amount}`)
+
+  const updated = await db.recurringPlans.update(id, {
+    template: input.template,
+    rule: input.rule,
+    updatedAt: new Date().toISOString(),
+  })
+  invariant(updated === 1, `No se encontró el recurrente: ${id}`)
+
+  const plan = await db.recurringPlans.get(id)
+  invariant(plan, `No se encontró el recurrente: ${id}`)
+  return plan
+}
+
 export async function setRecurringPlanPaused(id: string, isPaused: boolean): Promise<void> {
   await db.recurringPlans.update(id, { isPaused, updatedAt: new Date().toISOString() })
 }

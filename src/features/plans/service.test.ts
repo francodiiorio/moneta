@@ -13,6 +13,8 @@ import {
   listInstallmentPlansWithProgress,
   listRecurringPlansWithNext,
   materializeDue,
+  updateInstallmentPlanFromForm,
+  updateRecurringPlanFromForm,
 } from './service'
 
 afterEach(async () => {
@@ -200,6 +202,154 @@ describe('createRecurringPlanFromForm', () => {
     const accounts = await listAccountsWithBalances()
     expect(accounts.find((a) => a.id === from.id)?.balance).toBe(-1_000_000)
     expect(accounts.find((a) => a.id === to.id)?.balance).toBe(1_000_000)
+  })
+})
+
+describe('updateRecurringPlanFromForm', () => {
+  it('only affects occurrences materialized after the edit, never the ones already generated', async () => {
+    const { account, category } = await setup()
+    await createRecurringPlanFromForm({
+      description: 'Alquiler',
+      kind: 'expense',
+      accountId: account.id,
+      categoryId: category.id,
+      toAccountId: '',
+      amount: '1000',
+      freq: 'monthly',
+      interval: '1',
+      dayOfMonth: '',
+      startDate: '2026-01-01',
+      endDate: '',
+      maxOccurrences: '',
+    })
+    const [plan] = await listRecurringPlans()
+    await materializeDue('2026-02-15') // Jan + Feb at the old amount
+
+    await updateRecurringPlanFromForm(plan!.id, {
+      description: 'Alquiler nuevo',
+      kind: 'expense',
+      accountId: account.id,
+      categoryId: category.id,
+      toAccountId: '',
+      amount: '2000',
+      freq: 'monthly',
+      interval: '1',
+      dayOfMonth: '',
+      startDate: '2026-01-01',
+      endDate: '',
+      maxOccurrences: '',
+    })
+    await materializeDue('2026-03-15') // March, at the new amount
+
+    const postings = await db.postings.where('accountId').equals(account.id).toArray()
+    expect(postings.map((p) => p.amount).sort((a, b) => a - b)).toEqual([-200_000, -100_000, -100_000])
+    const transactions = await db.transactions.orderBy('date').toArray()
+    expect(transactions.map((t) => t.description)).toEqual(['Alquiler', 'Alquiler', 'Alquiler nuevo'])
+  })
+
+  it('rejects editing into a transfer between accounts of different currencies', async () => {
+    const { account, category } = await setup()
+    const usd = await createAccount({ name: 'USD', type: 'bank', currency: 'USD', openingBalance: minor(0) })
+    await createRecurringPlanFromForm({
+      description: 'Alquiler',
+      kind: 'expense',
+      accountId: account.id,
+      categoryId: category.id,
+      toAccountId: '',
+      amount: '1000',
+      freq: 'monthly',
+      interval: '1',
+      dayOfMonth: '',
+      startDate: '2026-01-01',
+      endDate: '',
+      maxOccurrences: '',
+    })
+    const [plan] = await listRecurringPlans()
+
+    await expect(
+      updateRecurringPlanFromForm(plan!.id, {
+        description: 'Alquiler',
+        kind: 'transfer',
+        accountId: account.id,
+        categoryId: '',
+        toAccountId: usd.id,
+        amount: '1000',
+        freq: 'monthly',
+        interval: '1',
+        dayOfMonth: '',
+        startDate: '2026-01-01',
+        endDate: '',
+        maxOccurrences: '',
+      }),
+    ).rejects.toThrow(/distinta moneda/)
+
+    // Rejected before the write — the plan's original template survives untouched.
+    const [unchanged] = await listRecurringPlans()
+    expect(unchanged?.template.kind).toBe('expense')
+  })
+})
+
+describe('updateInstallmentPlanFromForm', () => {
+  it('rewrites still-projected cuotas in place, leaving confirmed ones untouched', async () => {
+    const { account, category } = await setup()
+    const otherCategory = await createCategory({ name: 'Tecnología', kind: 'expense' })
+    const plan = await createInstallmentPlan(
+      {
+        description: 'Notebook',
+        accountId: account.id,
+        categoryId: category.id,
+        currency: 'ARS',
+        totalAmount: 9_000,
+        count: 3,
+        firstDueDate: '2026-08-01',
+        purchaseDate: '2026-07-15',
+      },
+      '2026-08-15', // first cuota (Aug) is already due -> confirmed; Sep/Oct stay projected
+    )
+
+    await updateInstallmentPlanFromForm(plan.id, {
+      description: 'Notebook nueva',
+      accountId: account.id,
+      categoryId: otherCategory.id,
+    })
+
+    const transactions = await db.transactions.where('sourcePlanId').equals(plan.id).sortBy('date')
+    expect(transactions.map((t) => ({ status: t.status, description: t.description }))).toEqual([
+      { status: 'confirmed', description: 'Notebook (cuota 1/3)' },
+      { status: 'projected', description: 'Notebook nueva (cuota 2/3)' },
+      { status: 'projected', description: 'Notebook nueva (cuota 3/3)' },
+    ])
+
+    const postings = await db.postings
+      .where('transactionId')
+      .anyOf(transactions.map((t) => t.id))
+      .and((p) => p.target === 'category')
+      .toArray()
+    const categoryIdByTransaction = new Map(postings.map((p) => [p.transactionId, p.categoryId]))
+    expect(categoryIdByTransaction.get(transactions[0]!.id)).toBe(category.id) // confirmed: untouched
+    expect(categoryIdByTransaction.get(transactions[1]!.id)).toBe(otherCategory.id) // projected: updated
+  })
+
+  it('rejects moving the plan to an account of a different currency', async () => {
+    const { account, category } = await setup()
+    const usd = await createAccount({ name: 'USD', type: 'bank', currency: 'USD', openingBalance: minor(0) })
+    const plan = await createInstallmentPlan(
+      {
+        description: 'Notebook',
+        accountId: account.id,
+        categoryId: category.id,
+        currency: 'ARS',
+        totalAmount: 9_000,
+        count: 3,
+        firstDueDate: '2026-08-01',
+        purchaseDate: '2026-07-15',
+      },
+      '2026-07-20',
+    )
+
+    await expect(
+      updateInstallmentPlanFromForm(plan.id, { description: 'Notebook', accountId: usd.id, categoryId: category.id }),
+    ).rejects.toThrow(/otra moneda/)
   })
 })
 

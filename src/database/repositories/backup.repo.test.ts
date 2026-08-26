@@ -386,6 +386,58 @@ describe('mergeAllTables', () => {
     expect((await db.recurringPlans.get(plan.id))?.lastMaterializedDate).toBe('2026-03-01')
   })
 
+  it('dedupes the same occurrence even when editing the plan mid-stream gave it a different occurrenceIndex on each device', async () => {
+    // Reproduces the scenario updateRecurringPlan's edit makes reachable:
+    // both devices materialized Jan/Feb identically (occurrenceIndex 0/1),
+    // then device A edited the plan's rule (e.g. moved startDate earlier),
+    // which shifts what index generateOccurrences assigns to every
+    // occurrence from then on. Device A's March lands as occurrenceIndex 3
+    // instead of 2 — same calendar date as what device B (unedited) would
+    // produce for its own March, but a different index. Dedup has to key
+    // on `date`, not `occurrenceIndex`, or this becomes a real double
+    // charge once both backups get merged onto a third device.
+    const acc = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+    const cat = await createCategory({ name: 'Alquiler', kind: 'expense' })
+    const plan: RecurringPlan = {
+      id: generateId(),
+      template: { description: 'Alquiler', kind: 'expense', accountId: acc.id, categoryId: cat.id, amount: 100_000, currency: 'ARS' },
+      rule: { freq: 'monthly', interval: 1, startDate: '2025-12-01' }, // already edited locally
+      lastMaterializedDate: '2026-02-01',
+      isPaused: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    await db.recurringPlans.add(plan)
+
+    // This device's own March, materialized under the edited rule — index
+    // 3 counting from the new (earlier) startDate.
+    const localMar = transaction({ description: 'Alquiler', date: '2026-03-01', sourcePlanId: plan.id, occurrenceIndex: 3 })
+    await db.transactions.add(localMar)
+    await db.postings.bulkAdd([
+      posting({ transactionId: localMar.id, target: 'account', accountId: acc.id, amount: -100_000, currency: 'ARS' }),
+      posting({ transactionId: localMar.id, target: 'category', categoryId: cat.id, amount: 100_000, currency: 'ARS' }),
+    ])
+
+    // The other device's backup: same March occurrence, but index 2 — it
+    // never saw the rule edit.
+    const remoteMar = transaction({ description: 'Alquiler', date: '2026-03-01', sourcePlanId: plan.id, occurrenceIndex: 2 })
+    const remotePostings = [
+      posting({ transactionId: remoteMar.id, target: 'account', accountId: acc.id, amount: -100_000, currency: 'ARS' }),
+      posting({ transactionId: remoteMar.id, target: 'category', categoryId: cat.id, amount: 100_000, currency: 'ARS' }),
+    ]
+
+    const summary = await mergeAllTables(emptyData({ transactions: [remoteMar], postings: remotePostings }))
+
+    expect(summary.transactions).toEqual({ added: 0, skipped: 1 })
+    const planTransactions = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
+    expect(planTransactions).toHaveLength(1) // not 2
+
+    const balance = (await db.postings.toArray())
+      .filter((p) => p.accountId === acc.id)
+      .reduce((sum, p) => sum + p.amount, 0)
+    expect(balance).toBe(-100_000) // one March, not two
+  })
+
   it('does not add two different transaction ids for the same occurrence within a single incoming file', async () => {
     // Only reachable via a corrupted/hand-edited backup — materializeDue()
     // itself never writes the same occurrence twice — but the dedup logic

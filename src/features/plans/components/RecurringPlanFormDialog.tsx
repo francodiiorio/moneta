@@ -18,16 +18,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DateField } from '@/components/DateField'
+import type { RecurringPlan } from '@/domain/entities'
+import { formatMoney, money } from '@/domain/money'
 import { cn } from '@/lib/cn'
+import { invariant } from '@/lib/invariant'
 import { todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
 import { useIncomeCategories } from '../hooks/useIncomeCategories'
-import { createRecurringPlanFromForm } from '../service'
+import { createRecurringPlanFromForm, updateRecurringPlanFromForm } from '../service'
 import { recurringPlanFormSchema, type RecurringPlanFormValues } from '../schema'
 
 interface RecurringPlanFormDialogProps {
   open: boolean
+  /** Defined when editing an existing plan, undefined when creating one —
+   *  same convention as TransactionFormDialog's `item`. */
+  plan: RecurringPlan | undefined
   onOpenChange: (open: boolean) => void
 }
 
@@ -48,6 +54,27 @@ function defaultValues(): RecurringPlanFormValues {
   }
 }
 
+function planToFormValues(plan: RecurringPlan): RecurringPlanFormValues {
+  const { template, rule } = plan
+  // A plan's template is only ever built by createRecurringPlanFromForm,
+  // which never accepts 'adjustment' — see buildTemplateEntry in service.ts.
+  invariant(template.kind !== 'adjustment', `Un recurrente no puede tener kind: ${template.kind}`)
+  return {
+    description: template.description,
+    kind: template.kind,
+    accountId: template.accountId,
+    categoryId: template.categoryId ?? '',
+    toAccountId: template.toAccountId ?? '',
+    amount: formatMoney(money(template.amount, template.currency)).replace(/[^\d,.-]/g, ''),
+    freq: rule.freq,
+    interval: String(rule.interval),
+    dayOfMonth: rule.dayOfMonth !== undefined ? String(rule.dayOfMonth) : '',
+    startDate: rule.startDate,
+    endDate: rule.endDate ?? '',
+    maxOccurrences: rule.maxOccurrences !== undefined ? String(rule.maxOccurrences) : '',
+  }
+}
+
 const FREQ_LABELS: Record<RecurringPlanFormValues['freq'], string> = {
   daily: 'Diario',
   weekly: 'Semanal',
@@ -55,10 +82,11 @@ const FREQ_LABELS: Record<RecurringPlanFormValues['freq'], string> = {
   yearly: 'Anual',
 }
 
-export function RecurringPlanFormDialog({ open, onOpenChange }: RecurringPlanFormDialogProps) {
+export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringPlanFormDialogProps) {
   const accounts = useAccounts()
   const expenseCategories = useExpenseCategories()
   const incomeCategories = useIncomeCategories()
+  const isEditing = !!plan
 
   const form = useForm<RecurringPlanFormValues>({
     resolver: zodResolver(recurringPlanFormSchema),
@@ -69,10 +97,17 @@ export function RecurringPlanFormDialog({ open, onOpenChange }: RecurringPlanFor
 
   useEffect(() => {
     if (open) {
-      form.reset(defaultValues())
-      setAdvancedOpen(false)
+      form.reset(plan ? planToFormValues(plan) : defaultValues())
+      // Open by default when editing a plan that already uses one of these
+      // — otherwise the user has no way to notice it's there without
+      // clicking to expand, and might assume the plan has no end.
+      setAdvancedOpen(!!plan && (plan.rule.endDate !== undefined || plan.rule.maxOccurrences !== undefined))
     }
-  }, [open, form])
+    // Keyed on plan?.id (a stable primitive), not the live-query-derived
+    // `plan` object, so a background refetch doesn't reset an in-progress
+    // edit — same reasoning as TransactionFormDialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, plan?.id])
 
   // Forces the section open if a submit attempt left an error inside it —
   // otherwise a hidden field could block the form with no visible feedback.
@@ -90,11 +125,16 @@ export function RecurringPlanFormDialog({ open, onOpenChange }: RecurringPlanFor
 
   async function onSubmit(values: RecurringPlanFormValues) {
     try {
-      await createRecurringPlanFromForm(values)
-      toast.success('Recurrente creado')
+      if (plan) {
+        await updateRecurringPlanFromForm(plan.id, values)
+        toast.success('Recurrente actualizado')
+      } else {
+        await createRecurringPlanFromForm(values)
+        toast.success('Recurrente creado')
+      }
       onOpenChange(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo crear el recurrente')
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar el recurrente')
     }
   }
 
@@ -102,9 +142,11 @@ export function RecurringPlanFormDialog({ open, onOpenChange }: RecurringPlanFor
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nuevo recurrente</DialogTitle>
+          <DialogTitle>{isEditing ? 'Editar recurrente' : 'Nuevo recurrente'}</DialogTitle>
           <DialogDescription>
-            Se genera un movimiento automáticamente cada vez que corresponda, al abrir la app.
+            {isEditing
+              ? 'Los movimientos ya generados quedan igual — el cambio rige desde la próxima vez que corresponda.'
+              : 'Se genera un movimiento automáticamente cada vez que corresponda, al abrir la app.'}
           </DialogDescription>
         </DialogHeader>
 

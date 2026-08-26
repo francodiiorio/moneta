@@ -54,3 +54,13 @@ export const installmentPlanFormSchema = z.object({
   purchaseDate: z.string().min(1, 'Elegí la fecha de compra'),
 })
 export type InstallmentPlanFormValues = z.infer<typeof installmentPlanFormSchema>
+
+/** Deliberately narrower than installmentPlanFormSchema — editing a plan
+ *  never touches totalAmount/count/dates, see
+ *  installmentPlans.repo.ts:updateInstallmentPlan for why. */
+export const installmentPlanEditFormSchema = z.object({
+  description: z.string().min(1, 'La descripción es obligatoria').max(120),
+  accountId: z.string().min(1, 'Elegí una cuenta'),
+  categoryId: z.string().min(1, 'Elegí una categoría'),
+})
+export type InstallmentPlanEditFormValues = z.infer<typeof installmentPlanEditFormSchema>

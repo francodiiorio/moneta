@@ -1,4 +1,4 @@
-import { Pause, Play, Trash2 } from 'lucide-react'
+import { Pause, Pencil, Play, Trash2 } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,11 +9,12 @@ import type { RecurringPlanListItem } from '../service'
 
 interface RecurringPlanRowProps {
   item: RecurringPlanListItem
+  onEdit: () => void
   onTogglePaused: () => void
   onDelete: () => void
 }
 
-export function RecurringPlanRow({ item, onTogglePaused, onDelete }: RecurringPlanRowProps) {
+export function RecurringPlanRow({ item, onEdit, onTogglePaused, onDelete }: RecurringPlanRowProps) {
   const Icon = RECURRING_KIND_ICONS[item.kind]
   const isTransfer = item.kind === 'transfer'
 
@@ -49,6 +50,14 @@ export function RecurringPlanRow({ item, onTogglePaused, onDelete }: RecurringPl
         <MoneyText value={item.amount} />
       </p>
 
+      {/* 'adjustment' is only reachable via a hand-edited backup — never
+          produced by the form — and RecurringPlanFormDialog's edit mode
+          can't represent it (recurringPlanKindSchema has no such kind). */}
+      {item.kind !== 'adjustment' && (
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={onEdit}>
+          <Pencil className="size-3.5" />
+        </Button>
+      )}
       <Button variant="ghost" size="icon" className="shrink-0" onClick={onTogglePaused}>
         {item.isPaused ? <Play className="size-4" /> : <Pause className="size-4" />}
       </Button>

@@ -259,6 +259,32 @@ tiene que borrar esa transacción puntual desde Movimientos, no desde el plan �
 patrón ya establecido para editar una ocurrencia sin afectar el resto (ver "Recurrentes y
 cuotas como planes + instancias materializadas" arriba).
 
+## Editar un recurrente: todo el template/regla; una compra en cuotas: sólo metadata
+
+**Decisión:** un `RecurringPlan` se puede editar por completo (descripción, cuenta,
+categoría, monto, frecuencia, fechas) — el cambio rige sólo para lo que se materialice de
+ahí en adelante, nunca reescribe transacciones ya generadas. Un `InstallmentPlan` en
+cambio sólo permite editar descripción, cuenta y categoría — el monto total, la cantidad
+de cuotas y las fechas quedan fijos después de crear la compra.
+
+**Por qué:** un recurrente genera sus transacciones de a una, con el tiempo
+(`materializeDue`), así que cambiar el template/regla es seguro — nunca toca lo ya
+materializado, sólo lo que todavía no existe. Una compra en cuotas en cambio genera las N
+transacciones completas de una sola vez al crearla (algunas ya `confirmed`), y
+`listInstallmentPlansWithProgress` calcula cuánto ya se pagó leyendo
+`InstallmentPlan.scheduleCache`, no las transacciones mismas — si se permitiera editar
+`totalAmount`/`count` habría que recalcular ese reparto con `allocate()`, pero las cuotas
+`confirmed` son historial inmutable (ver "Borrar un plan nunca borra plata que ya pasó"
+arriba) y no se pueden recalcular con ellas. Un `scheduleCache` nuevo que no coincida con
+lo que esas transacciones ya cobraron rompería silenciosamente ese cálculo de progreso.
+Description/cuenta/categoría en cambio no participan de ningún cálculo monetario, así que
+son seguras de editar — el cambio se propaga sólo a las cuotas todavía `projected`
+(reescritas in situ preservando monto/fecha/índice), nunca a las `confirmed`, mismo
+patrón que borrar un plan.
+
+**Costo aceptado:** para cambiar el monto o la cantidad de cuotas de una compra hay que
+borrarla y cargarla de nuevo — no hay forma de "corregir" ese número en el lugar.
+
 ## Cifrado del backup: WebCrypto nativo, opt-in, sin recuperación
 
 **Decisión:** el archivo `.finance` puede cifrarse opcionalmente con una contraseña

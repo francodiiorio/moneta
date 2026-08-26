@@ -185,16 +185,32 @@ async function addMissing<T extends { id: string }>(
  * local siempre gana" for why this is the only direction that's safe
  * without a full conflict-resolution UI.
  *
- * `transactions` are deduplicated by id AND, when `sourcePlanId` +
- * `occurrenceIndex` are set, by that pair too. A `RecurringPlan` that
- * already existed on both devices before they diverged gets its
- * occurrences materialized independently by each device's own
- * `materializeDue()` — same calendar occurrence, but `generateId()`
- * (lib/ids.ts) is random, so the two devices produce different
- * transaction ids for it. Deduplicating by id alone would treat them as
- * unrelated and add both, silently double-counting that expense in the
- * account's balance — exactly the scenario this feature exists to
- * consolidate safely.
+ * `transactions` are deduplicated by id AND, when `sourcePlanId` is set,
+ * by `sourcePlanId + date` too. A `RecurringPlan` that already existed on
+ * both devices before they diverged gets its occurrences materialized
+ * independently by each device's own `materializeDue()` — same calendar
+ * occurrence, but `generateId()` (lib/ids.ts) is random, so the two
+ * devices produce different transaction ids for it. Deduplicating by id
+ * alone would treat them as unrelated and add both, silently
+ * double-counting that expense in the account's balance — exactly the
+ * scenario this feature exists to consolidate safely.
+ *
+ * The second key is `date`, not `occurrenceIndex`, deliberately: editing a
+ * RecurringPlan's rule (`recurringPlans.repo.ts:updateRecurringPlan`) can
+ * shift what index a given calendar date gets — `generateOccurrences`
+ * numbers occurrences by counting forward from `rule.startDate`, so moving
+ * `startDate` earlier makes every later occurrence land on a higher index
+ * than it used to. Two devices that materialized the same occurrence
+ * before one of them edited the rule could then disagree on that
+ * occurrence's index while still agreeing on its date — the date is what
+ * `materializeDue`'s own single-device dedup (`occurrence.date > since`)
+ * already treats as the real identity of an occurrence, so the merge uses
+ * the same ground truth. An edit made through the transaction edit form
+ * itself drops `sourcePlanId`/`occurrenceIndex` entirely (see
+ * `features/transactions/service.ts:buildExpenseIncomeEntry`, which never
+ * sets them) — such a transaction is already excluded from this key by
+ * the `sourcePlanId !== undefined` check, so it can never disagree with
+ * an incoming backup on its own edited date.
  *
  * `postings` are gated by their transaction, not merged independently by
  * their own id: a posting whose transaction already exists locally is
@@ -246,8 +262,8 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
     const existingTransactionIds = new Set(localTransactions.map((t) => t.id))
     const existingOccurrenceKeys = new Set(
       localTransactions
-        .filter((t) => t.sourcePlanId !== undefined && t.occurrenceIndex !== undefined)
-        .map((t) => `${t.sourcePlanId}:${t.occurrenceIndex}`),
+        .filter((t) => t.sourcePlanId !== undefined)
+        .map((t) => `${t.sourcePlanId}:${t.date}`),
     )
     // Accept-as-we-go (not a plain .filter over a fixed snapshot) so that
     // two different transaction ids for the SAME occurrence *within the
@@ -257,8 +273,8 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
     // other in a filter taken before either was accepted.
     const newTransactions = data.transactions.filter((t) => {
       if (existingTransactionIds.has(t.id)) return false
-      if (t.sourcePlanId !== undefined && t.occurrenceIndex !== undefined) {
-        const key = `${t.sourcePlanId}:${t.occurrenceIndex}`
+      if (t.sourcePlanId !== undefined) {
+        const key = `${t.sourcePlanId}:${t.date}`
         if (existingOccurrenceKeys.has(key)) return false
         existingOccurrenceKeys.add(key)
       }

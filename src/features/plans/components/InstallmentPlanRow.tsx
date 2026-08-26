@@ -1,14 +1,15 @@
-import { Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
 import type { InstallmentPlanListItem } from '../service'
 
 interface InstallmentPlanRowProps {
   item: InstallmentPlanListItem
+  onEdit: () => void
   onDelete: () => void
 }
 
-export function InstallmentPlanRow({ item, onDelete }: InstallmentPlanRowProps) {
+export function InstallmentPlanRow({ item, onEdit, onDelete }: InstallmentPlanRowProps) {
   const percentPaid = item.count === 0 ? 0 : (item.confirmedCount / item.count) * 100
 
   return (
@@ -20,9 +21,14 @@ export function InstallmentPlanRow({ item, onDelete }: InstallmentPlanRowProps) 
             {item.categoryLabel} · {item.accountLabel}
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={onDelete}>
-          <Trash2 className="size-3.5" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="icon" onClick={onEdit}>
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onDelete}>
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
       </div>
 
       <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">

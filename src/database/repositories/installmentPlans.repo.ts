@@ -81,3 +81,75 @@ export async function deleteInstallmentPlan(id: string): Promise<void> {
     await db.installmentPlans.delete(id)
   })
 }
+
+export interface UpdateInstallmentPlanInput {
+  description: string
+  accountId: string
+  categoryId: string
+}
+
+/**
+ * Editing an installment plan is deliberately narrow: description,
+ * account and category only — never totalAmount/count/dates. Those feed
+ * `scheduleCache` (frozen at creation via `allocate`) and every cuota's
+ * `Transaction` is written upfront, `confirmed` ones included; recomputing
+ * the split after the fact would leave `listInstallmentPlansWithProgress`
+ * reading confirmed amounts off a `scheduleCache` that no longer matches
+ * what those transactions actually record (see docs/DECISIONS.md). To
+ * change the amount or number of cuotas, delete and recreate the plan.
+ *
+ * Only still-`projected` cuotas are rewritten in place (same account,
+ * category and description as the plan) — `confirmed` ones are untouched,
+ * same historical-immutability rule as `deleteInstallmentPlan`.
+ */
+export async function updateInstallmentPlan(id: string, input: UpdateInstallmentPlanInput): Promise<InstallmentPlan> {
+  return db.transaction('rw', db.installmentPlans, db.transactions, db.postings, db.accounts, async () => {
+    const existing = await db.installmentPlans.get(id)
+    invariant(existing, `No se encontró la compra en cuotas: ${id}`)
+
+    const account = await db.accounts.get(input.accountId)
+    invariant(account, `Cuenta no encontrada: ${input.accountId}`)
+    invariant(
+      account.currency === existing.currency,
+      'No se puede mover una compra en cuotas a una cuenta de otra moneda',
+    )
+
+    const plan: InstallmentPlan = {
+      ...existing,
+      description: input.description,
+      accountId: input.accountId,
+      categoryId: input.categoryId,
+      updatedAt: new Date().toISOString(),
+    }
+    await db.installmentPlans.put(plan)
+
+    const schedule = buildInstallmentSchedule(plan)
+    const scheduleByIndex = new Map(schedule.map((occurrence) => [occurrence.index, occurrence]))
+
+    const projected = await db.transactions
+      .where('sourcePlanId')
+      .equals(id)
+      .filter((t) => t.status === 'projected')
+      .toArray()
+
+    for (const transaction of projected) {
+      const occurrence = scheduleByIndex.get(transaction.occurrenceIndex ?? -1)
+      invariant(occurrence, `No se encontró la cuota ${String(transaction.occurrenceIndex)} en el cronograma`)
+      await writeLedgerEntry(
+        buildExpense({
+          date: occurrence.dueDate,
+          description: `${plan.description} (cuota ${occurrence.index + 1}/${plan.count})`,
+          accountId: plan.accountId,
+          categoryId: plan.categoryId,
+          amount: money(occurrence.amount, plan.currency),
+          status: 'projected',
+          sourcePlanId: plan.id,
+          occurrenceIndex: occurrence.index,
+        }),
+        transaction.id,
+      )
+    }
+
+    return plan
+  })
+}

@@ -8,6 +8,7 @@ import {
   listRecurringPlans,
   materializePlan,
   setRecurringPlanPaused,
+  updateRecurringPlan,
 } from './recurringPlans.repo'
 import { buildExpense } from '@/domain/ledger'
 import { minor, money } from '@/domain/money'
@@ -83,6 +84,65 @@ describe('setRecurringPlanPaused / deleteRecurringPlan', () => {
     const kept = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
     expect(kept).toHaveLength(1)
     expect(kept[0]?.status).toBe('confirmed')
+  })
+})
+
+describe('updateRecurringPlan', () => {
+  it('overwrites template/rule and preserves lastMaterializedDate and isPaused', async () => {
+    const { template, account, category } = await setup()
+    const plan = await createRecurringPlan({ template, rule })
+    await materializePlan(
+      plan.id,
+      [
+        buildExpense({
+          date: '2026-01-01',
+          description: 'Alquiler',
+          accountId: account.id,
+          categoryId: category.id,
+          amount: money(100_000, 'ARS'),
+          sourcePlanId: plan.id,
+          occurrenceIndex: 0,
+        }),
+      ],
+      '2026-01-01',
+    )
+    await setRecurringPlanPaused(plan.id, true)
+
+    const newRule: RecurrenceRule = { freq: 'monthly', interval: 1, startDate: '2025-12-01' }
+    const updated = await updateRecurringPlan(plan.id, {
+      template: { ...template, description: 'Alquiler nuevo', amount: 200_000 },
+      rule: newRule,
+    })
+
+    expect(updated.template.description).toBe('Alquiler nuevo')
+    expect(updated.template.amount).toBe(200_000)
+    expect(updated.rule).toEqual(newRule)
+    // A patch, not a full overwrite — fields updateRecurringPlan doesn't
+    // touch survive exactly as materializePlan/setRecurringPlanPaused left
+    // them (the regression this guards: a get-then-put built from a stale
+    // read would silently roll lastMaterializedDate back).
+    expect(updated.lastMaterializedDate).toBe('2026-01-01')
+    expect(updated.isPaused).toBe(true)
+
+    const [persisted] = await listRecurringPlans()
+    expect(persisted).toEqual(updated)
+  })
+
+  it('rejects a non-positive template amount, leaving the plan untouched', async () => {
+    const { template } = await setup()
+    const plan = await createRecurringPlan({ template, rule })
+
+    await expect(updateRecurringPlan(plan.id, { template: { ...template, amount: 0 }, rule })).rejects.toThrow(
+      /mayor a cero/,
+    )
+
+    const [unchanged] = await listRecurringPlans()
+    expect(unchanged?.template.amount).toBe(100_000)
+  })
+
+  it('throws for an id that does not exist', async () => {
+    const { template } = await setup()
+    await expect(updateRecurringPlan('no-existe', { template, rule })).rejects.toThrow(/No se encontró/)
   })
 })
 

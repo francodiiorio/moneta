@@ -12,7 +12,7 @@ import { describeRule, generateOccurrences, nextOccurrenceAfter } from '@/domain
 import { money, parseAmount, sub, sumMoney, type Money } from '@/domain/money'
 import { todayStamp, type DateStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
-import type { InstallmentPlanFormValues, RecurringPlanFormValues } from './schema'
+import type { InstallmentPlanEditFormValues, InstallmentPlanFormValues, RecurringPlanFormValues } from './schema'
 
 function findAccount(accounts: AccountWithBalance[], id: string): AccountWithBalance {
   const account = accounts.find((a) => a.id === id)
@@ -104,6 +104,10 @@ export async function materializeDue(today: DateStamp = todayStamp()): Promise<M
 
 export interface RecurringPlanListItem {
   id: string
+  /** The raw entity, for the edit dialog's default values — see
+   *  features/networth's InvestmentHoldingWithDetails for the same
+   *  "display item embeds the entity" pattern. */
+  plan: RecurringPlan
   description: string
   kind: TransactionTemplate['kind']
   accountLabel: string
@@ -130,6 +134,7 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
     const nextOccurrence = plan.isPaused ? undefined : nextOccurrenceAfter(plan.rule, today)
     return {
       id: plan.id,
+      plan,
       description: template.description,
       kind: template.kind,
       accountLabel: accountById.get(template.accountId)?.name ?? '—',
@@ -143,7 +148,12 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
   })
 }
 
-export async function createRecurringPlanFromForm(values: RecurringPlanFormValues): Promise<RecurringPlan> {
+/** Shared by create and update — building a template+rule from form values
+ *  never depends on whether a plan already exists, only on the form and
+ *  the current account list. */
+async function buildRecurringPlanWrite(
+  values: RecurringPlanFormValues,
+): Promise<{ template: TransactionTemplate; rule: RecurringPlan['rule'] }> {
   const accounts = await accountsRepo.listAccountsWithBalances()
   const account = findAccount(accounts, values.accountId)
   const amount = parseAmount(values.amount, account.currency)
@@ -156,7 +166,7 @@ export async function createRecurringPlanFromForm(values: RecurringPlanFormValue
   // would otherwise write the destination posting in the wrong currency and
   // fail validateLedgerEntry deep inside materializeDue — silently blocking
   // every other plan's materialization too. Reject it here instead, at
-  // creation time, where the user can see why.
+  // creation/edit time, where the user can see why.
   if (values.kind === 'transfer') {
     const toAccount = findAccount(accounts, values.toAccountId)
     invariant(
@@ -179,7 +189,7 @@ export async function createRecurringPlanFromForm(values: RecurringPlanFormValue
   const dayOfMonth = values.dayOfMonth ? Number(values.dayOfMonth) : undefined
   const maxOccurrences = values.maxOccurrences ? Number(values.maxOccurrences) : undefined
 
-  return recurringPlansRepo.createRecurringPlan({
+  return {
     template,
     rule: {
       freq: values.freq,
@@ -189,7 +199,19 @@ export async function createRecurringPlanFromForm(values: RecurringPlanFormValue
       ...(values.endDate !== undefined && values.endDate !== '' && { endDate: values.endDate }),
       ...(maxOccurrences !== undefined && { maxOccurrences }),
     },
-  })
+  }
+}
+
+export async function createRecurringPlanFromForm(values: RecurringPlanFormValues): Promise<RecurringPlan> {
+  const write = await buildRecurringPlanWrite(values)
+  return recurringPlansRepo.createRecurringPlan(write)
+}
+
+/** Only affects materialization from now on — see
+ *  recurringPlansRepo.updateRecurringPlan. */
+export async function updateRecurringPlanFromForm(id: string, values: RecurringPlanFormValues): Promise<RecurringPlan> {
+  const write = await buildRecurringPlanWrite(values)
+  return recurringPlansRepo.updateRecurringPlan(id, write)
 }
 
 export async function setRecurringPlanPaused(id: string, isPaused: boolean): Promise<void> {
@@ -202,6 +224,8 @@ export async function removeRecurringPlan(id: string): Promise<void> {
 
 export interface InstallmentPlanListItem {
   id: string
+  /** The raw entity, for the edit dialog's default values. */
+  plan: InstallmentPlan
   description: string
   accountLabel: string
   categoryLabel: string
@@ -246,6 +270,7 @@ export async function listInstallmentPlansWithProgress(): Promise<InstallmentPla
     const totalAmount = money(plan.totalAmount, plan.currency)
     return {
       id: plan.id,
+      plan,
       description: plan.description,
       accountLabel: accountById.get(plan.accountId)?.name ?? '—',
       categoryLabel: categoryById.get(plan.categoryId)?.name ?? 'Categoría eliminada',
@@ -271,6 +296,20 @@ export async function createInstallmentPlanFromForm(values: InstallmentPlanFormV
     count: Number(values.count),
     firstDueDate: values.firstDueDate,
     purchaseDate: values.purchaseDate,
+  })
+}
+
+/** Narrower than createInstallmentPlanFromForm — see
+ *  installmentPlansRepo.updateInstallmentPlan for why totalAmount/count/
+ *  dates aren't part of this. */
+export async function updateInstallmentPlanFromForm(
+  id: string,
+  values: InstallmentPlanEditFormValues,
+): Promise<InstallmentPlan> {
+  return installmentPlansRepo.updateInstallmentPlan(id, {
+    description: values.description,
+    accountId: values.accountId,
+    categoryId: values.categoryId,
   })
 }
 
