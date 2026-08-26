@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DateField } from '@/components/DateField'
 import { todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
@@ -280,7 +281,7 @@ export function RecurringPlanFormDialog({ open, onOpenChange }: RecurringPlanFor
                 <FormItem>
                   <FormLabel>Empieza</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} />
+                    <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -295,7 +296,7 @@ export function RecurringPlanFormDialog({ open, onOpenChange }: RecurringPlanFor
                   <FormItem>
                     <FormLabel>Termina (opcional)</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

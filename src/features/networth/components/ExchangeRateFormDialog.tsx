@@ -7,6 +7,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DateField } from '@/components/DateField'
 import { todayStamp } from '@/lib/dates'
 import { RATE_PROFILE_LABELS } from '../labels'
 import { exchangeRateFormSchema, NETWORTH_CURRENCIES, NO_PROFILE, type ExchangeRateFormValues } from '../schema'
@@ -125,7 +126,7 @@ export function ExchangeRateFormDialog({ open, onOpenChange }: ExchangeRateFormD
                   <FormItem>
                     <FormLabel>Fecha</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

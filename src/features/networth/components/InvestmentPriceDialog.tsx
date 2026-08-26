@@ -7,6 +7,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { InvestmentAsset } from '@/domain/entities'
+import { DateField } from '@/components/DateField'
 import { todayStamp } from '@/lib/dates'
 import { investmentPriceFormSchema, type InvestmentPriceFormValues } from '../schema'
 import { createManualPriceFromForm } from '../service'
@@ -76,7 +77,7 @@ export function InvestmentPriceDialog({ asset, onOpenChange }: InvestmentPriceDi
                   <FormItem>
                     <FormLabel>Fecha</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

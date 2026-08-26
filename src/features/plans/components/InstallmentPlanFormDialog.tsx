@@ -14,6 +14,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DateField } from '@/components/DateField'
 import { todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
@@ -175,7 +176,7 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
                   <FormItem>
                     <FormLabel>Fecha de compra</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -188,7 +189,7 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
                   <FormItem>
                     <FormLabel>Primera cuota</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

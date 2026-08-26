@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/DateField'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -180,7 +181,7 @@ export function TransactionFormDialog({ open, item, initialKind, onOpenChange }:
                       <FormItem>
                         <FormLabel>Fecha</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -276,7 +277,7 @@ export function TransactionFormDialog({ open, item, initialKind, onOpenChange }:
                     <FormItem>
                       <FormLabel>Fecha</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

@@ -62,6 +62,20 @@ export function formatShortDate(date: DateStamp): string {
   return format(fromDateStamp(date), 'dd/MM')
 }
 
+/** `dd/mm/aaaa` — the app's one date display format, regardless of the
+ *  browser's own locale (see `components/DateField`, which never uses
+ *  the native `<input type="date">` for exactly this reason). */
+export function formatFullDate(date: DateStamp): string {
+  return format(fromDateStamp(date), 'dd/MM/yyyy', { locale: es })
+}
+
+/** Full, spoken-style date (e.g. "sábado, 1 de agosto de 2026") for
+ *  accessibility labels — takes a raw `Date` since callers like a
+ *  calendar widget work with `Date` objects, not `DateStamp` strings. */
+export function formatSpokenDate(date: Date): string {
+  return format(date, 'PPPP', { locale: es })
+}
+
 export function formatMonthShort(month: MonthStamp): string {
   const label = format(monthStart(month), 'LLL', { locale: es })
   return label.charAt(0).toUpperCase() + label.slice(1)

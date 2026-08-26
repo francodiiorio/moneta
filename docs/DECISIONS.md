@@ -362,22 +362,59 @@ este proyecto evita.
 
 ## Un feature puede importar el `service.ts`/hooks de otro, nunca sus componentes
 
-**Decisión:** `features/dashboard` importa directamente `getMonthSummary`,
-`getCurrentNetWorth` y sus hooks desde `features/reports/`, en vez de duplicar esa
-lógica. En cambio, en Etapas anteriores se duplicó deliberadamente un hook trivial de una
-sola línea (`useAccounts`, wrapper de `accountsRepo.listAccountsWithBalances`) entre
+**Decisión:** `features/dashboard` importa directamente `getMonthSummary` desde
+`features/reports/` y `getNetWorthSummary` desde `features/networth/`, en vez de duplicar
+esa lógica. En cambio, en Etapas anteriores se duplicó deliberadamente un hook trivial de
+una sola línea (`useAccounts`, wrapper de `accountsRepo.listAccountsWithBalances`) entre
 `features/accounts` y `features/transactions`.
 
 **Por qué:** la tabla de capas de `CLAUDE.md` prohíbe textualmente que un feature importe
 "otros `features/*/components` internos" — no menciona `service.ts` ni `hooks/`. Para un
 wrapper trivial de una sola función de repository, duplicar es más barato que la
-dependencia cruzada. Pero `getMonthSummary`/`getCurrentNetWorth` no son triviales: hacen
+dependencia cruzada. Pero `getMonthSummary`/`getNetWorthSummary` no son triviales: hacen
 conversión de moneda con manejo de tasas faltantes (`missingRateCount`), y esa lógica
 sería costosa y riesgosa de mantener en dos lugares (un fix tendría que aplicarse dos
 veces). El componente compartido `MissingRateBanner` que ambas páginas usan sí vive en
 `src/components/` — ahí es donde corresponde un componente puramente presentacional sin
 lógica de negocio, no en un feature.
 
+(Nota histórica: hasta el fix "Dashboard consolidado con Patrimonio", `features/dashboard`
+importaba `getCurrentNetWorth` de `features/reports` — una función previa a Etapa 6 que
+nunca aprendió sobre Ahorros/Inversiones. Se reemplazó por `getNetWorthSummary`;
+`getCurrentNetWorth` y su hook quedaron sin ningún caller y se pueden borrar.)
+
 **Regla práctica:** un componente de UI nunca cruza de un feature a otro (usar
 `src/components/` si hace falta compartirlo); un `service.ts`/hook puede cruzar cuando
 duplicarlo costaría más que la dependencia — evaluar caso por caso, no por defecto.
+
+## `DateField` propio en vez de `<input type="date">`, con `react-day-picker`
+
+**Decisión:** ningún campo de fecha usa el `<input type="date">` nativo. Se reemplazó en
+todos lados por `src/components/DateField.tsx`, un Popover con un Calendar propio
+(`src/components/ui/calendar.tsx`, `src/components/ui/popover.tsx`), agregando
+`react-day-picker` como dependencia nueva.
+
+**Por qué:** el formato en que un `<input type="date">` *muestra* la fecha lo decide el
+navegador según su propio idioma configurado — no el `lang` de la página, no ningún CSS.
+En la práctica esto mostraba `mm/dd/aaaa` (inglés de EE.UU.) en una app 100% en español,
+incluyendo un caso visible donde el placeholder salía literalmente sin traducir
+("mm/dd/yyyy"). No hay forma de forzar el formato del input nativo; la única solución real
+es no usarlo.
+
+**Por qué `react-day-picker` y no otra librería o un calendario hecho a mano:** ya son
+dependencias del proyecto tanto `date-fns` (su motor de fechas) como `radix-ui` (de ahí
+sale el primitivo `Popover`), así que sumar `react-day-picker` fue la superficie nueva más
+chica posible — no hizo falta agregar ninguna otra dependencia de UI, y es la librería que
+el propio ecosistema shadcn/ui usa para esto. Se descartó escribir una grilla de calendario
+a mano: reinventar navegación de mes, foco por teclado y estados de accesibilidad de un
+datepicker no se justifica cuando ya existe una librería madura y mantenida para
+exactamente eso.
+
+**Costo aceptado:** es el primer uso de Popover/Calendar en el repo. En vez de repetir la
+receta completa de shadcn (pisar el className de cada subcomponente a mano), el tema se
+resuelve mapeando las variables CSS propias de `react-day-picker` (`--rdp-*`, documentadas
+en su `style.css`) a los tokens de la app (`--primary`, `--radius-md`, etc.) — mucho menos
+código, mismo resultado visual. Un detalle no obvio para quien reuse `DateField`: elegir un
+día cierra el popover pisando el estado `open` directo, no a través del `onOpenChange` de
+Radix, así que `field.onBlur` de react-hook-form no se dispara al elegir una fecha (sí al
+cerrar sin elegir). Hoy no importa porque ningún formulario usa `mode: 'onBlur'`.

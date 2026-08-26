@@ -62,13 +62,6 @@ test('Dashboard shows expense-by-category chart and a recent expenses list', asy
 })
 
 test('Dashboard shows the expense variation vs. the previous month', async ({ page }) => {
-  // Built from local date parts, never toISOString() — that converts to
-  // UTC, which in a positive-offset timezone shifts local midnight of
-  // the 1st back a day, landing this two months back instead of one.
-  const now = new Date()
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const previousMonthDate = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}-${String(prev.getDate()).padStart(2, '0')}`
-
   await page.goto('/cuentas')
   await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
   await page.getByLabel('Nombre').fill('Banco Prueba')
@@ -79,7 +72,19 @@ test('Dashboard shows the expense variation vs. the previous month', async ({ pa
   await page.goto('/movimientos')
   await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
   await page.getByLabel('Descripción').fill('Gasto mes pasado')
-  await page.getByLabel('Fecha').fill(previousMonthDate)
+  // DateField is a Popover+Calendar, not a native date input — its
+  // trigger button still inherits the accessible name "Fecha" from the
+  // associated <FormLabel> (a <button> is labelable, same as an
+  // <input>). exact: true — otherwise it also substring-matches the
+  // field's own "Limpiar fecha" clear button.
+  await page.getByLabel('Fecha', { exact: true }).click()
+  await page.getByRole('button', { name: 'Ir al mes anterior' }).click()
+  // Exact text match, not accessible name (day buttons' aria-label is a
+  // full formatted sentence, e.g. "sábado, 1 de julio de 2026").
+  // :not(.rdp-outside) — showOutsideDays renders the tail of the
+  // adjacent month too, so "1" can appear twice; the outside one carries
+  // that class on its .rdp-day parent cell.
+  await page.locator('.rdp-day:not(.rdp-outside) .rdp-day_button', { hasText: /^1$/ }).click()
   await page.getByLabel('Monto').fill('1000')
   await page.getByRole('combobox', { name: 'Cuenta' }).click()
   await page.getByRole('option', { name: 'Banco Prueba' }).click()
