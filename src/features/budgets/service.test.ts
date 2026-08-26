@@ -39,6 +39,32 @@ describe('getBudgetsWithProgress', () => {
     expect(missingRateCount).toBe(0)
   })
 
+  it('carries the category\'s color/icon, omitting them when unset', async () => {
+    const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+    const food = await createCategory({ name: 'Comida', kind: 'expense', color: '#ef4444', icon: 'utensils' })
+    await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
+    await saveTransaction(
+      buildExpense({ date: '2026-08-05', description: 'Super', accountId: account.id, categoryId: food.id, amount: money(4_000, 'ARS') }),
+    )
+
+    const { items } = await getBudgetsWithProgress('2026-08')
+    expect(items[0]?.categoryColor).toBe('#ef4444')
+    expect(items[0]?.categoryIcon).toBe('utensils')
+  })
+
+  it('omits categoryColor/categoryIcon for a category with neither set', async () => {
+    const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+    const food = await createCategory({ name: 'Comida', kind: 'expense' })
+    await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
+    await saveTransaction(
+      buildExpense({ date: '2026-08-05', description: 'Super', accountId: account.id, categoryId: food.id, amount: money(4_000, 'ARS') }),
+    )
+
+    const { items } = await getBudgetsWithProgress('2026-08')
+    expect(items[0]?.categoryColor).toBeUndefined()
+    expect(items[0]?.categoryIcon).toBeUndefined()
+  })
+
   it('accumulates spend across the whole year for a yearly budget', async () => {
     const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
     const travel = await createCategory({ name: 'Viajes', kind: 'expense' })

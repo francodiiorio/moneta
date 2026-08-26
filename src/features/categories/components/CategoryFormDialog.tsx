@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
+import { Tag } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CategoryIcon } from '@/components/CategoryIcon'
+import { CATEGORY_COLOR_OPTIONS, CATEGORY_ICON_OPTIONS } from '@/components/categoryOptions'
 import type { Category } from '@/domain/entities'
+import { cn } from '@/lib/cn'
 import { useCategories } from '../hooks/useCategories'
 import { createCategoryFromForm, updateCategoryFromForm } from '../service'
 import { categoryFormSchema, type CategoryFormValues } from '../schema'
@@ -29,7 +33,7 @@ interface CategoryFormDialogProps {
 }
 
 function defaultValues(kind: Category['kind']): CategoryFormValues {
-  return { name: '', kind, parentId: '' }
+  return { name: '', kind, parentId: '', color: '', icon: '' }
 }
 
 export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }: CategoryFormDialogProps) {
@@ -45,7 +49,13 @@ export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }
     if (!open) return
     form.reset(
       category
-        ? { name: category.name, kind: category.kind, parentId: category.parentId ?? '' }
+        ? {
+            name: category.name,
+            kind: category.kind,
+            parentId: category.parentId ?? '',
+            color: category.color ?? '',
+            icon: category.icon ?? '',
+          }
         : defaultValues(defaultKind),
     )
     // Keyed on category?.id (a stable primitive), not the live-query-derived
@@ -57,6 +67,8 @@ export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }
   const kind = form.watch('kind')
   const parentOptions =
     categories?.filter((c) => c.kind === kind && !c.parentId && !c.isArchived && c.id !== category?.id) ?? []
+  const selectedColor = form.watch('color')
+  const selectedIcon = form.watch('icon')
 
   async function onSubmit(values: CategoryFormValues) {
     try {
@@ -80,7 +92,7 @@ export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }
           <DialogTitle>{isEditing ? 'Editar categoría' : 'Nueva categoría'}</DialogTitle>
           <DialogDescription>
             {isEditing
-              ? 'Sólo se puede cambiar el nombre — el tipo y la categoría padre quedan fijos.'
+              ? 'El tipo y la categoría padre quedan fijos — el resto se puede cambiar.'
               : 'Agregá una categoría de gasto o ingreso.'}
           </DialogDescription>
         </DialogHeader>
@@ -157,6 +169,90 @@ export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="flex items-center gap-3">
+              <CategoryIcon icon={selectedIcon || undefined} color={selectedColor || undefined} />
+              <span className="text-sm text-muted-foreground">Así se va a ver en Movimientos.</span>
+            </div>
+
+            <FormField
+              control={form.control}
+              name="color"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Color (opcional)</FormLabel>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      aria-label="Sin color"
+                      title="Sin color"
+                      onClick={() => field.onChange('')}
+                      className={cn(
+                        'flex size-7 items-center justify-center rounded-full border-2',
+                        field.value === '' ? 'border-foreground' : 'border-transparent',
+                      )}
+                    >
+                      <span className="size-5 rounded-full bg-muted" />
+                    </button>
+                    {CATEGORY_COLOR_OPTIONS.map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        aria-label={label}
+                        title={label}
+                        onClick={() => field.onChange(value)}
+                        className={cn(
+                          'size-7 rounded-full border-2',
+                          field.value === value ? 'border-foreground' : 'border-transparent',
+                        )}
+                        style={{ backgroundColor: value }}
+                      />
+                    ))}
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="icon"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Ícono (opcional)</FormLabel>
+                  <div className="grid max-h-40 grid-cols-6 gap-1 overflow-y-auto rounded-lg border border-border p-2">
+                    <button
+                      type="button"
+                      aria-label="Sin ícono"
+                      title="Sin ícono"
+                      onClick={() => field.onChange('')}
+                      className={cn(
+                        'flex items-center justify-center rounded-md p-2 hover:bg-muted',
+                        field.value === '' && 'bg-muted ring-2 ring-primary',
+                      )}
+                    >
+                      <Tag className="size-4 text-muted-foreground" />
+                    </button>
+                    {CATEGORY_ICON_OPTIONS.map(({ key, label, icon: Icon }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        aria-label={label}
+                        title={label}
+                        onClick={() => field.onChange(key)}
+                        className={cn(
+                          'flex items-center justify-center rounded-md p-2 hover:bg-muted',
+                          field.value === key && 'bg-muted ring-2 ring-primary',
+                        )}
+                      >
+                        <Icon className="size-4" />
+                      </button>
+                    ))}
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}

@@ -8,6 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { CategoryIcon } from '@/components/CategoryIcon'
 import { cn } from '@/lib/cn'
 import { formatShortDate } from '@/lib/dates'
 import { TRANSACTION_KIND_ICONS } from '../labels'
@@ -23,19 +24,28 @@ interface TransactionRowProps {
 export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) {
   const Icon = TRANSACTION_KIND_ICONS[item.kind]
   const isTransfer = item.kind === 'transfer'
+  // A transfer has no category to draw identity from; an expense/income
+  // without a customized icon/color keeps the plain kind-colored badge
+  // instead of falling back to CategoryIcon's neutral tag — no visual
+  // change for anyone who hasn't set one up.
+  const hasCategoryIdentity = !isTransfer && (item.categoryColor !== undefined || item.categoryIcon !== undefined)
 
   return (
     <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
-      <div
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-full',
-          item.kind === 'expense' && 'bg-negative/10 text-negative',
-          item.kind === 'income' && 'bg-positive/10 text-positive',
-          isTransfer && 'bg-muted text-muted-foreground',
-        )}
-      >
-        <Icon className="size-4.5" />
-      </div>
+      {hasCategoryIdentity ? (
+        <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} />
+      ) : (
+        <div
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-full',
+            item.kind === 'expense' && 'bg-negative/10 text-negative',
+            item.kind === 'income' && 'bg-positive/10 text-positive',
+            isTransfer && 'bg-muted text-muted-foreground',
+          )}
+        >
+          <Icon className="size-4.5" />
+        </div>
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">

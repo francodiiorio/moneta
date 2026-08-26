@@ -1,6 +1,7 @@
 import { toast } from 'sonner'
 import { ArchiveRestore, ChevronDown, ChevronUp, Pencil, Archive as ArchiveIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CategoryIcon } from '@/components/CategoryIcon'
 import type { Category } from '@/domain/entities'
 import { moveCategory, setCategoryArchived } from '../service'
 import { useCategoriesUiStore } from '../store'
@@ -38,6 +39,7 @@ interface RowProps {
 function CategoryRow({ category, indent, onEdit }: RowProps) {
   return (
     <div className={`flex items-center gap-2 border-b border-border py-2 last:border-b-0 ${indent ? 'pl-6' : ''}`}>
+      <CategoryIcon icon={category.icon} color={category.color} size="sm" />
       <p className="min-w-0 flex-1 truncate text-sm">{category.name}</p>
       <Button variant="ghost" size="icon" className="size-7" onClick={() => void handleMove(category.id, 'up')}>
         <ChevronUp className="size-4" />

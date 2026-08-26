@@ -29,6 +29,8 @@ export interface BudgetProgressItem {
   budgetId: string
   categoryId: string
   categoryName: string
+  categoryColor?: string
+  categoryIcon?: string
   period: Budget['period']
   startsOn: Budget['startsOn']
   progress: BudgetProgress
@@ -111,10 +113,13 @@ export async function getBudgetsWithProgress(month: MonthStamp): Promise<Budgets
       }
     }
 
+    const category = categoryById.get(categoryId)
     items.push({
       budgetId: active.id,
       categoryId,
-      categoryName: categoryById.get(categoryId)?.name ?? 'Categoría eliminada',
+      categoryName: category?.name ?? 'Categoría eliminada',
+      ...(category?.color !== undefined && { categoryColor: category.color }),
+      ...(category?.icon !== undefined && { categoryIcon: category.icon }),
       period,
       startsOn: active.startsOn,
       progress: calculateBudgetProgress(budgetAmount, actualAmount),

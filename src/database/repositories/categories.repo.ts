@@ -11,7 +11,16 @@ export interface CreateCategoryInput {
   icon?: string
 }
 
-export type UpdateCategoryInput = Partial<Pick<Category, 'name' | 'color' | 'icon'>>
+/** `color`/`icon` explicitly allow `undefined` (unlike the entity's own
+ *  `?:` optional fields) so a caller can clear a previously-set one —
+ *  `db.categories.update()` only touches keys actually present in the
+ *  patch, so omitting a key leaves the stored value alone, while including
+ *  it as `undefined` genuinely blanks it. */
+export interface UpdateCategoryInput {
+  name?: string
+  color?: string | undefined
+  icon?: string | undefined
+}
 
 const DEFAULT_CATEGORIES: Array<{ name: string; kind: Category['kind'] }> = [
   { name: 'Comida', kind: 'expense' },

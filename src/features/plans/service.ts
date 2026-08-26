@@ -112,6 +112,8 @@ export interface RecurringPlanListItem {
   kind: TransactionTemplate['kind']
   accountLabel: string
   categoryLabel?: string
+  categoryColor?: string
+  categoryIcon?: string
   toAccountLabel?: string
   amount: Money
   ruleDescription: string
@@ -132,13 +134,16 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
   return plans.map((plan) => {
     const { template } = plan
     const nextOccurrence = plan.isPaused ? undefined : nextOccurrenceAfter(plan.rule, today)
+    const category = template.categoryId !== undefined ? categoryById.get(template.categoryId) : undefined
     return {
       id: plan.id,
       plan,
       description: template.description,
       kind: template.kind,
       accountLabel: accountById.get(template.accountId)?.name ?? '—',
-      ...(template.categoryId !== undefined && { categoryLabel: categoryById.get(template.categoryId)?.name ?? '—' }),
+      ...(template.categoryId !== undefined && { categoryLabel: category?.name ?? '—' }),
+      ...(category?.color !== undefined && { categoryColor: category.color }),
+      ...(category?.icon !== undefined && { categoryIcon: category.icon }),
       ...(template.toAccountId !== undefined && { toAccountLabel: accountById.get(template.toAccountId)?.name ?? '—' }),
       amount: money(template.amount, template.currency),
       ruleDescription: describeRule(plan.rule),
@@ -229,6 +234,8 @@ export interface InstallmentPlanListItem {
   description: string
   accountLabel: string
   categoryLabel: string
+  categoryColor?: string
+  categoryIcon?: string
   totalAmount: Money
   count: number
   confirmedCount: number
@@ -268,12 +275,15 @@ export async function listInstallmentPlansWithProgress(): Promise<InstallmentPla
         .map((amount) => money(amount, plan.currency)),
     )
     const totalAmount = money(plan.totalAmount, plan.currency)
+    const category = categoryById.get(plan.categoryId)
     return {
       id: plan.id,
       plan,
       description: plan.description,
       accountLabel: accountById.get(plan.accountId)?.name ?? '—',
-      categoryLabel: categoryById.get(plan.categoryId)?.name ?? 'Categoría eliminada',
+      categoryLabel: category?.name ?? 'Categoría eliminada',
+      ...(category?.color !== undefined && { categoryColor: category.color }),
+      ...(category?.icon !== undefined && { categoryIcon: category.icon }),
       totalAmount,
       count: plan.count,
       confirmedCount: confirmedIndexes.size,

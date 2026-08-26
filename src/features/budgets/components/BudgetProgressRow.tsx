@@ -2,6 +2,7 @@ import { Trash2 } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { CategoryIcon } from '@/components/CategoryIcon'
 import { cn } from '@/lib/cn'
 import type { BudgetProgressItem } from '../service'
 
@@ -19,6 +20,7 @@ export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
     <div className="rounded-xl border border-border p-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
+          <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} size="sm" />
           <p className="truncate font-medium">{item.categoryName}</p>
           <Badge variant="secondary">{item.period === 'monthly' ? 'Mensual' : 'Anual'}</Badge>
         </div>

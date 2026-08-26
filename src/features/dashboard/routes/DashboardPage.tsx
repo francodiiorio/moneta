@@ -6,6 +6,7 @@ import { MoneyText } from '@/components/MoneyText'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ExpenseByCategoryChart } from '@/components/ExpenseByCategoryChart'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
+import { CategoryIcon } from '@/components/CategoryIcon'
 import { cn } from '@/lib/cn'
 import { currentMonthStamp, formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { percentChange } from '@/domain/money'
@@ -122,7 +123,10 @@ export function DashboardPage() {
                 to="/presupuestos"
                 className="flex items-center justify-between text-sm hover:text-foreground"
               >
-                <span className="text-muted-foreground">{item.categoryName}</span>
+                <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                  <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} size="sm" />
+                  <span className="truncate">{item.categoryName}</span>
+                </span>
                 <span className={item.progress.isOverBudget ? 'font-medium text-negative' : 'font-medium'}>
                   {Math.round(item.progress.percentUsed)}% usado
                 </span>

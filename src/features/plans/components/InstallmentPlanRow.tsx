@@ -1,6 +1,7 @@
 import { Pencil, Trash2 } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
+import { CategoryIcon } from '@/components/CategoryIcon'
 import type { InstallmentPlanListItem } from '../service'
 
 interface InstallmentPlanRowProps {
@@ -15,11 +16,14 @@ export function InstallmentPlanRow({ item, onEdit, onDelete }: InstallmentPlanRo
   return (
     <div className="rounded-xl border border-border p-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-medium">{item.description}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {item.categoryLabel} · {item.accountLabel}
-          </p>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} />
+          <div className="min-w-0">
+            <p className="truncate font-medium">{item.description}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {item.categoryLabel} · {item.accountLabel}
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button variant="ghost" size="icon" onClick={onEdit}>

@@ -35,6 +35,16 @@ describe('createCategory', () => {
       createCategory({ name: 'Delivery', kind: 'expense', parentId: child.id }),
     ).rejects.toThrow(/sólo se admite un nivel/)
   })
+
+  it('sets color/icon when given, omits them when not', async () => {
+    const withIdentity = await createCategory({ name: 'Comida', kind: 'expense', color: '#ef4444', icon: 'utensils' })
+    expect(withIdentity.color).toBe('#ef4444')
+    expect(withIdentity.icon).toBe('utensils')
+
+    const withoutIdentity = await createCategory({ name: 'Otros', kind: 'expense' })
+    expect(withoutIdentity.color).toBeUndefined()
+    expect(withoutIdentity.icon).toBeUndefined()
+  })
 })
 
 describe('listCategories', () => {
@@ -53,6 +63,30 @@ describe('updateCategory', () => {
     const updated = await db.categories.get(category.id)
     expect(updated?.name).toBe('Comida y bebida')
     expect(updated?.kind).toBe('expense')
+  })
+
+  it('sets color/icon', async () => {
+    const category = await createCategory({ name: 'Comida', kind: 'expense' })
+    await updateCategory(category.id, { color: '#3b82f6', icon: 'utensils' })
+    const updated = await db.categories.get(category.id)
+    expect(updated?.color).toBe('#3b82f6')
+    expect(updated?.icon).toBe('utensils')
+  })
+
+  it('clears a previously-set color/icon when given undefined', async () => {
+    const category = await createCategory({ name: 'Comida', kind: 'expense', color: '#3b82f6', icon: 'utensils' })
+    await updateCategory(category.id, { color: undefined, icon: undefined })
+    const updated = await db.categories.get(category.id)
+    expect(updated?.color).toBeUndefined()
+    expect(updated?.icon).toBeUndefined()
+  })
+
+  it('omitting color/icon from the patch leaves them untouched', async () => {
+    const category = await createCategory({ name: 'Comida', kind: 'expense', color: '#3b82f6', icon: 'utensils' })
+    await updateCategory(category.id, { name: 'Comida y bebida' })
+    const updated = await db.categories.get(category.id)
+    expect(updated?.color).toBe('#3b82f6')
+    expect(updated?.icon).toBe('utensils')
   })
 })
 

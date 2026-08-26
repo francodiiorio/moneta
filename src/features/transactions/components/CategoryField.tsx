@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { CategoryIcon } from '@/components/CategoryIcon'
 import type { Category } from '@/domain/entities'
 import { useCategories } from '../hooks/useCategories'
 import { createCategoryQuick } from '../service'
@@ -84,7 +85,10 @@ export function CategoryField({ kind, value, onChange }: CategoryFieldProps) {
       <SelectContent>
         {groupByParent(categories ?? []).map(({ category, isChild }) => (
           <SelectItem key={category.id} value={category.id}>
-            {isChild ? `— ${category.name}` : category.name}
+            <span className="flex items-center gap-2">
+              <CategoryIcon icon={category.icon} color={category.color} size="sm" />
+              {isChild ? `— ${category.name}` : category.name}
+            </span>
           </SelectItem>
         ))}
         <SelectItem value={NEW_CATEGORY_VALUE}>+ Nueva categoría</SelectItem>

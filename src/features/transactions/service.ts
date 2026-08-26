@@ -22,6 +22,8 @@ export interface TransactionListItem {
   amount: Money
   accountLabel: string
   categoryLabel?: string
+  categoryColor?: string
+  categoryIcon?: string
   // Raw fields to prefill the edit form — absent depending on `kind`.
   accountId?: string
   categoryId?: string
@@ -53,9 +55,7 @@ export async function listTransactionsForMonth(
 
     const accountPostings = postings.filter((p) => p.target === 'account')
     const categoryPosting = postings.find((p) => p.target === 'category')
-    const categoryLabel = categoryPosting?.categoryId
-      ? categoryById.get(categoryPosting.categoryId)?.name
-      : undefined
+    const category = categoryPosting?.categoryId ? categoryById.get(categoryPosting.categoryId) : undefined
 
     if (transaction.kind === 'transfer') {
       const outgoing = accountPostings.find((p) => p.amount < 0)
@@ -89,7 +89,9 @@ export async function listTransactionsForMonth(
       status: transaction.status,
       amount: money(posting?.amount ?? 0, posting?.currency ?? 'ARS'),
       accountLabel: (posting?.accountId && accountById.get(posting.accountId)?.name) || '—',
-      ...(categoryLabel !== undefined && { categoryLabel }),
+      ...(category?.name !== undefined && { categoryLabel: category.name }),
+      ...(category?.color !== undefined && { categoryColor: category.color }),
+      ...(category?.icon !== undefined && { categoryIcon: category.icon }),
       ...(posting?.accountId !== undefined && { accountId: posting.accountId }),
       ...(categoryPosting?.categoryId !== undefined && { categoryId: categoryPosting.categoryId }),
     })

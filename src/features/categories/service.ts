@@ -9,9 +9,18 @@ export async function createCategoryFromForm(values: CategoryFormValues): Promis
     name: values.name,
     kind: values.kind,
     ...(values.parentId && { parentId: values.parentId }),
+    ...(values.color && { color: values.color }),
+    ...(values.icon && { icon: values.icon }),
   })
 }
 
 export async function updateCategoryFromForm(id: string, values: CategoryFormValues): Promise<void> {
-  await categoriesRepo.updateCategory(id, { name: values.name })
+  // Unlike create, always sends color/icon (even '' → undefined) rather
+  // than omitting them when unset — editing has to be able to clear a
+  // previously-chosen one, not just leave the old one in place.
+  await categoriesRepo.updateCategory(id, {
+    name: values.name,
+    color: values.color || undefined,
+    icon: values.icon || undefined,
+  })
 }

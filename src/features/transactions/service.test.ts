@@ -141,4 +141,31 @@ describe('listTransactionsForMonth', () => {
     const [item] = await listTransactionsForMonth('2026-08')
     expect(item?.categoryLabel).toBe('Comida')
   })
+
+  it('carries a category\'s color/icon, omitting them when unset', async () => {
+    const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(1000) })
+    const withIdentity = await createCategory({ name: 'Comida', kind: 'expense', color: '#ef4444', icon: 'utensils' })
+    const withoutIdentity = await createCategory({ name: 'Otros', kind: 'expense' })
+    const accounts = await listAccountsWithBalances()
+
+    await saveExpenseIncome(
+      'expense',
+      { date: '2026-08-01', description: 'Super', accountId: account.id, categoryId: withIdentity.id, amount: '500' },
+      accounts,
+    )
+    await saveExpenseIncome(
+      'expense',
+      { date: '2026-08-02', description: 'Otro', accountId: account.id, categoryId: withoutIdentity.id, amount: '300' },
+      accounts,
+    )
+
+    const items = await listTransactionsForMonth('2026-08')
+    const withIdentityItem = items.find((i) => i.categoryLabel === 'Comida')
+    const withoutIdentityItem = items.find((i) => i.categoryLabel === 'Otros')
+
+    expect(withIdentityItem?.categoryColor).toBe('#ef4444')
+    expect(withIdentityItem?.categoryIcon).toBe('utensils')
+    expect(withoutIdentityItem?.categoryColor).toBeUndefined()
+    expect(withoutIdentityItem?.categoryIcon).toBeUndefined()
+  })
 })
