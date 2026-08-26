@@ -7,7 +7,7 @@ import { saveTransaction } from '@/database/repositories/transactions.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
 import { buildExpense, buildIncome, buildTransfer } from '@/domain/ledger'
 import { minor, money } from '@/domain/money'
-import { getCurrentNetWorth, getExpenseByCategory, getMonthSummary, getNetWorthHistory } from './service'
+import { getExpenseByCategory, getMonthSummary, getNetWorthHistory } from './service'
 
 afterEach(async () => {
   await Promise.all([
@@ -165,14 +165,16 @@ describe('getExpenseByCategory', () => {
   })
 })
 
-describe('getCurrentNetWorth / getNetWorthHistory', () => {
+describe('getNetWorthHistory', () => {
   it('sums account balances converted to the base currency', async () => {
     await createAccount({ name: 'Banco ARS', type: 'bank', currency: 'ARS', openingBalance: minor(100_000) })
     await createAccount({ name: 'Banco USD', type: 'bank', currency: 'USD', openingBalance: minor(100) })
     await createExchangeRate({ date: '2026-01-01', from: 'USD', to: 'ARS', rate: 1000 })
 
-    const { netWorth, missingRateCount } = await getCurrentNetWorth()
-    expect(netWorth).toEqual(money(200_000, 'ARS')) // 100000 + 100*1000
+    // monthsBack: 1 -> the single point is "today" (see getNetWorthHistory's
+    // own i === 0 case), same as the now-removed getCurrentNetWorth.
+    const { points, missingRateCount } = await getNetWorthHistory(1)
+    expect(points[0]?.netWorth).toEqual(money(200_000, 'ARS')) // 100000 + 100*1000
     expect(missingRateCount).toBe(0)
   })
 
@@ -181,13 +183,9 @@ describe('getCurrentNetWorth / getNetWorthHistory', () => {
     await createAccount({ name: 'Banco USD', type: 'bank', currency: 'USD', openingBalance: minor(100) })
     // no exchange rate loaded at all
 
-    const { netWorth, missingRateCount } = await getCurrentNetWorth()
-    expect(netWorth).toEqual(money(100_000, 'ARS')) // only the ARS account counted
-    expect(missingRateCount).toBe(1)
-
-    const { points, missingRateCount: historyMisses } = await getNetWorthHistory(2)
+    const { points, missingRateCount } = await getNetWorthHistory(2)
     expect(points.every((p) => p.netWorth.amount === 100_000)).toBe(true)
-    expect(historyMisses).toBe(2) // one USD account miss per point
+    expect(missingRateCount).toBe(2) // one USD account miss per point
   })
 
   it('uses the rate that was in effect at each historical point, not the latest one', async () => {

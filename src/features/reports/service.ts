@@ -148,11 +148,6 @@ async function netWorthAsOf(asOfDate: DateStamp, baseCurrency: CurrencyCode): Pr
   return { netWorth: total, missingRateCount }
 }
 
-export async function getCurrentNetWorth(): Promise<{ netWorth: Money; missingRateCount: number }> {
-  const settings = await settingsRepo.getSettings()
-  return netWorthAsOf(todayStamp(), settings.baseCurrency)
-}
-
 export interface NetWorthPoint {
   month: MonthStamp
   netWorth: Money

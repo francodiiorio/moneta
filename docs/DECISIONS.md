@@ -381,7 +381,7 @@ lógica de negocio, no en un feature.
 (Nota histórica: hasta el fix "Dashboard consolidado con Patrimonio", `features/dashboard`
 importaba `getCurrentNetWorth` de `features/reports` — una función previa a Etapa 6 que
 nunca aprendió sobre Ahorros/Inversiones. Se reemplazó por `getNetWorthSummary`;
-`getCurrentNetWorth` y su hook quedaron sin ningún caller y se pueden borrar.)
+`getCurrentNetWorth` y su hook quedaron sin ningún caller y se borraron.)
 
 **Regla práctica:** un componente de UI nunca cruza de un feature a otro (usar
 `src/components/` si hace falta compartirlo); un `service.ts`/hook puede cruzar cuando

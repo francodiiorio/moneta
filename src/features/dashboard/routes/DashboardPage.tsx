@@ -26,8 +26,9 @@ export function DashboardPage() {
   const summary = useMonthSummary(month)
   const previousSummary = useMonthSummary(shiftMonth(month, -1))
   // Same source of truth as /patrimonio — Cuentas + Ahorros + Inversiones,
-  // not just Cuentas (features/reports:getCurrentNetWorth predates the
-  // Patrimonio module and never learned about the other two).
+  // not just Cuentas. See docs/DECISIONS.md "Un feature puede importar
+  // el service.ts/hooks de otro..." for why this predates and replaced
+  // features/reports:getCurrentNetWorth (accounts-only, now removed).
   const netWorth = useNetWorthSummary()
   const expenseByCategory = useExpenseByCategory(month)
   const recentExpenses = useRecentExpenses(month)
