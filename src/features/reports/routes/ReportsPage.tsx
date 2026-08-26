@@ -46,33 +46,41 @@ export function ReportsPage() {
         </Button>
       </div>
 
+      {/* One card, not three — same reasoning as the Dashboard's stat row
+          (see docs/PRODUCT.md "Calma antes que densidad"): three numbers
+          read together at a glance, not three separately bordered boxes.
+          Divider only from lg:+, same breakpoint as Dashboard's, so the
+          extra padding it needs doesn't tighten the column right at the
+          point 3 columns first appear (sm:). This narrows, not removes,
+          a pre-existing overflow risk for a very long amount at ~768-850px
+          — the three-separate-Card layout had the same risk, slightly
+          worse (see the review that flagged this — money is never
+          truncated, so an amount long enough can still overflow its
+          column in that range; not something this change introduced or
+          fully closes). */}
       {summary && (
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Card>
-            <CardContent>
+        <Card className="py-0">
+          <CardContent className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-3 lg:gap-0 lg:divide-x lg:divide-border">
+            <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
               <p className="text-xs text-muted-foreground">Ingresos</p>
               <p className="mt-1 text-lg font-semibold">
                 <MoneyText value={summary.income} />
               </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent>
+            </div>
+            <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
               <p className="text-xs text-muted-foreground">Gastos</p>
               <p className="mt-1 text-lg font-semibold">
                 <MoneyText value={summary.expense} />
               </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent>
+            </div>
+            <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
               <p className="text-xs text-muted-foreground">Balance neto</p>
               <p className="mt-1 text-lg font-semibold">
                 <MoneyText value={summary.net} signColor />
               </p>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {summary !== undefined && !hasMovementsThisMonth ? (
