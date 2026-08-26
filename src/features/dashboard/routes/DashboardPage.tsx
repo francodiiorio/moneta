@@ -67,27 +67,34 @@ export function DashboardPage() {
 
       <MissingRateBanner count={missingRateCount} />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent>
+      {/* One card, not four — the four numbers are read together at a
+          glance (that's the point of a dashboard), so four separately
+          bordered/shadowed boxes was pure visual noise for the same
+          information. 4-column layout (and its divider) only from lg:+ —
+          same breakpoint the old sm:grid-cols-2 lg:grid-cols-4 layout used.
+          sm: is too aggressive: a 4-column row in the ~640-1024px range
+          (tablet portrait, an unmaximized laptop window) doesn't leave
+          enough width for a several-digit amount, and it clips instead of
+          wrapping. Below lg: it's a 2x2 grid, where a vertical divide
+          would fall in the wrong place anyway (Tailwind's divide-x is
+          DOM-adjacency-based, not row-aware). */}
+      <Card className="py-0">
+        <CardContent className="grid grid-cols-2 gap-4 p-4 lg:grid-cols-4 lg:gap-0 lg:divide-x lg:divide-border">
+          <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
             <p className="text-xs text-muted-foreground">Ingresos del mes</p>
             <p className="mt-1 text-xl font-semibold">
               {summary ? <MoneyText value={summary.income} /> : <span className="text-muted-foreground">—</span>}
             </p>
             {incomeChange !== undefined && <VariationBadge percent={incomeChange} />}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
+          </div>
+          <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
             <p className="text-xs text-muted-foreground">Gastos del mes</p>
             <p className="mt-1 text-xl font-semibold">
               {summary ? <MoneyText value={summary.expense} /> : <span className="text-muted-foreground">—</span>}
             </p>
             {expenseChange !== undefined && <VariationBadge percent={expenseChange} invert />}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
+          </div>
+          <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
             <p className="text-xs text-muted-foreground">Balance neto</p>
             <p className="mt-1 text-xl font-semibold">
               {summary ? (
@@ -96,44 +103,44 @@ export function DashboardPage() {
                 <span className="text-muted-foreground">—</span>
               )}
             </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
+          </div>
+          <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
             <p className="text-xs text-muted-foreground">Patrimonio total</p>
             <p className="mt-1 text-xl font-semibold">
               {netWorth ? <MoneyText value={netWorth.total} /> : <span className="text-muted-foreground">—</span>}
             </p>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
+      {/* Same visual family as MissingRateBanner/MissingPriceBanner — a
+          heads-up, not a content section, so it doesn't get full Card
+          chrome (border + shadow + header) competing with the chart/list
+          cards below for attention. */}
       {budgetsToReview !== undefined && budgetsToReview.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <TriangleAlert className="size-4 text-negative" />
-              Presupuestos a revisar
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border bg-muted/50 px-3 py-2.5">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <TriangleAlert className="size-4 text-negative" />
+            Presupuestos a revisar
+          </p>
+          <div className="flex flex-col gap-1.5">
             {budgetsToReview.map((item) => (
               <Link
                 key={item.budgetId}
                 to="/presupuestos"
-                className="flex items-center justify-between text-sm hover:text-foreground"
+                className="flex items-center justify-between gap-3 text-sm hover:text-foreground"
               >
                 <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
                   <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} size="sm" />
                   <span className="truncate">{item.categoryName}</span>
                 </span>
-                <span className={item.progress.isOverBudget ? 'font-medium text-negative' : 'font-medium'}>
+                <span className={cn('shrink-0 font-medium', item.progress.isOverBudget && 'text-negative')}>
                   {Math.round(item.progress.percentUsed)}% usado
                 </span>
               </Link>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {(hasCategoryData || hasRecentExpenses) && (
