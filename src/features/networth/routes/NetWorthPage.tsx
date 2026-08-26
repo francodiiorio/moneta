@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
+import { MissingPriceBanner } from '@/components/MissingPriceBanner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -174,6 +175,7 @@ export function NetWorthPage() {
               count={summary.missingRateCount}
               itemLabel={['cuenta, ahorro o inversión', 'cuentas, ahorros o inversiones']}
             />
+            <MissingPriceBanner count={summary.missingPriceCount} />
 
             <Card>
               <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
