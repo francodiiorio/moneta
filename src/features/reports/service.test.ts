@@ -3,9 +3,13 @@ import { db } from '@/database/db'
 import { createAccount } from '@/database/repositories/accounts.repo'
 import { createCategory } from '@/database/repositories/categories.repo'
 import { createExchangeRate } from '@/database/repositories/exchangeRates.repo'
+import { createAssetPrice } from '@/database/repositories/assetPrices.repo'
+import { createInvestmentAsset, createInvestmentHolding } from '@/database/repositories/investments.repo'
+import { createSavingsHolding } from '@/database/repositories/savingsHoldings.repo'
 import { saveTransaction } from '@/database/repositories/transactions.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
 import { buildExpense, buildIncome, buildTransfer } from '@/domain/ledger'
+import { QUANTITY_SCALE } from '@/domain/decimal'
 import { minor, money } from '@/domain/money'
 import { getExpenseByCategory, getMonthSummary, getNetWorthHistory } from './service'
 
@@ -17,6 +21,10 @@ afterEach(async () => {
     db.postings.clear(),
     db.exchangeRates.clear(),
     db.settings.clear(),
+    db.savingsHoldings.clear(),
+    db.investmentAssets.clear(),
+    db.investmentHoldings.clear(),
+    db.assetPrices.clear(),
   ])
 })
 
@@ -56,6 +64,21 @@ describe('getMonthSummary', () => {
     const summary = await getMonthSummary('2026-08') // baseCurrency defaults to ARS
     expect(summary.expense).toEqual(money(100_000, 'ARS')) // 100 USD * 1000
     expect(summary.missingRateCount).toBe(0)
+  })
+
+  it("prefers settings.rateProfile's rate over an untagged one for the same pair/date", async () => {
+    const usdAccount = await createAccount({ name: 'Banco USD', type: 'bank', currency: 'USD', openingBalance: minor(0) })
+    const category = await createCategory({ name: 'Viajes', kind: 'expense' })
+    await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1000 }) // untagged
+    await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1500, profile: 'blue' })
+    await updateSettings({ rateProfile: 'blue' })
+
+    await saveTransaction(
+      buildExpense({ date: '2026-08-15', description: 'Hotel', accountId: usdAccount.id, categoryId: category.id, amount: money(100, 'USD') }),
+    )
+
+    const summary = await getMonthSummary('2026-08')
+    expect(summary.expense).toEqual(money(150_000, 'ARS')) // 100 USD * 1500 (blue), not * 1000
   })
 
   it('counts a missing rate instead of throwing, and does not let it affect other totals', async () => {
@@ -210,5 +233,51 @@ describe('getNetWorthHistory', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('includes a savings holding\'s current amount in every historical point', async () => {
+    await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(100_000) })
+    await createSavingsHolding({ name: 'Efectivo', currency: 'ARS', amount: 50_000 })
+
+    // Savings has no history of its own — see docs/DECISIONS.md — so
+    // "today's amount" is what every past point uses too.
+    const { points, missingRateCount } = await getNetWorthHistory(3)
+    expect(missingRateCount).toBe(0)
+    expect(points.every((p) => p.netWorth.amount === 150_000)).toBe(true)
+  })
+
+  it('revalues an investment position at each month\'s own historical price, not the latest one', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-23T12:00:00Z'))
+    try {
+      await updateSettings({ baseCurrency: 'ARS' })
+      const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'ARS', priceMode: 'manual' })
+      await createInvestmentHolding({ assetId: asset.id, quantity: 2 * QUANTITY_SCALE })
+      // Price changed mid-window: 1000 until mid-July, 1500 from then on —
+      // same shape as the existing exchange-rate-history test above.
+      await createAssetPrice({ assetId: asset.id, price: 1000, currency: 'ARS', date: '2026-01-01', source: 'manual' })
+      await createAssetPrice({ assetId: asset.id, price: 1500, currency: 'ARS', date: '2026-07-15', source: 'manual' })
+
+      const { points, missingRateCount, missingPriceCount } = await getNetWorthHistory(3) // Jun, Jul, Aug(today)
+      expect(missingRateCount).toBe(0)
+      expect(missingPriceCount).toBe(0)
+      expect(points.map((p) => [p.month, p.netWorth.amount])).toEqual([
+        ['2026-06', 2_000], // 2 units * 1000 (price valid at 2026-06-30)
+        ['2026-07', 3_000], // 2 units * 1500 (price changed 2026-07-15, valid at 2026-07-31)
+        ['2026-08', 3_000], // 2 units * 1500 (still valid as of "today" 2026-08-23)
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('counts an investment position with no price loaded instead of throwing', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'ARS', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 2 * QUANTITY_SCALE })
+    // No AssetPrice created at all.
+
+    const { points, missingPriceCount } = await getNetWorthHistory(2)
+    expect(points.every((p) => p.netWorth.amount === 0)).toBe(true)
+    expect(missingPriceCount).toBe(2) // one miss per point
   })
 })

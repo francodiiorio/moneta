@@ -1,5 +1,17 @@
-import { accountsRepo, categoriesRepo, exchangeRatesRepo, settingsRepo, transactionsRepo } from '@/database/repositories'
+import {
+  accountsRepo,
+  assetPricesRepo,
+  categoriesRepo,
+  exchangeRatesRepo,
+  investmentsRepo,
+  savingsHoldingsRepo,
+  settingsRepo,
+  transactionsRepo,
+} from '@/database/repositories'
+import { quantity } from '@/domain/decimal'
 import { convert, MissingRateError } from '@/domain/currency'
+import type { ExchangeRate, InvestmentAsset, SavingsHolding } from '@/domain/entities'
+import { valuateNetWorth, type ValuationPosition } from '@/domain/networth'
 import { add, money, sub, zero, type CurrencyCode, type Money } from '@/domain/money'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 
@@ -18,9 +30,10 @@ function tryConvert(
   baseCurrency: CurrencyCode,
   rates: Awaited<ReturnType<typeof exchangeRatesRepo.listExchangeRates>>,
   date: DateStamp,
+  profile: string | undefined,
 ): Money | undefined {
   try {
-    return convert(amount, baseCurrency, rates, date)
+    return convert(amount, baseCurrency, rates, date, profile)
   } catch (error) {
     if (error instanceof MissingRateError) return undefined
     throw error // an unexpected error is a real bug — don't mask it as "missing rate"
@@ -35,6 +48,7 @@ export async function getMonthSummary(month: MonthStamp): Promise<MonthSummary> 
     exchangeRatesRepo.listExchangeRates(),
   ])
   const baseCurrency = settings.baseCurrency
+  const profile = settings.rateProfile
 
   let income = zero(baseCurrency)
   let expense = zero(baseCurrency)
@@ -54,7 +68,7 @@ export async function getMonthSummary(month: MonthStamp): Promise<MonthSummary> 
         ? money(categoryPosting.amount, categoryPosting.currency)
         : money(-categoryPosting.amount, categoryPosting.currency)
 
-    const converted = tryConvert(rawAmount, baseCurrency, rates, transaction.date)
+    const converted = tryConvert(rawAmount, baseCurrency, rates, transaction.date, profile)
     if (!converted) {
       missingRateCount += 1
       continue
@@ -94,6 +108,7 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
     categoriesRepo.listCategories(),
   ])
   const baseCurrency = settings.baseCurrency
+  const profile = settings.rateProfile
   const categoryById = new Map(categories.map((c) => [c.id, c]))
 
   const totals = new Map<string, number>()
@@ -109,6 +124,7 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
       baseCurrency,
       rates,
       transaction.date,
+      profile,
     )
     if (!converted) {
       missingRateCount += 1
@@ -129,23 +145,51 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
   return { items: result, missingRateCount }
 }
 
-async function netWorthAsOf(asOfDate: DateStamp, baseCurrency: CurrencyCode): Promise<{ netWorth: Money; missingRateCount: number }> {
-  const [accounts, rates] = await Promise.all([
-    accountsRepo.listAccountsWithBalances(asOfDate),
-    exchangeRatesRepo.listExchangeRates(),
-  ])
+/**
+ * Values Cuentas (real historical balance from the ledger, as of
+ * `asOfDate`) + Ahorros + Inversiones (current amount/quantity — neither
+ * has any historical record of its own, see docs/DECISIONS.md "Evolución
+ * del patrimonio: cantidades de hoy, precios de cada mes") revalued at
+ * `asOfDate`'s own exchange rates and asset prices, which DO have real
+ * history. `savings`/`holdings`/`assetById`/`rates` are fetched once by
+ * the caller (they don't vary per point) — only the asset price lookup
+ * is genuinely date-dependent.
+ */
+async function netWorthAsOf(
+  asOfDate: DateStamp,
+  baseCurrency: CurrencyCode,
+  rates: readonly ExchangeRate[],
+  profile: string | undefined,
+  savings: readonly SavingsHolding[],
+  holdings: readonly { assetId: string; quantity: number }[],
+  assetById: Map<string, InvestmentAsset>,
+): Promise<{ netWorth: Money; missingRateCount: number; missingPriceCount: number }> {
+  const accounts = await accountsRepo.listAccountsWithBalances(asOfDate)
+  const latestPrices = await assetPricesRepo.latestAssetPrices(
+    holdings.map((h) => h.assetId),
+    asOfDate,
+  )
 
-  let total = zero(baseCurrency)
-  let missingRateCount = 0
-  for (const account of accounts) {
-    const converted = tryConvert(money(account.balance, account.currency), baseCurrency, rates, asOfDate)
-    if (!converted) {
-      missingRateCount += 1
-      continue
+  const positions: ValuationPosition[] = holdings.map((holding) => {
+    const asset = assetById.get(holding.assetId)
+    const priceRow = asset ? latestPrices.get(asset.id) : undefined
+    return {
+      quantity: quantity(holding.quantity),
+      ...(priceRow && { price: money(priceRow.price, priceRow.currency) }),
     }
-    total = add(total, converted)
-  }
-  return { netWorth: total, missingRateCount }
+  })
+
+  const result = valuateNetWorth({
+    accounts: accounts.map((a) => ({ balance: a.balance, currency: a.currency })),
+    savings,
+    positions,
+    rates,
+    displayCurrency: baseCurrency,
+    date: asOfDate,
+    ...(profile !== undefined && { profile }),
+  })
+
+  return { netWorth: result.total, missingRateCount: result.missingRateCount, missingPriceCount: result.missingPriceCount }
 }
 
 export interface NetWorthPoint {
@@ -156,6 +200,7 @@ export interface NetWorthPoint {
 export interface NetWorthHistory {
   points: NetWorthPoint[]
   missingRateCount: number
+  missingPriceCount: number
 }
 
 /** One point per month for the last `monthsBack` months, valued at
@@ -165,16 +210,34 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
   const settings = await settingsRepo.getSettings()
   const currentMonth = currentMonthStamp()
 
+  const [rates, savings, holdings, assets] = await Promise.all([
+    exchangeRatesRepo.listExchangeRates(),
+    savingsHoldingsRepo.listSavingsHoldings(),
+    investmentsRepo.listInvestmentHoldings(),
+    investmentsRepo.listInvestmentAssets(),
+  ])
+  const assetById = new Map(assets.map((a) => [a.id, a]))
+
   const points: NetWorthPoint[] = []
   let missingRateCount = 0
+  let missingPriceCount = 0
 
   for (let i = monthsBack - 1; i >= 0; i--) {
     const month = shiftMonth(currentMonth, -i)
     const asOfDate = i === 0 ? todayStamp() : monthRange(month).end
-    const { netWorth, missingRateCount: monthMisses } = await netWorthAsOf(asOfDate, settings.baseCurrency)
-    missingRateCount += monthMisses
-    points.push({ month, netWorth })
+    const result = await netWorthAsOf(
+      asOfDate,
+      settings.baseCurrency,
+      rates,
+      settings.rateProfile,
+      savings,
+      holdings,
+      assetById,
+    )
+    missingRateCount += result.missingRateCount
+    missingPriceCount += result.missingPriceCount
+    points.push({ month, netWorth: result.netWorth })
   }
 
-  return { points, missingRateCount }
+  return { points, missingRateCount, missingPriceCount }
 }

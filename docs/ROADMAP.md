@@ -139,11 +139,14 @@ Dashboard usaba `features/reports/service.ts:getCurrentNetWorth` — una funció
 Etapa 3, anterior al módulo de Patrimonio, que sólo suma Cuentas. Mostraba un número
 distinto al de `/patrimonio` (que sí suma Cuentas + Ahorros + Inversiones) bajo el mismo
 nombre. El Dashboard ahora usa `features/networth/service.ts:getNetWorthSummary` — la
-misma fuente que `/patrimonio` — así que los dos siempre coinciden. **Fuera de alcance a
-propósito:** el gráfico "Evolución del patrimonio" de Reportes (últimos 6 meses) sigue
-siendo sólo-Cuentas — extenderlo requiere agregar soporte de fecha pasada a Ahorros/
-Inversiones, que hoy no existe (`assetPricesRepo`/`accountsRepo` sí lo tienen,
-`savingsHoldingsRepo`/`investmentsRepo` no).
+misma fuente que `/patrimonio` — así que los dos siempre coinciden.
+
+**Cerrado después:** el gráfico "Evolución del patrimonio" de Reportes (últimos 6 meses)
+ahora también suma Ahorros e Inversiones — revaluados con el precio/tasa vigente en cada
+mes, pero con la cantidad/monto de **hoy** (`SavingsHolding`/`InvestmentHolding` no tienen
+historial propio, a diferencia de `AssetPrice`/`ExchangeRate`). Ver ADR "Evolución del
+patrimonio: cantidades de hoy, precios de cada mes" en `docs/DECISIONS.md` para el porqué
+y el costo aceptado de esa aproximación.
 
 ## Backlog / no priorizado
 

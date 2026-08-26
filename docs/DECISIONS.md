@@ -444,3 +444,38 @@ código, mismo resultado visual. Un detalle no obvio para quien reuse `DateField
 día cierra el popover pisando el estado `open` directo, no a través del `onOpenChange` de
 Radix, así que `field.onBlur` de react-hook-form no se dispara al elegir una fecha (sí al
 cerrar sin elegir). Hoy no importa porque ningún formulario usa `mode: 'onBlur'`.
+
+## Evolución del patrimonio: cantidades de hoy, precios de cada mes
+
+**Decisión:** el gráfico "Evolución del patrimonio" de Reportes (`getNetWorthHistory`)
+suma Cuentas + Ahorros + Inversiones en cada punto histórico. Cuentas usa el balance real
+de esa fecha (reconstruible desde el ledger, `accountsRepo.listAccountsWithBalances(asOfDate)`).
+Ahorros e Inversiones usan la cantidad/monto **actual** de cada `SavingsHolding`/
+`InvestmentHolding` — no la que tenían en esa fecha — pero revaluada con la tasa de cambio
+y el precio de activo que estaban vigentes en cada mes (`resolveRate`/`latestAssetPrices`,
+ambos ya "más reciente ≤ fecha").
+
+**Por qué:** a diferencia de una cuenta, `SavingsHolding.amount` e `InvestmentHolding.quantity`
+no tienen ningún historial — son un valor de "ahora mismo", sin ledger ni versión anterior.
+No hay forma de saber cuánto ahorro o cuántas unidades de un activo tenía el usuario en
+marzo sin agregar un sistema de snapshots nuevo (que además arrancaría vacío: los meses
+pasados a la fecha de implementación seguirían sin dato real). Se optó por la aproximación
+más simple posible en vez de no mostrar nada o mentir con un total sólo-cuentas bajo un
+título que promete "patrimonio": usar la cantidad de hoy y revaluarla con precios/tasas que
+sí son históricos reales. El resultado es "cuánto valdría hoy mi cartera actual si la
+hubiera tenido en cada mes pasado", no "cuánto tenía realmente" — la UI lo aclara con una
+nota debajo del gráfico.
+
+**Costo aceptado:** si el usuario compró/vendió una inversión o cambió su ahorro a mitad
+de camino, los puntos anteriores a ese cambio quedan sobre/subestimados (asumen que ya
+tenía o todavía tenía lo que tiene hoy). Es una aproximación, no un historial exacto — se
+prefirió eso a la alternativa de construir un sistema de snapshots mensuales reales, que es
+mucho más trabajo para un beneficio que sólo empieza a acumularse desde que se implementa
+(el pasado ya ocurrido nunca tendría datos reales de todos modos).
+
+**De paso:** `getMonthSummary`/`getExpenseByCategoryInRange` (mismo archivo, misma página
+Reportes) no le pasaban `settings.rateProfile` a `convert()` — sólo `getNetWorthHistory`
+lo hacía a través de `valuateNetWorth`. Se corrigió para que las tres funciones usen el
+mismo `profile`; si no, con un `rateProfile` configurado (ej. "blue"), el resumen mensual y
+el gráfico de patrimonio de la misma página podían convertir la misma fecha con tasas
+distintas.

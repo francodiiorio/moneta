@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ExpenseByCategoryChart } from '@/components/ExpenseByCategoryChart'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
+import { MissingPriceBanner } from '@/components/MissingPriceBanner'
 import { formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { useReportsUiStore } from '../store'
 import { useMonthSummary } from '../hooks/useMonthSummary'
@@ -95,18 +96,27 @@ export function ReportsPage() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Evolución del patrimonio</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {netWorthHistory === undefined ? (
-            <div className="h-56 animate-pulse rounded-lg bg-muted" />
-          ) : (
-            <NetWorthChart points={netWorthHistory.points} />
-          )}
-        </CardContent>
-      </Card>
+      <div className="flex flex-col gap-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Evolución del patrimonio</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {netWorthHistory === undefined ? (
+              <div className="h-56 animate-pulse rounded-lg bg-muted" />
+            ) : (
+              <>
+                <NetWorthChart points={netWorthHistory.points} />
+                <p className="text-xs text-muted-foreground">
+                  Cuentas: balance real de cada mes. Ahorros e inversiones: cantidad actual, valuada al
+                  precio y tipo de cambio de cada mes — no reflejan cuánto tenías cargado en ese momento.
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
+        <MissingPriceBanner count={netWorthHistory?.missingPriceCount ?? 0} />
+      </div>
     </div>
   )
 }
