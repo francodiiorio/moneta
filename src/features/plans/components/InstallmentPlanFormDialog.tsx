@@ -18,6 +18,7 @@ import { DateField } from '@/components/DateField'
 import { todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
+import { getInstallmentPreview } from '../installmentPreview'
 import { createInstallmentPlanFromForm } from '../service'
 import { installmentPlanFormSchema, type InstallmentPlanFormValues } from '../schema'
 
@@ -51,6 +52,12 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
   useEffect(() => {
     if (open) form.reset(defaultValues())
   }, [open, form])
+
+  const totalAmountInput = form.watch('totalAmount')
+  const countInput = form.watch('count')
+  const accountId = form.watch('accountId')
+  const account = accounts?.find((a) => a.id === accountId)
+  const installmentPreview = getInstallmentPreview(totalAmountInput, countInput, account?.currency)
 
   async function onSubmit(values: InstallmentPlanFormValues) {
     try {
@@ -117,6 +124,8 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
                 )}
               />
             </div>
+
+            {installmentPreview && <p className="-mt-2 text-xs text-muted-foreground">{installmentPreview}</p>}
 
             <FormField
               control={form.control}
