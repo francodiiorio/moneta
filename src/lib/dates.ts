@@ -44,6 +44,18 @@ function monthStart(month: MonthStamp): Date {
   return parse(month, MONTH_FORMAT, new Date())
 }
 
+/** Guards a MonthStamp coming from untrusted input (e.g. a URL param).
+ *  The NaN check isn't redundant with the regex: date-fns parses
+ *  "2026-13"/"2026-00"/"0000-01" to an Invalid Date (they still match the
+ *  shape), and `format()` throws RangeError on one — so the round-trip
+ *  below must never run on it. */
+export function isValidMonthStamp(value: string): value is MonthStamp {
+  if (!/^\d{4}-\d{2}$/.test(value)) return false
+  const parsed = monthStart(value)
+  if (Number.isNaN(parsed.getTime())) return false
+  return format(parsed, MONTH_FORMAT) === value
+}
+
 export function monthRange(month: MonthStamp): { start: DateStamp; end: DateStamp } {
   const start = monthStart(month)
   return { start: toDateStamp(start), end: toDateStamp(endOfMonth(start)) }

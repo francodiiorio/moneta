@@ -11,7 +11,7 @@ import {
 import { quantity } from '@/domain/decimal'
 import { convert, MissingRateError } from '@/domain/currency'
 import type { ExchangeRate, InvestmentAsset, SavingsHolding } from '@/domain/entities'
-import { valuateNetWorth, type ValuationPosition } from '@/domain/networth'
+import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { add, money, sub, zero, type CurrencyCode, type Money } from '@/domain/money'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 
@@ -163,7 +163,13 @@ async function netWorthAsOf(
   savings: readonly SavingsHolding[],
   holdings: readonly { assetId: string; quantity: number }[],
   assetById: Map<string, InvestmentAsset>,
-): Promise<{ netWorth: Money; missingRateCount: number; missingPriceCount: number }> {
+): Promise<{
+  netWorth: Money
+  byBucket: ValuationResult['byBucket']
+  accountCount: number
+  missingRateCount: number
+  missingPriceCount: number
+}> {
   const accounts = await accountsRepo.listAccountsWithBalances(asOfDate)
   const latestPrices = await assetPricesRepo.latestAssetPrices(
     holdings.map((h) => h.assetId),
@@ -189,7 +195,13 @@ async function netWorthAsOf(
     ...(profile !== undefined && { profile }),
   })
 
-  return { netWorth: result.total, missingRateCount: result.missingRateCount, missingPriceCount: result.missingPriceCount }
+  return {
+    netWorth: result.total,
+    byBucket: result.byBucket,
+    accountCount: accounts.length,
+    missingRateCount: result.missingRateCount,
+    missingPriceCount: result.missingPriceCount,
+  }
 }
 
 export interface NetWorthPoint {
@@ -240,4 +252,97 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
   }
 
   return { points, missingRateCount, missingPriceCount }
+}
+
+export interface ReportCategoryRow {
+  categoryId: string
+  categoryName: string
+  amount: Money
+  /** This category's share of the month's total expense (0..1) — a
+   *  display ratio, computed here so no component does arithmetic on a
+   *  Minor amount (CLAUDE.md "Reglas financieras"). */
+  share: number
+}
+
+export interface ReportNetWorth {
+  asOfDate: DateStamp
+  total: Money
+  byBucket: { accounts: Money; savings: Money; investments: Money }
+  missingPriceCount: number
+}
+
+export interface MonthlyReport {
+  month: MonthStamp
+  baseCurrency: CurrencyCode
+  /** Last day actually covered: month-end, or today for a month still in
+   *  progress — same rule getNetWorthHistory uses for its last point. */
+  coverageEnd: DateStamp
+  isCurrentMonth: boolean
+  generatedOn: DateStamp
+  summary: MonthSummary
+  categories: ReportCategoryRow[]
+  /** Absent when nothing is tracked at all (no accounts, savings, or
+   *  investment positions) — the report then has no net worth section. */
+  netWorth?: ReportNetWorth
+  missingRateCount: number
+}
+
+/** Composes a "photo" of a single month — income/expense, expense by
+ *  category, and (when there's anything to value) a net worth snapshot —
+ *  for the printable monthly report. Pure composition over already-tested
+ *  functions; no new domain logic. Accepted cost: getMonthSummary and
+ *  getExpenseByCategory each independently re-read settings/rates/the
+ *  month's transactions, so this does a few redundant local IndexedDB
+ *  reads — reusing already-tested functions beats micro-optimizing reads
+ *  that cost nothing noticeable for one local user. */
+export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport> {
+  const today = todayStamp()
+  const monthEnd = monthRange(month).end
+  // DateStamps compare lexicographically — never value into the future.
+  const coverageEnd = monthEnd > today ? today : monthEnd
+
+  const [settings, summary, expenses, rates, savings, holdings, assets] = await Promise.all([
+    settingsRepo.getSettings(),
+    getMonthSummary(month),
+    getExpenseByCategory(month),
+    exchangeRatesRepo.listExchangeRates(),
+    savingsHoldingsRepo.listSavingsHoldings(),
+    investmentsRepo.listInvestmentHoldings(),
+    investmentsRepo.listInvestmentAssets(),
+  ])
+  const assetById = new Map(assets.map((a) => [a.id, a]))
+  const { baseCurrency, rateProfile } = settings
+
+  const valuation = await netWorthAsOf(coverageEnd, baseCurrency, rates, rateProfile, savings, holdings, assetById)
+  const tracksNetWorth = valuation.accountCount > 0 || savings.length > 0 || holdings.length > 0
+
+  const totalExpense = summary.expense.amount
+  const categories: ReportCategoryRow[] = expenses.items.map((item) => ({
+    ...item,
+    share: totalExpense > 0 ? item.amount.amount / totalExpense : 0,
+  }))
+
+  const netWorth: ReportNetWorth | undefined = tracksNetWorth
+    ? {
+        asOfDate: coverageEnd,
+        total: valuation.netWorth,
+        byBucket: valuation.byBucket,
+        missingPriceCount: valuation.missingPriceCount,
+      }
+    : undefined
+
+  return {
+    month,
+    baseCurrency,
+    coverageEnd,
+    isCurrentMonth: month === currentMonthStamp(),
+    generatedOn: today,
+    summary,
+    categories,
+    // Same reasoning as ReportsPage: expenses' misses are a subset of
+    // summary's (same scan, same conversion) — adding both would
+    // double-count the same transaction.
+    missingRateCount: summary.missingRateCount + valuation.missingRateCount,
+    ...(netWorth && { netWorth }),
+  }
 }

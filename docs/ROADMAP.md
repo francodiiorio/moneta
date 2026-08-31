@@ -181,3 +181,8 @@ y el costo aceptado de esa aproximación.
   en esta versión, ver ADR en `docs/DECISIONS.md`.
 - Multi-dispositivo (fuera de alcance del proyecto tal como está planteado hoy — ver
   `docs/PRODUCT.md` "No-objetivos").
+- ~~Informe mensual exportable~~ (hecho) — `/reportes/informe/:month`, una "foto" de un
+  mes (cerrado o en curso): ingresos/gastos/balance, gasto por categoría, y patrimonio de
+  ese mes si hay algo registrado. Exporta a PDF vía el diálogo de impresión nativo del
+  navegador — cero dependencias nuevas. Ver ADR "Informe mensual: PDF vía el diálogo de
+  impresión del navegador" en `docs/DECISIONS.md`.

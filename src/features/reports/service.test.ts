@@ -11,7 +11,8 @@ import { updateSettings } from '@/database/repositories/settings.repo'
 import { buildExpense, buildIncome, buildTransfer } from '@/domain/ledger'
 import { QUANTITY_SCALE } from '@/domain/decimal'
 import { minor, money } from '@/domain/money'
-import { getExpenseByCategory, getMonthSummary, getNetWorthHistory } from './service'
+import { todayStamp } from '@/lib/dates'
+import { getExpenseByCategory, getMonthlyReport, getMonthSummary, getNetWorthHistory } from './service'
 
 afterEach(async () => {
   await Promise.all([
@@ -279,5 +280,104 @@ describe('getNetWorthHistory', () => {
     const { points, missingPriceCount } = await getNetWorthHistory(2)
     expect(points.every((p) => p.netWorth.amount === 0)).toBe(true)
     expect(missingPriceCount).toBe(2) // one miss per point
+  })
+})
+
+describe('getMonthlyReport', () => {
+  it('composes the summary and expense-by-category for a closed month', async () => {
+    // Fake "today" so the target month is unambiguously in the past,
+    // regardless of the real calendar date the test suite runs on.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-15T12:00:00Z'))
+    try {
+      const bank = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+      const foodCat = await createCategory({ name: 'Comida', kind: 'expense' })
+      const funCat = await createCategory({ name: 'Ocio', kind: 'expense' })
+      const salaryCat = await createCategory({ name: 'Sueldo', kind: 'income' })
+
+      await saveTransaction(
+        buildIncome({ date: '2026-08-01', description: 'Sueldo', accountId: bank.id, categoryId: salaryCat.id, amount: money(10_000, 'ARS') }),
+      )
+      await saveTransaction(
+        buildExpense({ date: '2026-08-05', description: 'Super', accountId: bank.id, categoryId: foodCat.id, amount: money(3000, 'ARS') }),
+      )
+      await saveTransaction(
+        buildExpense({ date: '2026-08-06', description: 'Cine', accountId: bank.id, categoryId: funCat.id, amount: money(1000, 'ARS') }),
+      )
+
+      const report = await getMonthlyReport('2026-08')
+      expect(report.isCurrentMonth).toBe(false)
+      expect(report.coverageEnd).toBe('2026-08-31')
+      expect(report.summary.income).toEqual(money(10_000, 'ARS'))
+      expect(report.summary.expense).toEqual(money(4000, 'ARS'))
+      expect(report.categories.map((c) => [c.categoryName, c.amount.amount, c.share])).toEqual([
+        ['Comida', 3000, 0.75],
+        ['Ocio', 1000, 0.25],
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('values net worth as of today for a month in progress, not month-end', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-23T12:00:00Z'))
+    try {
+      await updateSettings({ baseCurrency: 'ARS' })
+      await createAccount({ name: 'Banco USD', type: 'bank', currency: 'USD', openingBalance: minor(100) })
+      await createExchangeRate({ date: '2026-01-01', from: 'USD', to: 'ARS', rate: 500 })
+      // Dated after "today" but still inside August — must not be used.
+      await createExchangeRate({ date: '2026-08-30', from: 'USD', to: 'ARS', rate: 1000 })
+
+      const report = await getMonthlyReport('2026-08')
+      expect(report.isCurrentMonth).toBe(true)
+      expect(report.coverageEnd).toBe(todayStamp())
+      expect(report.netWorth?.total).toEqual(money(50_000, 'ARS')) // 100 USD * 500
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('omits the net worth section when nothing is tracked', async () => {
+    const report = await getMonthlyReport('2026-08')
+    expect(report.netWorth).toBeUndefined()
+    expect(report.summary.income.amount).toBe(0)
+    expect(report.summary.expense.amount).toBe(0)
+  })
+
+  it('includes the net worth section for a savings-only user, with no accounts', async () => {
+    await createSavingsHolding({ name: 'Efectivo', currency: 'ARS', amount: 50_000 })
+
+    const report = await getMonthlyReport('2026-08')
+    expect(report.netWorth).toBeDefined()
+    expect(report.netWorth?.byBucket.savings).toEqual(money(50_000, 'ARS'))
+    expect(report.netWorth?.byBucket.accounts).toEqual(money(0, 'ARS'))
+  })
+
+  it('degrades a future month to an empty report instead of crashing', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-23T12:00:00Z'))
+    try {
+      const report = await getMonthlyReport('2026-12')
+      expect(report.coverageEnd).toBe(todayStamp())
+      expect(report.summary.income.amount).toBe(0)
+      expect(report.summary.expense.amount).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not double-count a missing rate between the summary and the valuation', async () => {
+    const usdAccount = await createAccount({ name: 'Banco USD', type: 'bank', currency: 'USD', openingBalance: minor(100) })
+    const category = await createCategory({ name: 'Viajes', kind: 'expense' })
+    // No exchange rate loaded at all — the USD account and the USD expense
+    // each miss independently; summary's own miss and the valuation's own
+    // miss must not be summed as if they were the same transaction twice.
+    await saveTransaction(
+      buildExpense({ date: '2026-08-05', description: 'Vuelo', accountId: usdAccount.id, categoryId: category.id, amount: money(100, 'USD') }),
+    )
+
+    const report = await getMonthlyReport('2026-08')
+    expect(report.missingRateCount).toBe(2) // one from summary's expense, one from valuing the USD account
   })
 })

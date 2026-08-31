@@ -97,4 +97,15 @@ export const router = createBrowserRouter([
       },
     ],
   },
+  {
+    // Deliberately outside AppLayout: the printable monthly report must
+    // render with zero app chrome (sidebar, bottom nav, safe-area
+    // padding) — see docs/DECISIONS.md "Informe mensual".
+    path: '/reportes/informe/:month',
+    HydrateFallback: RootFallback,
+    lazy: async () => {
+      const { MonthlyReportPage } = await import('@/features/reports/routes/MonthlyReportPage')
+      return { Component: MonthlyReportPage }
+    },
+  },
 ])

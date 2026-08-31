@@ -125,3 +125,11 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 }
+
+/* Page margin for the printable monthly report (features/reports) — the
+   only printed document in the app. Tailwind has no utility for @page. */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+}

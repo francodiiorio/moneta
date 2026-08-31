@@ -479,3 +479,47 @@ lo hacía a través de `valuateNetWorth`. Se corrigió para que las tres funcion
 mismo `profile`; si no, con un `rateProfile` configurado (ej. "blue"), el resumen mensual y
 el gráfico de patrimonio de la misma página podían convertir la misma fecha con tasas
 distintas.
+
+## Informe mensual: PDF vía el diálogo de impresión del navegador
+
+**Decisión:** el informe mensual (`getMonthlyReport` en `features/reports/service.ts`,
+ruta `/reportes/informe/:month`) es una página HTML normal con hoja de estilos de
+impresión, deliberadamente **fuera de `AppLayout`** (sin sidebar ni bottom nav). El
+usuario lo exporta con "Guardar como PDF" del propio diálogo de impresión del navegador
+(`window.print()`). Cero dependencias nuevas.
+
+**Por qué:** sigue siendo 100% cliente (CLAUDE.md "Privacidad" — ni un request), el PDF
+resultante tiene texto vectorial seleccionable/buscable en vez de una imagen, y el flujo
+de impresión nativo ya existe igual en desktop y en el share sheet de iOS/Android — no
+hay nada nuevo que aprender ni mantener.
+
+**Descartado:** rasterizar la vista a PNG con `html2canvas`/`dom-to-image` (dependencia
+pesada, salida borrosa, texto no seleccionable, y frágil con fuentes/gradientes — ver
+abajo por qué ni siquiera el propio `ExpenseByCategoryChart` se reusó acá); generar el
+PDF a mano con `jsPDF`/`pdfmake` (dependencia nueva + reimplementar el layout entero en
+coordenadas, duplicando lo que CSS ya hace bien); armar el informe en el servidor (viola
+local-first, no hay servidor).
+
+**Sub-decisiones:**
+- El documento usa **colores literales** (`bg-white`, `text-neutral-900`, etc.), nunca
+  los tokens semánticos de tema de la app (`bg-background`, `text-foreground`). En modo
+  oscuro `body` hereda `text-foreground` casi blanco, y los navegadores descartan los
+  fondos al imprimir salvo que el usuario tilde "gráficos de fondo" — un informe con
+  tokens de tema imprimiría texto casi blanco sobre papel blanco. Es un documento
+  siempre claro, como un extracto/factura, independiente del tema activo de la app
+  (verificado a mano: se ve idéntico con el tema de la app en claro y en oscuro).
+- El desglose de "Gasto por categoría" es una **tabla HTML simple**, no el
+  `ExpenseByCategoryChart` de Recharts existente: su SVG se pinta con `var(--primary)`/
+  `var(--foreground)`/`var(--border)` (mismo problema de tokens de tema que arriba), y su
+  `ResponsiveContainer` reobserva el tamaño durante el layout de impresión — una fuente
+  extra de fragilidad que una tabla no tiene. La tabla además muestra el detalle exacto
+  (categoría, %, importe) que un extracto necesita.
+- `viewport-fit=cover`/`safe-area-inset-*` no aplican acá — esta ruta no comparte layout
+  con `AppLayout`, así que no hereda el ajuste de safe-area de la Etapa PWA.
+
+**Costo aceptado:** no hay control fino de encabezado/pie de página ni de saltos de
+página más allá de lo que permite CSS (`@page`, `break-inside-avoid`), y la salida varía
+levemente entre navegadores (Chrome/Safari/Firefox difieren en su diálogo de impresión).
+No es posible verificar el PDF real en tests automatizados — el e2e (`e2e/monthly-report.spec.ts`)
+sólo confirma, con `page.emulateMedia({ media: 'print' })`, que los estilos de impresión
+efectivamente ocultan la barra de acciones de sólo-pantalla.

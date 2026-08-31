@@ -1,4 +1,5 @@
-import { BarChart3, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Link } from 'react-router'
+import { BarChart3, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
@@ -36,13 +37,27 @@ export function ReportsPage() {
 
       <MissingRateBanner count={missingRateCount} />
 
-      <div className="flex items-center gap-1">
+      {/* flex-wrap: same pattern as TransactionsPage's month navigator row
+          — "Exportar informe" (icon + two-word label) doesn't fit next to
+          the two icon buttons + label on a narrow mobile viewport, and
+          Button's own shrink-0/whitespace-nowrap means it can't shrink to
+          fit; wrapping to a second line beats overflowing horizontally. */}
+      <div className="flex flex-wrap items-center gap-1">
         <Button variant="ghost" size="icon" onClick={() => setMonth(shiftMonth(month, -1))}>
           <ChevronLeft className="size-4" />
         </Button>
         <span className="min-w-36 text-center text-sm font-medium capitalize">{formatMonthLabel(month)}</span>
         <Button variant="ghost" size="icon" onClick={() => setMonth(shiftMonth(month, 1))}>
           <ChevronRight className="size-4" />
+        </Button>
+        {/* Same tab, not a new one: keeps the selected month (state lives in
+            useReportsUiStore, not the URL) so the browser's back button
+            returns here instead of reloading the whole app. */}
+        <Button asChild variant="outline" size="sm" className="ml-auto">
+          <Link to={`/reportes/informe/${month}`}>
+            <FileText className="size-4" />
+            Exportar informe
+          </Link>
         </Button>
       </div>
 
