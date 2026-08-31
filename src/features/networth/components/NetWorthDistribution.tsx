@@ -1,5 +1,5 @@
-import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { formatMoney, type Money } from '@/domain/money'
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { formatMoney, isNegative, type Money } from '@/domain/money'
 
 interface DistributionRow {
   label: string
@@ -45,16 +45,24 @@ export function NetWorthDistribution({ accounts, savings, investments }: NetWort
 
   // Read top-to-bottom in the order defined above; Recharts renders
   // vertical-layout categories bottom-to-top, so the data is reversed.
+  //
+  // A bucket total can be negative (e.g. Cuentas net of a credit-card-style
+  // account with a negative balance). The bar length uses the magnitude —
+  // otherwise a negative value pulls the XAxis domain below zero, which
+  // shifts the zero-crossing away from the plot's left edge and renders
+  // the bar (and its label) on top of the YAxis category text instead of
+  // to its right. The label text still shows the real signed amount via
+  // formatMoney — only the bar's length is ever unsigned.
   const data: ChartRow[] = [...rows]
     .reverse()
-    .map((row) => ({ ...row, amountValue: row.amount.amount, amountLabel: formatMoney(row.amount) }))
+    .map((row) => ({ ...row, amountValue: Math.abs(row.amount.amount), amountLabel: formatMoney(row.amount) }))
   const height = Math.max(90, data.length * 44)
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 56, bottom: 4, left: 4 }}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 68, bottom: 4, left: 4 }}>
         <CartesianGrid horizontal={false} stroke="var(--border)" />
-        <XAxis type="number" hide />
+        <XAxis type="number" hide domain={[0, 'dataMax']} />
         <YAxis
           type="category"
           dataKey="label"
@@ -64,7 +72,10 @@ export function NetWorthDistribution({ accounts, savings, investments }: NetWort
           tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
         />
         <Tooltip cursor={{ fill: 'var(--muted)' }} content={<ChartTooltip />} />
-        <Bar dataKey="amountValue" fill="var(--primary)" radius={[0, 4, 4, 0]} maxBarSize={22}>
+        <Bar dataKey="amountValue" radius={[0, 4, 4, 0]} maxBarSize={22}>
+          {data.map((row) => (
+            <Cell key={row.label} fill={isNegative(row.amount) ? 'var(--negative)' : 'var(--primary)'} />
+          ))}
           <LabelList dataKey="amountLabel" position="right" fill="var(--foreground)" fontSize={12} />
         </Bar>
       </BarChart>
