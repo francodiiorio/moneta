@@ -18,7 +18,14 @@ export function AppLayout() {
   const isOverflowActive = MOBILE_OVERFLOW_ITEMS.some((item) => location.pathname.startsWith(item.to))
 
   return (
-    <div className="flex min-h-svh bg-background">
+    // pt-[env(safe-area-inset-top)]: installed as a PWA (standalone display
+    // mode), iOS renders the status bar as a translucent overlay instead of
+    // reserving its own space — without this, page content starts under
+    // the status bar/notch instead of below it. Needs viewport-fit=cover
+    // in index.html or env() resolves to 0 (also a no-op on any device
+    // without a notch/status-bar overlay, e.g. desktop or a plain browser
+    // tab).
+    <div className="flex min-h-svh bg-background pt-[env(safe-area-inset-top)]">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-border px-2.5 py-5 md:flex">
         <div className="mb-5 flex items-center gap-2 px-2.5">
           <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
@@ -49,12 +56,17 @@ export function AppLayout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-5 pb-24 md:px-6 md:pb-8">
+        <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-5 pb-[calc(6rem+env(safe-area-inset-bottom))] md:px-6 md:pb-8">
           <Outlet />
         </main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-card/95 backdrop-blur md:hidden">
+      {/* pb-[env(safe-area-inset-bottom)]: on an iPhone with a home
+          indicator, running as an installed PWA (standalone display mode)
+          puts this nav flush against the bottom edge — without this, the
+          icons render underneath/behind the indicator instead of above it.
+          Needs index.html's viewport-fit=cover or env() resolves to 0. */}
+      <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         {MOBILE_PRIMARY_ITEMS.map((item) => (
           <NavLink
             key={item.to}
@@ -85,7 +97,9 @@ export function AppLayout() {
       </nav>
 
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
-        <SheetContent side="bottom" className="rounded-t-xl md:hidden">
+        {/* pb-[env(safe-area-inset-bottom)]: same home-indicator overlap as
+            the bottom nav below, on the "Más" overflow sheet. */}
+        <SheetContent side="bottom" className="rounded-t-xl pb-[env(safe-area-inset-bottom)] md:hidden">
           <SheetHeader>
             <SheetTitle>Más</SheetTitle>
           </SheetHeader>
