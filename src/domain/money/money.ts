@@ -149,6 +149,7 @@ export function formatMoney(value: Money): string {
       currency: info.code,
       minimumFractionDigits: info.decimals,
       maximumFractionDigits: info.decimals,
+      ...(info.useCodeDisplay && { currencyDisplay: 'code' }),
     }).format(decimalValue)
   } catch {
     // info.code isn't a valid ISO 4217 code (e.g. a currency added by a

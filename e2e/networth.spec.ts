@@ -134,7 +134,8 @@ test('shows unrealized gain/loss vs. the average cost once both a cost and a pri
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   // 5 * (650 - 600) = 250, / (5*600=3000) * 100 = 8.33% -> rounds to 8%.
-  await expect(page.getByText(/\+\$\s?250[.,]00\s?\(\+8%\)/)).toBeVisible()
+  // USD renders with the "USD" code, not "$" (indistinguishable from ARS).
+  await expect(page.getByText(/\+USD\s?250[.,]00\s?\(\+8%\)/)).toBeVisible()
 })
 
 test('/ajustes/tasas redirects to Patrimonio, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {

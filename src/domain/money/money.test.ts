@@ -130,9 +130,17 @@ describe('moneyFromNumber', () => {
 })
 
 describe('formatMoney', () => {
-  it('formats ARS with 2 decimals', () => {
+  it('formats ARS with 2 decimals and the $ symbol', () => {
     const formatted = formatMoney(money(105050, 'ARS'))
     expect(formatted).toContain('1.050,50')
+    expect(formatted).toContain('$')
+  })
+
+  it('formats USD with the "USD" code instead of "$" — indistinguishable from ARS otherwise', () => {
+    const formatted = formatMoney(money(747117, 'USD'))
+    // Intl separates the code from the amount with a non-breaking space.
+    expect(formatted.replace(/\s/g, ' ')).toBe('USD 7,471.17')
+    expect(formatted).not.toContain('$')
   })
 
   it('falls back to symbol formatting for a malformed currency code', () => {
