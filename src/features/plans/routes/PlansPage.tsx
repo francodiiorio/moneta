@@ -56,8 +56,13 @@ export function PlansPage() {
   async function handleTogglePaused(id: string, isPaused: boolean) {
     try {
       await setRecurringPlanPaused(id, !isPaused)
-    } catch {
-      toast.error('No se pudo actualizar el recurrente')
+    } catch (error) {
+      // The real message matters here: a MaterializationFailedError means
+      // the pause/unpause itself already succeeded (only the immediate
+      // catch-up failed) — a generic "no se pudo actualizar" would falsely
+      // suggest nothing happened, right next to a row whose badge/icon
+      // already shows the new (correct) paused state.
+      toast.error(error instanceof Error ? error.message : 'No se pudo actualizar el recurrente')
     }
   }
 

@@ -1,19 +1,24 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/database/db'
 import { createAccount, listAccountsWithBalances } from '@/database/repositories/accounts.repo'
 import { mergeAllTables } from '@/database/repositories/backup.repo'
 import { createCategory } from '@/database/repositories/categories.repo'
 import { createRecurringPlan, listRecurringPlans, setRecurringPlanPaused } from '@/database/repositories/recurringPlans.repo'
+import * as recurringPlansRepoModule from '@/database/repositories/recurringPlans.repo'
 import { createInstallmentPlan } from '@/database/repositories/installmentPlans.repo'
+import * as transactionsRepoModule from '@/database/repositories/transactions.repo'
 import { generateId } from '@/lib/ids'
 import { minor } from '@/domain/money'
+import { todayStamp } from '@/lib/dates'
 import type { RecurrenceRule, TransactionTemplate } from '@/domain/entities'
 import {
   createRecurringPlanFromForm,
   listInstallmentPlansWithProgress,
   listRecurringPlansWithNext,
   materializeDue,
+  MaterializationFailedError,
   removeRecurringPlan,
+  setRecurringPlanPaused as setRecurringPlanPausedFromService,
   updateInstallmentPlanFromForm,
   updateRecurringPlanFromForm,
 } from './service'
@@ -64,6 +69,24 @@ describe('materializeDue — recurring plans', () => {
 
     const created = await db.transactions.toArray()
     expect(created).toHaveLength(3)
+  })
+
+  it('two overlapping calls (e.g. App.tsx boot + a user action) never duplicate a transaction', async () => {
+    // Regression: materializeDue() reads every plan's lastMaterializedDate,
+    // computes what's due, and only writes afterward — two calls started
+    // before either has written anything would both compute the same
+    // occurrence as due and both write it. materializeDue() (the exported
+    // wrapper) queues calls instead of letting them run concurrently.
+    const { account, category } = await setup()
+    const rule: RecurrenceRule = { freq: 'monthly', interval: 1, startDate: '2026-06-01' }
+    await createRecurringPlan({ template: template(account.id, category.id), rule })
+
+    const [first, second] = await Promise.all([materializeDue('2026-08-15'), materializeDue('2026-08-15')])
+    expect(first.recurringCreated + second.recurringCreated).toBe(3) // Jun, Jul, Aug — once each
+
+    const created = await db.transactions.toArray()
+    expect(created).toHaveLength(3)
+    expect(created.map((t) => t.date).sort()).toEqual(['2026-06-01', '2026-07-01', '2026-08-01'])
   })
 
   it('a later call only materializes the newly-due occurrences', async () => {
@@ -179,73 +202,163 @@ describe('createRecurringPlanFromForm', () => {
   })
 
   it('accepts a same-currency transfer and materializes it on both accounts', async () => {
-    const from = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
-    const to = await createAccount({ name: 'Ahorros', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+    // createRecurringPlanFromForm now materializes immediately (as of
+    // "today") right after creating — fake the clock so that catch-up
+    // lands on a controlled date instead of the real one.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-06-15T12:00:00Z'))
+    try {
+      const from = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+      const to = await createAccount({ name: 'Ahorros', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
 
-    await createRecurringPlanFromForm({
-      description: 'Ahorro',
-      kind: 'transfer',
-      accountId: from.id,
-      categoryId: '',
-      toAccountId: to.id,
-      amount: '10000',
-      freq: 'monthly',
-      interval: '1',
-      dayOfMonth: '',
-      startDate: '2026-06-01',
-      endDate: '',
-      maxOccurrences: '',
-    })
+      await createRecurringPlanFromForm({
+        description: 'Ahorro',
+        kind: 'transfer',
+        accountId: from.id,
+        categoryId: '',
+        toAccountId: to.id,
+        amount: '10000',
+        freq: 'monthly',
+        interval: '1',
+        dayOfMonth: '',
+        startDate: '2026-06-01',
+        endDate: '',
+        maxOccurrences: '',
+      })
 
-    const { recurringCreated } = await materializeDue('2026-06-15')
-    expect(recurringCreated).toBe(1)
+      const accounts = await listAccountsWithBalances()
+      expect(accounts.find((a) => a.id === from.id)?.balance).toBe(-1_000_000)
+      expect(accounts.find((a) => a.id === to.id)?.balance).toBe(1_000_000)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
-    const accounts = await listAccountsWithBalances()
-    expect(accounts.find((a) => a.id === from.id)?.balance).toBe(-1_000_000)
-    expect(accounts.find((a) => a.id === to.id)?.balance).toBe(1_000_000)
+  it('throws MaterializationFailedError but keeps the plan when its own materialization fails', async () => {
+    // The plan write itself must NOT be rolled back just because the
+    // immediate catch-up failed — see MaterializationFailedError's own
+    // doc comment for why the caller (RecurringPlanFormDialog) treats
+    // this differently from a plain validation failure.
+    const spy = vi.spyOn(recurringPlansRepoModule, 'materializePlan').mockRejectedValueOnce(new Error('boom'))
+    try {
+      const { account, category } = await setup()
+
+      await expect(
+        createRecurringPlanFromForm({
+          description: 'Alquiler',
+          kind: 'expense',
+          accountId: account.id,
+          categoryId: category.id,
+          toAccountId: '',
+          amount: '1000',
+          freq: 'monthly',
+          interval: '1',
+          dayOfMonth: '',
+          startDate: todayStamp(), // due today, so materializeDue actually attempts it
+          endDate: '',
+          maxOccurrences: '',
+        }),
+      ).rejects.toThrow(MaterializationFailedError)
+
+      const plans = await listRecurringPlans()
+      expect(plans).toHaveLength(1) // the write succeeded; only the catch-up failed
+      expect(await db.transactions.where('sourcePlanId').equals(plans[0]!.id).count()).toBe(0)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('also converts a full materializeDue() rejection (not just failedPlanIds) into MaterializationFailedError', async () => {
+    // Regression: only the failedPlanIds path used to convert to
+    // MaterializationFailedError — a wholesale rejection from
+    // materializeDue() itself (e.g. confirmDueProjected throwing, unrelated
+    // to this plan's own occurrence) used to propagate as a plain Error,
+    // which RecurringPlanFormDialog's `instanceof MaterializationFailedError`
+    // check wouldn't recognize — leaving the dialog open and inviting a
+    // real duplicate plan on resubmit, the exact bug this type exists to
+    // prevent.
+    const spy = vi.spyOn(transactionsRepoModule, 'confirmDueProjected').mockRejectedValueOnce(new Error('boom'))
+    try {
+      const { account, category } = await setup()
+
+      await expect(
+        createRecurringPlanFromForm({
+          description: 'Alquiler',
+          kind: 'expense',
+          accountId: account.id,
+          categoryId: category.id,
+          toAccountId: '',
+          amount: '1000',
+          freq: 'monthly',
+          interval: '1',
+          dayOfMonth: '',
+          startDate: todayStamp(),
+          endDate: '',
+          maxOccurrences: '',
+        }),
+      ).rejects.toThrow(MaterializationFailedError)
+
+      expect(await listRecurringPlans()).toHaveLength(1) // the write succeeded regardless
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 
 describe('updateRecurringPlanFromForm', () => {
   it('only affects occurrences materialized after the edit, never the ones already generated', async () => {
-    const { account, category } = await setup()
-    await createRecurringPlanFromForm({
-      description: 'Alquiler',
-      kind: 'expense',
-      accountId: account.id,
-      categoryId: category.id,
-      toAccountId: '',
-      amount: '1000',
-      freq: 'monthly',
-      interval: '1',
-      dayOfMonth: '',
-      startDate: '2026-01-01',
-      endDate: '',
-      maxOccurrences: '',
-    })
-    const [plan] = await listRecurringPlans()
-    await materializeDue('2026-02-15') // Jan + Feb at the old amount
+    // Same reasoning as createRecurringPlanFromForm's test above — both
+    // create and update now auto-materialize as of "today", so the clock
+    // needs to be controlled at each step to keep this test's intent
+    // (Jan + Feb at the old amount, March at the new one) reproducible.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-01-15T12:00:00Z'))
+      const { account, category } = await setup()
+      await createRecurringPlanFromForm({
+        description: 'Alquiler',
+        kind: 'expense',
+        accountId: account.id,
+        categoryId: category.id,
+        toAccountId: '',
+        amount: '1000',
+        freq: 'monthly',
+        interval: '1',
+        dayOfMonth: '',
+        startDate: '2026-01-01',
+        endDate: '',
+        maxOccurrences: '',
+      })
+      const [plan] = await listRecurringPlans()
 
-    await updateRecurringPlanFromForm(plan!.id, {
-      description: 'Alquiler nuevo',
-      kind: 'expense',
-      accountId: account.id,
-      categoryId: category.id,
-      toAccountId: '',
-      amount: '2000',
-      freq: 'monthly',
-      interval: '1',
-      dayOfMonth: '',
-      startDate: '2026-01-01',
-      endDate: '',
-      maxOccurrences: '',
-    })
-    await materializeDue('2026-03-15') // March, at the new amount
+      vi.setSystemTime(new Date('2026-02-15T12:00:00Z'))
+      await materializeDue() // Feb, still at the old amount
 
-    const postings = await db.postings.where('accountId').equals(account.id).toArray()
-    expect(postings.map((p) => p.amount).sort((a, b) => a - b)).toEqual([-200_000, -100_000, -100_000])
-    const transactions = await db.transactions.orderBy('date').toArray()
-    expect(transactions.map((t) => t.description)).toEqual(['Alquiler', 'Alquiler', 'Alquiler nuevo'])
+      await updateRecurringPlanFromForm(plan!.id, {
+        description: 'Alquiler nuevo',
+        kind: 'expense',
+        accountId: account.id,
+        categoryId: category.id,
+        toAccountId: '',
+        amount: '2000',
+        freq: 'monthly',
+        interval: '1',
+        dayOfMonth: '',
+        startDate: '2026-01-01',
+        endDate: '',
+        maxOccurrences: '',
+      }) // still Feb 15 — March isn't due yet, so nothing new materializes here
+
+      vi.setSystemTime(new Date('2026-03-15T12:00:00Z'))
+      await materializeDue() // March, at the new amount
+
+      const postings = await db.postings.where('accountId').equals(account.id).toArray()
+      expect(postings.map((p) => p.amount).sort((a, b) => a - b)).toEqual([-200_000, -100_000, -100_000])
+      const transactions = await db.transactions.orderBy('date').toArray()
+      expect(transactions.map((t) => t.description)).toEqual(['Alquiler', 'Alquiler', 'Alquiler nuevo'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('rejects editing into a transfer between accounts of different currencies', async () => {
@@ -474,6 +587,49 @@ describe('removeRecurringPlan', () => {
     await removeRecurringPlan(plan.id)
 
     expect(await db.transactions.where('sourcePlanId').equals(plan.id).count()).toBe(3)
+  })
+})
+
+describe('setRecurringPlanPaused (service wrapper)', () => {
+  it('backfills every occurrence missed while paused, in one shot, on un-pause', async () => {
+    // The service wrapper (unlike the repo-level function used elsewhere
+    // in this file) also triggers materializeDue() — this pins that it
+    // correctly catches up ALL occurrences accumulated while paused, not
+    // just the most recent one, exercising the exact path PlansPage's
+    // pause toggle calls (the repo-level tests never go through it).
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-06-15T12:00:00Z'))
+      const { account, category } = await setup()
+      const plan = await createRecurringPlan({
+        template: template(account.id, category.id),
+        rule: { freq: 'monthly', interval: 1, startDate: '2026-06-01' },
+      })
+      await materializeDue() // June only, at the fake "today"
+      expect(await db.transactions.where('sourcePlanId').equals(plan.id).count()).toBe(1)
+
+      await setRecurringPlanPausedFromService(plan.id, true)
+
+      // Three months pass while paused — nothing accumulates.
+      vi.setSystemTime(new Date('2026-09-15T12:00:00Z'))
+      expect(await db.transactions.where('sourcePlanId').equals(plan.id).count()).toBe(1)
+
+      await setRecurringPlanPausedFromService(plan.id, false)
+
+      // July, August, and September all land in this single un-pause call.
+      const transactions = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
+      expect(transactions).toHaveLength(4)
+      expect(transactions.map((t) => t.date).sort()).toEqual([
+        '2026-06-01',
+        '2026-07-01',
+        '2026-08-01',
+        '2026-09-01',
+      ])
+      const postings = await db.postings.where('accountId').equals(account.id).toArray()
+      expect(postings.reduce((sum, p) => sum + p.amount, 0)).toBe(-400_000) // 4 * -100_000
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

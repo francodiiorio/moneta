@@ -26,7 +26,7 @@ import { todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
 import { useIncomeCategories } from '../hooks/useIncomeCategories'
-import { createRecurringPlanFromForm, updateRecurringPlanFromForm } from '../service'
+import { createRecurringPlanFromForm, MaterializationFailedError, updateRecurringPlanFromForm } from '../service'
 import { recurringPlanFormSchema, type RecurringPlanFormValues } from '../schema'
 
 interface RecurringPlanFormDialogProps {
@@ -135,6 +135,12 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
       onOpenChange(false)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo guardar el recurrente')
+      // MaterializationFailedError means the plan itself was already
+      // created/updated successfully — only the immediate catch-up
+      // failed. Close anyway: leaving the form open would invite
+      // resubmitting it, which (in create mode) would write a genuine
+      // duplicate plan with a new id, same template+rule.
+      if (error instanceof MaterializationFailedError) onOpenChange(false)
     }
   }
 
@@ -146,7 +152,7 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
           <DialogDescription>
             {isEditing
               ? 'Los movimientos ya generados quedan igual — el cambio rige desde la próxima vez que corresponda.'
-              : 'Se genera un movimiento automáticamente cada vez que corresponda, al abrir la app.'}
+              : 'Se genera un movimiento automáticamente cada vez que corresponda — el primero, ahora mismo si ya corresponde.'}
           </DialogDescription>
         </DialogHeader>
 

@@ -14,6 +14,21 @@ import { todayStamp, type DateStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 import type { InstallmentPlanEditFormValues, InstallmentPlanFormValues, RecurringPlanFormValues } from './schema'
 
+/** Thrown by createRecurringPlanFromForm/updateRecurringPlanFromForm/
+ *  setRecurringPlanPaused when the plan write itself already succeeded
+ *  but the immediate materializeDue() catch-up failed for THIS plan.
+ *  Distinct from a plain InvariantError (used all over this file for
+ *  "the write itself was rejected") so a caller can tell "nothing
+ *  happened, fix the form and resubmit" apart from "the plan is real,
+ *  don't resubmit the same create form — that would create a genuine
+ *  duplicate plan" (see RecurringPlanFormDialog.tsx). */
+export class MaterializationFailedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'MaterializationFailedError'
+  }
+}
+
 function findAccount(accounts: AccountWithBalance[], id: string): AccountWithBalance {
   const account = accounts.find((a) => a.id === id)
   invariant(account, `Cuenta no encontrada: ${id}`)
@@ -58,8 +73,10 @@ export interface MaterializationSummary {
  * date, and promotes any `projected` cuota whose date has arrived to
  * `confirmed`. Safe to call on every app load — a plan's watermark
  * (`lastMaterializedDate`) only advances together with its writes, in the
- * same transaction, so running this twice in a row creates nothing new
- * the second time.
+ * same transaction, so running this twice **in sequence** creates nothing
+ * new the second time. That guarantee does NOT hold for two calls running
+ * concurrently — see `materializeDue` below, the only way this should
+ * ever be invoked, which serializes calls specifically to preserve it.
  *
  * Each plan is materialized independently: a single plan that fails
  * (in practice, only reachable via a hand-edited backup import — the
@@ -71,7 +88,7 @@ export interface MaterializationSummary {
  * load — see docs/DECISIONS.md if that's documented, otherwise treat
  * this comment as the record of why the try/catch is here.
  */
-export async function materializeDue(today: DateStamp = todayStamp()): Promise<MaterializationSummary> {
+async function materializeDueUnsafe(today: DateStamp = todayStamp()): Promise<MaterializationSummary> {
   const plans = await recurringPlansRepo.listRecurringPlans()
   let recurringCreated = 0
   const failedPlanIds: string[] = []
@@ -100,6 +117,32 @@ export async function materializeDue(today: DateStamp = todayStamp()): Promise<M
   const installmentsConfirmed = await transactionsRepo.confirmDueProjected(today)
 
   return { recurringCreated, installmentsConfirmed, failedPlanIds }
+}
+
+/** Chains every call onto a single queue so no two runs ever overlap.
+ *  Without this, App.tsx's boot-time sweep (still in flight) and, say, a
+ *  user creating a plan a moment later could each read the same plan's
+ *  `lastMaterializedDate` before either has written anything, both
+ *  compute the same occurrence as due, and both write it — a duplicate
+ *  transaction, i.e. real money double-counted. Chaining onto the
+ *  previous call's promise guarantees a queued call's read only ever
+ *  happens after the previous call's writes have fully committed, so it
+ *  always sees the true current watermark. `.catch(() => undefined)` on
+ *  the queue itself (not on what callers receive back) keeps one
+ *  rejected run from wedging every call queued after it.
+ *
+ *  This now serializes every call, not just genuinely concurrent ones —
+ *  e.g. toggling a plan's pause state waits behind a same-tick boot
+ *  sweep. Acceptable here: `materializeDueUnsafe` is O(number of plans),
+ *  and this is a local, single-user app with a handful of recurring
+ *  plans/cuotas, not hundreds. Revisit if that assumption ever changes
+ *  (e.g. a bulk-import of many plans at once). */
+let materializeQueue: Promise<unknown> = Promise.resolve()
+
+export function materializeDue(today: DateStamp = todayStamp()): Promise<MaterializationSummary> {
+  const run = materializeQueue.then(() => materializeDueUnsafe(today))
+  materializeQueue = run.catch(() => undefined)
+  return run
 }
 
 export interface RecurringPlanListItem {
@@ -219,20 +262,61 @@ async function buildRecurringPlanWrite(
   }
 }
 
+/** Calls materializeDue() right after a plan write and turns ANY failure
+ *  that could affect `planId` into a MaterializationFailedError — both
+ *  the "this plan's occurrence specifically failed" case
+ *  (`failedPlanIds`, which materializeDue() populates instead of
+ *  throwing, so one broken plan can't block every other plan's catch-up)
+ *  and the "materializeDue() rejected outright" case (e.g.
+ *  confirmDueProjected or listRecurringPlans throwing — see App.tsx's own
+ *  "materializeDue falló por completo" handling for the same
+ *  possibility). Both cases mean the same thing to a caller: the plan
+ *  write already succeeded, only the immediate catch-up didn't. */
+async function materializeAfterWrite(planId: string, failureMessage: string): Promise<void> {
+  let failedPlanIds: string[]
+  try {
+    ;({ failedPlanIds } = await materializeDue())
+  } catch {
+    throw new MaterializationFailedError(failureMessage)
+  }
+  if (failedPlanIds.includes(planId)) {
+    throw new MaterializationFailedError(failureMessage)
+  }
+}
+
+/** Calls materializeAfterWrite() right after the write so a plan whose
+ *  first (or next) occurrence is due today shows up immediately —
+ *  otherwise nothing re-runs materialization until the next full app
+ *  load (App.tsx's mount-time call), which could be minutes, hours, or a
+ *  full reload away in the same session. Regression: creating a
+ *  recurring plan with startDate = today used to silently wait for a
+ *  reload before its first payment appeared in Movimientos. */
 export async function createRecurringPlanFromForm(values: RecurringPlanFormValues): Promise<RecurringPlan> {
   const write = await buildRecurringPlanWrite(values)
-  return recurringPlansRepo.createRecurringPlan(write)
+  const plan = await recurringPlansRepo.createRecurringPlan(write)
+  await materializeAfterWrite(plan.id, 'El recurrente se creó, pero no se pudo generar su primer movimiento')
+  return plan
 }
 
 /** Only affects materialization from now on — see
- *  recurringPlansRepo.updateRecurringPlan. */
+ *  recurringPlansRepo.updateRecurringPlan. Also catches up immediately,
+ *  same reasoning as createRecurringPlanFromForm — e.g. moving startDate
+ *  earlier can make an occurrence newly due as of today. */
 export async function updateRecurringPlanFromForm(id: string, values: RecurringPlanFormValues): Promise<RecurringPlan> {
   const write = await buildRecurringPlanWrite(values)
-  return recurringPlansRepo.updateRecurringPlan(id, write)
+  const plan = await recurringPlansRepo.updateRecurringPlan(id, write)
+  await materializeAfterWrite(id, 'El recurrente se actualizó, pero no se pudo poner al día')
+  return plan
 }
 
+/** Also catches up immediately on un-pause — a plan accumulates nothing
+ *  while paused (materializeDue skips it entirely), so occurrences that
+ *  piled up should appear as soon as the user un-pauses, not on the next
+ *  reload. A no-op call when pausing (materializeDue skips a paused plan
+ *  the same way), which is fine — the point is the un-pause case. */
 export async function setRecurringPlanPaused(id: string, isPaused: boolean): Promise<void> {
   await recurringPlansRepo.setRecurringPlanPaused(id, isPaused)
+  await materializeAfterWrite(id, 'No se pudo poner al día el recurrente')
 }
 
 export async function removeRecurringPlan(
