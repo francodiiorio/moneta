@@ -85,6 +85,29 @@ describe('setRecurringPlanPaused / deleteRecurringPlan', () => {
     expect(kept).toHaveLength(1)
     expect(kept[0]?.status).toBe('confirmed')
   })
+
+  it('deletes generated transactions and their postings when deleteGeneratedTransactions is true', async () => {
+    const { template, account, category } = await setup()
+    const plan = await createRecurringPlan({ template, rule })
+    const entry = buildExpense({
+      date: '2026-01-01',
+      description: 'Alquiler',
+      accountId: account.id,
+      categoryId: category.id,
+      amount: money(100_000, 'ARS'),
+      sourcePlanId: plan.id,
+      occurrenceIndex: 0,
+    })
+    await materializePlan(plan.id, [entry], '2026-01-01')
+    const [transaction] = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
+    expect(transaction).toBeDefined()
+
+    await deleteRecurringPlan(plan.id, { deleteGeneratedTransactions: true })
+
+    expect(await listRecurringPlans()).toEqual([])
+    expect(await db.transactions.where('sourcePlanId').equals(plan.id).toArray()).toEqual([])
+    expect(await db.postings.where('transactionId').equals(transaction!.id).toArray()).toEqual([])
+  })
 })
 
 describe('updateRecurringPlan', () => {

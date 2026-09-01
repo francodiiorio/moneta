@@ -86,8 +86,10 @@ ver `docs/DECISIONS.md`.
   a `confirmed` el día que llega su fecha. `projected` ya estaba excluido de balances
   (`accounts.repo.ts`) y reportes (`reports/service.ts`) desde antes de esta feature, así
   que una cuota futura es visible (con badge en Movimientos) sin afectar ningún total.
-- Borrar un plan nunca borra una transacción `confirmed` — ver el ADR correspondiente en
-  `docs/DECISIONS.md`.
+- Borrar un plan, por default, nunca borra una transacción `confirmed` — salvo que el
+  usuario tilde explícitamente "Borrar también los movimientos que ya generó" al borrar
+  un recurrente (`deleteRecurringPlan(id, { deleteGeneratedTransactions: true })`, nunca
+  el default). Ver los ADRs correspondientes en `docs/DECISIONS.md`.
 
 ### Budget
 

@@ -13,6 +13,7 @@ import {
   listInstallmentPlansWithProgress,
   listRecurringPlansWithNext,
   materializeDue,
+  removeRecurringPlan,
   updateInstallmentPlanFromForm,
   updateRecurringPlanFromForm,
 } from './service'
@@ -418,6 +419,61 @@ describe('listRecurringPlansWithNext / listInstallmentPlansWithProgress — orph
     expect(installmentItem?.id).toBe(installmentPlan.id)
     expect(installmentItem?.accountLabel).toBe('—')
     expect(installmentItem?.categoryLabel).toBe('Categoría eliminada')
+  })
+})
+
+describe('listRecurringPlansWithNext — generatedCount', () => {
+  it('counts how many transactions a plan has already generated', async () => {
+    const { account, category } = await setup()
+    await createRecurringPlan({
+      template: template(account.id, category.id),
+      rule: { freq: 'monthly', interval: 1, startDate: '2026-06-01' },
+    })
+    await materializeDue('2026-08-15') // Jun, Jul, Aug -> 3 transactions
+
+    const [item] = await listRecurringPlansWithNext()
+    expect(item?.generatedCount).toBe(3)
+  })
+
+  it('is zero for a plan that has not materialized anything yet', async () => {
+    const { account, category } = await setup()
+    await createRecurringPlan({
+      template: template(account.id, category.id),
+      rule: { freq: 'monthly', interval: 1, startDate: '2026-06-01' },
+    })
+
+    const [item] = await listRecurringPlansWithNext()
+    expect(item?.generatedCount).toBe(0)
+  })
+})
+
+describe('removeRecurringPlan', () => {
+  it('erases generated transactions when deleteGeneratedTransactions is true', async () => {
+    const { account, category } = await setup()
+    const plan = await createRecurringPlan({
+      template: template(account.id, category.id),
+      rule: { freq: 'monthly', interval: 1, startDate: '2026-06-01' },
+    })
+    await materializeDue('2026-08-15')
+    expect(await db.transactions.where('sourcePlanId').equals(plan.id).count()).toBe(3)
+
+    await removeRecurringPlan(plan.id, { deleteGeneratedTransactions: true })
+
+    expect(await listRecurringPlans()).toEqual([])
+    expect(await db.transactions.where('sourcePlanId').equals(plan.id).count()).toBe(0)
+  })
+
+  it('keeps generated transactions by default', async () => {
+    const { account, category } = await setup()
+    const plan = await createRecurringPlan({
+      template: template(account.id, category.id),
+      rule: { freq: 'monthly', interval: 1, startDate: '2026-06-01' },
+    })
+    await materializeDue('2026-08-15')
+
+    await removeRecurringPlan(plan.id)
+
+    expect(await db.transactions.where('sourcePlanId').equals(plan.id).count()).toBe(3)
   })
 })
 

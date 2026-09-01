@@ -259,6 +259,35 @@ tiene que borrar esa transacción puntual desde Movimientos, no desde el plan �
 patrón ya establecido para editar una ocurrencia sin afectar el resto (ver "Recurrentes y
 cuotas como planes + instancias materializadas" arriba).
 
+**Actualización:** este "nunca" tiene una única excepción, explícita y opt-in — ver
+"Borrar un recurrente: opción explícita para borrar también su historial" más abajo.
+
+## Borrar un recurrente: opción explícita para borrar también su historial
+
+**Decisión:** `deleteRecurringPlan` (`database/repositories/recurringPlans.repo.ts`)
+acepta `{ deleteGeneratedTransactions: true }`, que borra también toda transacción
+`confirmed` que ese plan haya generado (`deleteAllBySourcePlanId`, junto a la
+`deleteProjectedBySourcePlanId` ya existente para cuotas). Sigue sin ser el default —
+`PlansPage` sólo ofrece el checkbox ("Borrar también los N movimientos que ya generó")
+cuando el plan tiene algo generado, y arranca destildado.
+
+**Por qué:** el "nunca" original (ver ADR de arriba) asumía que la única forma de
+"deshacer" un recurrente era borrar sus transacciones una por una desde Movimientos —
+tedioso para un recurrente creado por error con varios meses ya materializados. El
+usuario pidió explícitamente una forma de deshacerlo del todo, historial incluido, sin
+convertir eso en el comportamiento por default (que sigue protegiendo contra el borrado
+accidental de plata real).
+
+**Costo aceptado:** es irreversible (no hay soft-delete ni papelera). Ventana de carrera
+angosta y ya existente en otra forma: si `materializeDue()` corre en otra pestaña casi en
+simultáneo con este borrado, una transacción recién materializada podría no alcanzar a
+ser capturada por el scan de `deleteAllBySourcePlanId` y quedar con un `sourcePlanId`
+huérfano — el mismo tipo de referencia huérfana que ya puede darse hoy en el camino
+default (plan borrado, `sourcePlanId` apuntando a un plan que ya no existe). No rompe la
+partida doble (esa transacción sigue teniendo sus propios postings balanceados), sólo
+significa que un "borrar todo" muy mal sincronizado con la materialización automática
+puede dejar, en el peor caso, una transacción suelta sin avisar en la UI.
+
 ## Editar un recurrente: todo el template/regla; una compra en cuotas: sólo metadata
 
 **Decisión:** un `RecurringPlan` se puede editar por completo (descripción, cuenta,

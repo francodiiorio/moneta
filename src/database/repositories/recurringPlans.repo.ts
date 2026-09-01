@@ -4,7 +4,7 @@ import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import type { LedgerEntryDraft } from '@/domain/ledger'
 import type { DateStamp } from '@/lib/dates'
-import { writeLedgerEntry } from './transactions.repo'
+import { deleteAllBySourcePlanId, writeLedgerEntry } from './transactions.repo'
 
 export interface CreateRecurringPlanInput {
   template: TransactionTemplate
@@ -66,8 +66,32 @@ export async function setRecurringPlanPaused(id: string, isPaused: boolean): Pro
   await db.recurringPlans.update(id, { isPaused, updatedAt: new Date().toISOString() })
 }
 
-export async function deleteRecurringPlan(id: string): Promise<void> {
-  await db.recurringPlans.delete(id)
+/**
+ * By default, deleting a plan only stops future materialization — every
+ * already-materialized transaction is real money that already moved and
+ * stays untouched (see docs/DECISIONS.md). Pass
+ * `deleteGeneratedTransactions: true` for the explicit, destructive
+ * opt-in to also erase everything this plan ever generated — e.g. undoing
+ * a recurring plan created by mistake.
+ *
+ * Narrow, pre-existing class of race, now with an irreversible consequence:
+ * a `materializePlan()` call for this same plan in another tab could commit
+ * a brand new transaction after `deleteAllBySourcePlanId`'s scan already
+ * ran, leaving it with a `sourcePlanId` pointing at a plan that no longer
+ * exists — the same orphaned-reference shape the default (non-deleting)
+ * path already produces for every plan deletion, not a new integrity risk
+ * (that transaction's own postings still balance on their own).
+ */
+export async function deleteRecurringPlan(
+  id: string,
+  options?: { deleteGeneratedTransactions?: boolean },
+): Promise<void> {
+  await db.transaction('rw', db.recurringPlans, db.transactions, db.postings, async () => {
+    if (options?.deleteGeneratedTransactions) {
+      await deleteAllBySourcePlanId(id)
+    }
+    await db.recurringPlans.delete(id)
+  })
 }
 
 /**

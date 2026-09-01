@@ -119,17 +119,28 @@ export interface RecurringPlanListItem {
   ruleDescription: string
   isPaused: boolean
   nextOccurrence?: DateStamp
+  /** How many transactions this plan has already generated — shown in the
+   *  delete confirmation so "borrar también el historial" isn't a blind
+   *  choice. */
+  generatedCount: number
 }
 
 export async function listRecurringPlansWithNext(): Promise<RecurringPlanListItem[]> {
-  const [plans, accounts, categories] = await Promise.all([
+  const [plans, accounts, categories, planTransactions] = await Promise.all([
     recurringPlansRepo.listRecurringPlans(),
     accountsRepo.listAccountsWithBalances(),
     categoriesRepo.listCategories(),
+    transactionsRepo.listPlanTransactions(),
   ])
   const accountById = new Map(accounts.map((a) => [a.id, a]))
   const categoryById = new Map(categories.map((c) => [c.id, c] as [string, Category]))
   const today = todayStamp()
+
+  const generatedCountByPlanId = new Map<string, number>()
+  for (const transaction of planTransactions) {
+    if (!transaction.sourcePlanId) continue
+    generatedCountByPlanId.set(transaction.sourcePlanId, (generatedCountByPlanId.get(transaction.sourcePlanId) ?? 0) + 1)
+  }
 
   return plans.map((plan) => {
     const { template } = plan
@@ -148,6 +159,7 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
       amount: money(template.amount, template.currency),
       ruleDescription: describeRule(plan.rule),
       isPaused: plan.isPaused,
+      generatedCount: generatedCountByPlanId.get(plan.id) ?? 0,
       ...(nextOccurrence !== undefined && { nextOccurrence }),
     }
   })
@@ -223,8 +235,11 @@ export async function setRecurringPlanPaused(id: string, isPaused: boolean): Pro
   await recurringPlansRepo.setRecurringPlanPaused(id, isPaused)
 }
 
-export async function removeRecurringPlan(id: string): Promise<void> {
-  await recurringPlansRepo.deleteRecurringPlan(id)
+export async function removeRecurringPlan(
+  id: string,
+  options?: { deleteGeneratedTransactions?: boolean },
+): Promise<void> {
+  await recurringPlansRepo.deleteRecurringPlan(id, options)
 }
 
 export interface InstallmentPlanListItem {

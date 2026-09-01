@@ -14,6 +14,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { usePlansUiStore, type PlansTab } from '../store'
 import { useRecurringPlans } from '../hooks/useRecurringPlans'
@@ -44,9 +46,12 @@ export function PlansPage() {
   const recurringPlans = useRecurringPlans()
   const installmentPlans = useInstallmentPlans()
   const [pendingDelete, setPendingDelete] = useState<{ kind: PlansTab; id: string } | null>(null)
+  const [deleteGenerated, setDeleteGenerated] = useState(false)
 
   const editingRecurringPlan = recurringPlans?.find((item) => item.id === editingRecurringId)?.plan
   const editingInstallmentPlan = installmentPlans?.find((item) => item.id === installmentEditId)?.plan ?? null
+  const pendingDeleteRecurringPlan =
+    pendingDelete?.kind === 'recurring' ? recurringPlans?.find((item) => item.id === pendingDelete.id) : undefined
 
   async function handleTogglePaused(id: string, isPaused: boolean) {
     try {
@@ -56,11 +61,16 @@ export function PlansPage() {
     }
   }
 
+  function openDeleteDialog(kind: PlansTab, id: string) {
+    setDeleteGenerated(false)
+    setPendingDelete({ kind, id })
+  }
+
   async function handleDelete() {
     if (!pendingDelete) return
     try {
       if (pendingDelete.kind === 'recurring') {
-        await removeRecurringPlan(pendingDelete.id)
+        await removeRecurringPlan(pendingDelete.id, { deleteGeneratedTransactions: deleteGenerated })
       } else {
         await removeInstallmentPlan(pendingDelete.id)
       }
@@ -110,7 +120,7 @@ export function PlansPage() {
                 item={item}
                 onEdit={() => openEditRecurringDialog(item.id)}
                 onTogglePaused={() => void handleTogglePaused(item.id, item.isPaused)}
-                onDelete={() => setPendingDelete({ kind: 'recurring', id: item.id })}
+                onDelete={() => openDeleteDialog('recurring', item.id)}
               />
             ))}
           </div>
@@ -131,7 +141,7 @@ export function PlansPage() {
               key={item.id}
               item={item}
               onEdit={() => openInstallmentEditDialog(item.id)}
-              onDelete={() => setPendingDelete({ kind: 'installments', id: item.id })}
+              onDelete={() => openDeleteDialog('installments', item.id)}
             />
           ))}
         </div>
@@ -163,6 +173,18 @@ export function PlansPage() {
                 : 'Las cuotas ya vencidas quedan intactas en Movimientos — sólo se borran las que todavía no vencieron.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {pendingDelete?.kind === 'recurring' && (pendingDeleteRecurringPlan?.generatedCount ?? 0) > 0 && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="delete-generated-transactions"
+                checked={deleteGenerated}
+                onCheckedChange={(checked) => setDeleteGenerated(checked === true)}
+              />
+              <Label htmlFor="delete-generated-transactions" className="text-sm font-normal">
+                Borrar también los {pendingDeleteRecurringPlan?.generatedCount} movimientos que ya generó
+              </Label>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => void handleDelete()}>Eliminar</AlertDialogAction>

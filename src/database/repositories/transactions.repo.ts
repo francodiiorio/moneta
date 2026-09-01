@@ -158,6 +158,21 @@ export async function deleteProjectedBySourcePlanId(sourcePlanId: string): Promi
 }
 
 /**
+ * Deletes every transaction (and its postings) materialized from a plan,
+ * `confirmed` ones included — unlike `deleteProjectedBySourcePlanId`, which
+ * only ever touches not-yet-real ones. Only for the explicit "also delete
+ * what this plan already generated" choice when removing a plan (see
+ * recurringPlans.repo.ts's `deleteRecurringPlan`); never called as a side
+ * effect of anything else, since it erases real financial history.
+ */
+export async function deleteAllBySourcePlanId(sourcePlanId: string): Promise<void> {
+  const ids = await db.transactions.where('sourcePlanId').equals(sourcePlanId).primaryKeys()
+  if (ids.length === 0) return
+  await db.postings.where('transactionId').anyOf(ids).delete()
+  await db.transactions.bulkDelete(ids)
+}
+
+/**
  * Promotes every `projected` transaction whose date has arrived (`<=
  * today`) to `confirmed` — from that point on it counts toward account
  * balances and reports (both already filter by `status === 'confirmed'`).
