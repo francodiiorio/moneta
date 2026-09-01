@@ -23,7 +23,14 @@ export const transferFormSchema = z
     fromAccountId: z.string().min(1, 'Elegí una cuenta de origen'),
     toAccountId: z.string().min(1, 'Elegí una cuenta de destino'),
     amount: amountString,
-    toAmount: amountString.optional(),
+    // .or(z.literal('')): the form field defaults to '' (RHF's controlled-
+    // input default) and stays '' whenever it's hidden — a same-currency
+    // transfer never renders it. `.optional()` alone only lets `undefined`
+    // through, not '', so every same-currency transfer failed this field's
+    // validation silently (the FormMessage for it never renders either,
+    // since the field itself isn't in the DOM when hidden) — Guardar just
+    // did nothing, with no visible error at all.
+    toAmount: amountString.or(z.literal('')).optional(),
   })
   .refine((v) => v.fromAccountId !== v.toAccountId, {
     message: 'Elegí dos cuentas distintas',
