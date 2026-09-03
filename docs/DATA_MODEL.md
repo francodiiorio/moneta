@@ -167,8 +167,13 @@ export deliberado del usuario (nunca desde el snapshot de seguridad automático 
 un import, que llama a `exportBackup()` directamente) y desde `importBackup()` una vez
 completada la escritura (`replaceAllTables`/`mergeAllTables`), para que no quede pisado
 por lo que traiga el archivo importado.
+`hideSavingsAndInvestmentsAmount` (default `false`) es el estado del ícono de ojo en la
+card "Ahorro e inversiones" del Dashboard — puramente de UI (no oculta nada en
+`/patrimonio`), pero vive en Settings en vez de un store de Zustand efímero porque tiene
+sentido que persista entre sesiones (el punto de ocultar un monto es que siga oculto la
+próxima vez que abrís la app).
 
-Los seis son opcionales — agregados sobre un documento que ya existía, así que una fila
+Los siete son opcionales — agregados sobre un documento que ya existía, así que una fila
 persistida antes de que existieran no los tiene.
 `database/repositories/settings.repo.ts:getSettings()` los completa con
 `{ ...DEFAULT_SETTINGS, ...existing }` en vez de `existing ?? DEFAULT_SETTINGS`,

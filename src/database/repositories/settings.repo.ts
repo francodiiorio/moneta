@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   schemaVersion: 1,
   autoQuotesEnabled: false,
+  hideSavingsAndInvestmentsAmount: false,
   // Matches the fallback the Cotizaciones select already shows
   // (`settings.rateProfile ?? 'oficial'`) — without this, that visual
   // default was never actually persisted, and `candidatesFor` in

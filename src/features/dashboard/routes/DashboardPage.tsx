@@ -1,13 +1,16 @@
 import { Link } from 'react-router'
-import { LayoutDashboard, TriangleAlert } from 'lucide-react'
+import { toast } from 'sonner'
+import { Eye, EyeOff, LayoutDashboard, TriangleAlert } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ExpenseByCategoryChart } from '@/components/ExpenseByCategoryChart'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
 import { CategoryIcon } from '@/components/CategoryIcon'
 import { MoneyTrendChart } from '@/components/MoneyTrendChart'
+import { settingsRepo } from '@/database/repositories'
 import { cn } from '@/lib/cn'
 import { currentMonthStamp, formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { percentChange } from '@/domain/money'
@@ -18,6 +21,7 @@ import { useSavingsAndInvestmentsHistory } from '@/features/networth/hooks/useSa
 import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithProgress'
 import { useHasAccounts } from '../hooks/useHasAccounts'
 import { useRecentExpenses } from '../hooks/useRecentExpenses'
+import { useSettings } from '../hooks/useSettings'
 import { RecentExpensesList } from '../components/RecentExpensesList'
 import { VariationBadge } from '../components/VariationBadge'
 
@@ -25,6 +29,8 @@ const BUDGET_ALERT_THRESHOLD = 90
 
 export function DashboardPage() {
   const hasAccounts = useHasAccounts()
+  const settings = useSettings()
+  const hideAmount = settings?.hideSavingsAndInvestmentsAmount ?? false
   const month = currentMonthStamp()
   const summary = useMonthSummary(month)
   const previousSummary = useMonthSummary(shiftMonth(month, -1))
@@ -57,6 +63,14 @@ export function DashboardPage() {
     summary && previousSummary ? percentChange(previousSummary.expense, summary.expense) : undefined
 
   const missingRateCount = (summary?.missingRateCount ?? 0) + (savingsAndInvestments?.missingRateCount ?? 0)
+
+  async function handleToggleHideAmount() {
+    try {
+      await settingsRepo.updateSettings({ hideSavingsAndInvestmentsAmount: !hideAmount })
+    } catch {
+      toast.error('No se pudo cambiar la preferencia')
+    }
+  }
 
   if (hasAccounts === false) {
     return (
@@ -121,9 +135,21 @@ export function DashboardPage() {
             </p>
           </div>
           <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
-            <p className="text-xs text-muted-foreground">Ahorro e inversiones</p>
+            <div className="flex items-center gap-1">
+              <p className="text-xs text-muted-foreground">Ahorro e inversiones</p>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => void handleToggleHideAmount()}
+                title={hideAmount ? 'Mostrar monto' : 'Ocultar monto'}
+              >
+                {hideAmount ? <EyeOff /> : <Eye />}
+              </Button>
+            </div>
             <p className="mt-1 text-xl font-semibold">
-              {savingsAndInvestments ? (
+              {hideAmount ? (
+                <span className="font-mono tabular-nums text-muted-foreground">••••••</span>
+              ) : savingsAndInvestments ? (
                 <MoneyText value={savingsAndInvestments.total} />
               ) : (
                 <span className="text-muted-foreground">—</span>
@@ -163,7 +189,10 @@ export function DashboardPage() {
         </div>
       )}
 
-      {hasInvestmentProgress && investmentPoints && (
+      {/* Gated on !hideAmount too — el tooltip de MoneyTrendChart muestra
+          montos reales de la misma serie que "Ahorro e inversiones" recién
+          ocultó arriba; mostrar la card acá volvería a filtrarlos. */}
+      {!hideAmount && hasInvestmentProgress && investmentPoints && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Progreso de tus inversiones</CardTitle>

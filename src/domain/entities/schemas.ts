@@ -189,6 +189,7 @@ export const settingsSchema = z.object({
   quotesRefreshedAt: isoInstant.optional(),
   lastBackupExportedAt: isoInstant.optional(),
   lastBackupImportedAt: isoInstant.optional(),
+  hideSavingsAndInvestmentsAmount: z.boolean().optional(),
 })
 export type Settings = z.infer<typeof settingsSchema>
 

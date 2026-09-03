@@ -151,3 +151,53 @@ test('Dashboard shows a "Progreso de tus inversiones" card once a position has a
   await page.goto('/')
   await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
 })
+
+test('el ícono de ojo oculta el monto de "Ahorro e inversiones" y lo recuerda entre recargas', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Banco Prueba')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // También carga una inversión: "Progreso de tus inversiones" muestra
+  // montos reales en su tooltip, así que ocultar el monto de arriba
+  // tiene que ocultar esta card entera — si no, el toggle no sirve de nada.
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('SPY Eye Test')
+  await page.getByLabel('Símbolo').fill('SPYE')
+  await page.getByLabel('Moneda').click()
+  await page.getByRole('option', { name: 'ARS' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo', { exact: true }).click()
+  await page.getByRole('option', { name: /SPYE/ }).click()
+  await page.getByLabel('Cantidad').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await page.getByTitle('Cargar precio').click()
+  await page.getByLabel(/Precio/).fill('100')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/')
+  await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
+  await expect(page.getByText('••••••')).not.toBeVisible()
+
+  await page.getByTitle('Ocultar monto').click()
+  await expect(page.getByText('••••••')).toBeVisible()
+  await expect(page.getByText('Progreso de tus inversiones')).not.toBeVisible()
+
+  // Guardado en Settings, no en un store efímero — sigue oculto tras
+  // recargar. Ver docs/DATA_MODEL.md "hideSavingsAndInvestmentsAmount".
+  await page.reload()
+  await expect(page.getByText('••••••')).toBeVisible()
+  await expect(page.getByText('Progreso de tus inversiones')).not.toBeVisible()
+
+  await page.getByTitle('Mostrar monto').click()
+  await expect(page.getByText('••••••')).not.toBeVisible()
+  await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
+})
