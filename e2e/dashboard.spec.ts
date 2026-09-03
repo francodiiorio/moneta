@@ -112,3 +112,42 @@ test('Dashboard shows the expense variation vs. the previous month', async ({ pa
   await page.goto('/')
   await expect(page.getByText('50% vs. mes anterior')).toBeVisible()
 })
+
+test('Dashboard shows a "Progreso de tus inversiones" card once a position has a price', async ({ page }) => {
+  // The Dashboard's empty state gates on having at least one account —
+  // unrelated to inversiones, but needed so the rest of the page renders.
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Banco Prueba')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('SPY Dashboard Test')
+  await page.getByLabel('Símbolo').fill('SPYD')
+  // ARS (the app's default base currency) — sidesteps needing an exchange
+  // rate loaded just to see the position valued at all.
+  await page.getByLabel('Moneda').click()
+  await page.getByRole('option', { name: 'ARS' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo', { exact: true }).click()
+  await page.getByRole('option', { name: /SPYD/ }).click()
+  await page.getByLabel('Cantidad').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByTitle('Cargar precio').click()
+  await page.getByLabel(/Precio/).fill('100')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/')
+  await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
+})

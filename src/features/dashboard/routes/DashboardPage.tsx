@@ -7,12 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ExpenseByCategoryChart } from '@/components/ExpenseByCategoryChart'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
 import { CategoryIcon } from '@/components/CategoryIcon'
+import { MoneyTrendChart } from '@/components/MoneyTrendChart'
 import { cn } from '@/lib/cn'
 import { currentMonthStamp, formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { percentChange } from '@/domain/money'
 import { useMonthSummary } from '@/features/reports/hooks/useMonthSummary'
 import { useExpenseByCategory } from '@/features/reports/hooks/useExpenseByCategory'
 import { useNetWorthSummary } from '@/features/networth/hooks/useNetWorthSummary'
+import { useSavingsAndInvestmentsHistory } from '@/features/networth/hooks/useSavingsAndInvestmentsHistory'
 import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithProgress'
 import { useHasAccounts } from '../hooks/useHasAccounts'
 import { useRecentExpenses } from '../hooks/useRecentExpenses'
@@ -36,6 +38,18 @@ export function DashboardPage() {
   const budgetsToReview = budgets?.items.filter((b) => b.progress.percentUsed >= BUDGET_ALERT_THRESHOLD).slice(0, 3)
   const hasCategoryData = expenseByCategory !== undefined && expenseByCategory.items.length > 0
   const hasRecentExpenses = recentExpenses !== undefined && recentExpenses.length > 0
+
+  const investmentsHistory = useSavingsAndInvestmentsHistory()
+  const investmentPoints = investmentsHistory?.points.map((p) => ({ month: p.month, value: p.byBucket.investments }))
+  const hasInvestmentProgress = investmentPoints !== undefined && investmentPoints.some((p) => p.value.amount !== 0)
+  // 6 puntos (mes actual + 5 anteriores) -> el primero y el último están
+  // a 5 meses de distancia, no 6 — de ahí el "hace 5 meses" del badge.
+  const firstInvestmentPoint = investmentPoints?.[0]
+  const lastInvestmentPoint = investmentPoints?.[investmentPoints.length - 1]
+  const investmentChange =
+    firstInvestmentPoint && lastInvestmentPoint
+      ? percentChange(firstInvestmentPoint.value, lastInvestmentPoint.value)
+      : undefined
 
   const incomeChange =
     summary && previousSummary ? percentChange(previousSummary.income, summary.income) : undefined
@@ -147,6 +161,20 @@ export function DashboardPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {hasInvestmentProgress && investmentPoints && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Progreso de tus inversiones</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MoneyTrendChart points={investmentPoints} height={180} />
+            {investmentChange !== undefined && (
+              <VariationBadge percent={investmentChange} compareLabel="hace 5 meses" />
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {(hasCategoryData || hasRecentExpenses) && (

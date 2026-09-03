@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
 import { MissingPriceBanner } from '@/components/MissingPriceBanner'
+import { MoneyTrendChart } from '@/components/MoneyTrendChart'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -31,6 +32,7 @@ import { NETWORTH_CURRENCIES } from '../schema'
 import { useNetWorthUiStore, type NetWorthTab } from '../store'
 import { useSavingsHoldings } from '../hooks/useSavingsHoldings'
 import { useNetWorthSummary } from '../hooks/useNetWorthSummary'
+import { useSavingsAndInvestmentsHistory } from '../hooks/useSavingsAndInvestmentsHistory'
 import { useSettings } from '../hooks/useSettings'
 import { useInvestmentAssets } from '../hooks/useInvestmentAssets'
 import { useInvestmentHoldingsWithDetails } from '../hooks/useInvestmentHoldingsWithDetails'
@@ -38,6 +40,7 @@ import { useExchangeRates } from '../hooks/useExchangeRates'
 import { SavingsFormDialog } from '../components/SavingsFormDialog'
 import { SavingsRow } from '../components/SavingsRow'
 import { NetWorthDistribution } from '../components/NetWorthDistribution'
+import { InvestmentGainLossChart } from '../components/InvestmentGainLossChart'
 import { InvestmentAssetFormDialog } from '../components/InvestmentAssetFormDialog'
 import { InvestmentHoldingFormDialog } from '../components/InvestmentHoldingFormDialog'
 import { InvestmentPriceDialog } from '../components/InvestmentPriceDialog'
@@ -77,11 +80,19 @@ export function NetWorthPage() {
   } = useNetWorthUiStore()
   const savings = useSavingsHoldings()
   const summary = useNetWorthSummary()
+  const history = useSavingsAndInvestmentsHistory()
   const settings = useSettings()
   const assets = useInvestmentAssets()
   const holdings = useInvestmentHoldingsWithDetails()
   const rates = useExchangeRates()
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
+
+  const historyPoints = history?.points.map((p) => ({ month: p.month, value: p.total }))
+  const gainLossItems = holdings?.flatMap((item) =>
+    item.gainLossPercent !== undefined
+      ? [{ label: item.asset.symbol ?? item.asset.name, gainLossPercent: item.gainLossPercent }]
+      : [],
+  )
 
   const editingSavings = savings?.find((h) => h.id === editingSavingsId)
   const editingHolding = holdings?.find((h) => h.holding.id === editingHoldingId)?.holding
@@ -213,6 +224,32 @@ export function NetWorthPage() {
               </CardHeader>
               <CardContent>
                 <NetWorthDistribution savings={summary.byBucket.savings} investments={summary.byBucket.investments} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Evolución</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {historyPoints ? (
+                  <MoneyTrendChart points={historyPoints} />
+                ) : (
+                  <div className="h-48 animate-pulse rounded-xl bg-muted" />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Ganancia/pérdida por posición</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {gainLossItems ? (
+                  <InvestmentGainLossChart items={gainLossItems} />
+                ) : (
+                  <div className="h-32 animate-pulse rounded-xl bg-muted" />
+                )}
               </CardContent>
             </Card>
           </div>

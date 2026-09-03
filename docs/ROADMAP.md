@@ -194,3 +194,15 @@ y el costo aceptado de esa aproximación.
   que los dos números siguen coincidiendo entre sí — sólo cambió qué representan. El
   patrimonio consolidado con Cuentas no desaparece: sigue viviendo, sin cambios, en
   Reportes (`getNetWorthHistory`, el informe mensual). Ver ADR en `docs/DECISIONS.md`.
+- ~~Gráficos de análisis: progreso de inversiones (Dashboard) + Evolución y
+  Ganancia/pérdida por posición (Ahorro e Inversiones)~~ (hecho) — nueva
+  `features/networth/service.ts:getSavingsAndInvestmentsHistory`, mismo patrón que
+  `getNetWorthHistory` de Reportes (cantidad de hoy revaluada con el precio/tasa vigente
+  en cada uno de los últimos 6 meses) pero con `accounts: []`. El Dashboard grafica sólo
+  el bucket de Inversiones (`components/MoneyTrendChart.tsx`, componente compartido —
+  vive en `components/` porque lo usan dos features); Ahorro e Inversiones → Resumen
+  agrega ese mismo chart para el total, más `InvestmentGainLossChart.tsx` (gain/loss %
+  por posición, no en monto — evita convertir `costBasis`/`gainLoss` entre monedas).
+  Encontrado en el camino: Recharts no dibuja ni la barra ni su label cuando el valor es
+  exactamente 0 — mismo fix que ya usaba `NetWorthDistribution`, descartar la fila en vez
+  de graficar un valor nulo.

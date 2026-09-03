@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/database/db'
 import { createAccount } from '@/database/repositories/accounts.repo'
 import { createExchangeRate } from '@/database/repositories/exchangeRates.repo'
 import { createInvestmentAsset, createInvestmentHolding, listInvestmentHoldings } from '@/database/repositories/investments.repo'
 import { createAssetPrice } from '@/database/repositories/assetPrices.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
+import { QUANTITY_SCALE } from '@/domain/decimal'
 import { minor, money } from '@/domain/money'
 import { generateId } from '@/lib/ids'
 import {
@@ -15,6 +16,7 @@ import {
   createSavingsHoldingFromForm,
   getInvestmentHoldingsWithDetails,
   getNetWorthSummary,
+  getSavingsAndInvestmentsHistory,
   listExchangeRates,
   listInvestmentAssets,
   listSavingsHoldings,
@@ -137,6 +139,57 @@ describe('getNetWorthSummary', () => {
     const summary = await getNetWorthSummary('ARS')
     expect(summary.missingRateCount).toBe(1)
     expect(summary.total).toEqual(money(0, 'ARS'))
+  })
+})
+
+describe('getSavingsAndInvestmentsHistory', () => {
+  it('revalues an investment position at each month\'s own historical price, not the latest one', async () => {
+    // Fake only Date (not timers) — faking setTimeout/Promise scheduling
+    // too makes Dexie's internal transaction machinery hang indefinitely.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-23T12:00:00Z'))
+    try {
+      await updateSettings({ baseCurrency: 'ARS' })
+      const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'ARS', priceMode: 'manual' })
+      await createInvestmentHolding({ assetId: asset.id, quantity: 2 * QUANTITY_SCALE })
+      // Price changed mid-window: 1000 until mid-July, 1500 from then on —
+      // same shape as the equivalent test in features/reports/service.test.ts.
+      await createAssetPrice({ assetId: asset.id, price: 1000, currency: 'ARS', date: '2026-01-01', source: 'manual' })
+      await createAssetPrice({ assetId: asset.id, price: 1500, currency: 'ARS', date: '2026-07-15', source: 'manual' })
+
+      const { points, missingRateCount, missingPriceCount } = await getSavingsAndInvestmentsHistory(3) // Jun, Jul, Aug(today)
+      expect(missingRateCount).toBe(0)
+      expect(missingPriceCount).toBe(0)
+      expect(points.map((p) => [p.month, p.total.amount])).toEqual([
+        ['2026-06', 2_000], // 2 units * 1000 (price valid at 2026-06-30)
+        ['2026-07', 3_000], // 2 units * 1500 (price changed 2026-07-15, valid at 2026-07-31)
+        ['2026-08', 3_000], // 2 units * 1500 (still valid as of "today" 2026-08-23)
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // Regression: this feature is scoped to Ahorro e Inversiones only —
+  // same guarantee as getNetWorthSummary, but across every historical
+  // point too, not just today's. See docs/DECISIONS.md "Ahorro e
+  // Inversiones deja de incluir Cuentas".
+  it('never includes an account balance in any point, even with no savings/investments at all', async () => {
+    await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(1_000_000) })
+
+    const { points, missingRateCount } = await getSavingsAndInvestmentsHistory(3)
+    expect(points.every((p) => p.total.amount === 0)).toBe(true)
+    expect(missingRateCount).toBe(0)
+  })
+
+  it('accumulates missingRateCount/missingPriceCount across every point', async () => {
+    await createSavingsHoldingFromForm({ name: 'Ahorro EUR', currency: 'EUR', amount: '100' }) // no rate loaded
+    const asset = await createInvestmentAsset({ name: 'Sin precio', type: 'stock', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 1 * QUANTITY_SCALE }) // no price loaded
+
+    const { missingRateCount, missingPriceCount } = await getSavingsAndInvestmentsHistory(3)
+    expect(missingRateCount).toBe(3) // one EUR miss per point
+    expect(missingPriceCount).toBe(3) // one no-price miss per point
   })
 })
 

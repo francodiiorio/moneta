@@ -136,6 +136,11 @@ test('shows unrealized gain/loss vs. the average cost once both a cost and a pri
   // 5 * (650 - 600) = 250, / (5*600=3000) * 100 = 8.33% -> rounds to 8%.
   // USD renders with the "USD" code, not "$" (indistinguishable from ARS).
   await expect(page.getByText(/\+USD\s?250[.,]00\s?\(\+8%\)/)).toBeVisible()
+
+  // Same gain/loss surfaces as a chart in Resumen — see InvestmentGainLossChart.
+  await page.getByRole('tab', { name: 'Resumen' }).click()
+  await expect(page.getByText('Ganancia/pérdida por posición')).toBeVisible()
+  await expect(page.getByText('+8%')).toBeVisible()
 })
 
 test('/ajustes/tasas redirects to Ahorro e Inversiones, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {

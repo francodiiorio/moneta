@@ -9,8 +9,8 @@ import { quantity, parseQuantity, valuePosition } from '@/domain/decimal'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { convert, MissingRateError } from '@/domain/currency'
 import { money, parseAmount, percentChange, sub, type CurrencyCode, type Money } from '@/domain/money'
-import type { AssetPrice, InvestmentAsset, InvestmentHolding } from '@/domain/entities'
-import { todayStamp } from '@/lib/dates'
+import type { AssetPrice, ExchangeRate, InvestmentAsset, InvestmentHolding, SavingsHolding } from '@/domain/entities'
+import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 import { NO_PROFILE, rateValueToNumber, type ExchangeRateFormValues } from './schema'
 import type {
@@ -70,18 +70,49 @@ export interface NetWorthSummary extends ValuationResult {
   displayCurrency: CurrencyCode
 }
 
-/** Orchestrates every repository `domain/networth:valuateNetWorth` needs
- *  (ahorros, posiciones + sus activos + su último precio, tasas) and
- *  calls it — the only place besides the domain layer itself that knows
- *  the quantity -> native value -> conversion order.
- *
- *  Deliberately excludes Cuentas (`accounts: []` below): this feature is
- *  scoped to Ahorro e Inversiones only — plata que no aparece ya en
- *  /cuentas. A consolidated total that also folds in cuentas still
- *  exists, but only in Reportes (`getMonthlyReport`/`getNetWorthHistory`
- *  in features/reports/service.ts, which call `valuateNetWorth`
- *  independently with its own accounts list) — see docs/DECISIONS.md
- *  "Ahorro e Inversiones deja de incluir Cuentas". */
+/** Valúa Ahorros + Inversiones (nunca Cuentas — `accounts: []`, ver ADR
+ *  "Ahorro e Inversiones deja de incluir Cuentas" en docs/DECISIONS.md)
+ *  a una fecha puntual: pide el último precio de cada activo vigente a
+ *  esa fecha y llama a `domain/networth:valuateNetWorth`. Compartido por
+ *  `getNetWorthSummary` (una sola fecha, hoy) y
+ *  `getSavingsAndInvestmentsHistory` (una fecha por mes) — la única
+ *  diferencia entre ambas es la fecha que se le pasa. Un consolidado que
+ *  también incluye Cuentas sigue existiendo, pero sólo en Reportes
+ *  (`features/reports/service.ts`, que llama a `valuateNetWorth` de
+ *  forma independiente con su propia lista de cuentas). */
+async function valueSavingsAndInvestmentsAt(
+  asOfDate: DateStamp,
+  displayCurrency: CurrencyCode,
+  rates: readonly ExchangeRate[],
+  profile: string | undefined,
+  savings: readonly SavingsHolding[],
+  holdings: readonly { assetId: string; quantity: number }[],
+  assetById: Map<string, InvestmentAsset>,
+): Promise<ValuationResult> {
+  const latestPrices = await assetPricesRepo.latestAssetPrices(
+    [...assetById.keys()],
+    asOfDate,
+  )
+  const positions: ValuationPosition[] = holdings.map((holding) => {
+    const asset = assetById.get(holding.assetId)
+    const priceRow = asset ? latestPrices.get(asset.id) : undefined
+    return {
+      quantity: quantity(holding.quantity),
+      ...(priceRow && { price: money(priceRow.price, priceRow.currency) }),
+    }
+  })
+
+  return valuateNetWorth({
+    accounts: [],
+    savings,
+    positions,
+    rates,
+    displayCurrency,
+    date: asOfDate,
+    ...(profile !== undefined && { profile }),
+  })
+}
+
 export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode): Promise<NetWorthSummary> {
   const settings = await settingsRepo.getSettings()
   const displayCurrency = overrideDisplayCurrency ?? settings.displayCurrency ?? settings.baseCurrency
@@ -93,33 +124,83 @@ export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode)
     investmentsRepo.listInvestmentAssets(),
     exchangeRatesRepo.listExchangeRates(),
   ])
-
   const assetById = new Map(assets.map((a) => [a.id, a]))
-  const latestPrices = await assetPricesRepo.latestAssetPrices(
-    assets.map((a) => a.id),
+
+  const result = await valueSavingsAndInvestmentsAt(
     date,
+    displayCurrency,
+    rates,
+    settings.rateProfile,
+    savings,
+    holdings,
+    assetById,
   )
 
-  const positions: ValuationPosition[] = holdings.map((holding) => {
-    const asset = assetById.get(holding.assetId)
-    const priceRow = asset ? latestPrices.get(asset.id) : undefined
-    return {
-      quantity: quantity(holding.quantity),
-      ...(priceRow && { price: money(priceRow.price, priceRow.currency) }),
-    }
-  })
-
-  const result = valuateNetWorth({
-    accounts: [],
-    savings,
-    positions,
-    rates,
-    displayCurrency,
-    date,
-    ...(settings.rateProfile !== undefined && { profile: settings.rateProfile }),
-  })
-
   return { ...result, displayCurrency }
+}
+
+export interface SavingsAndInvestmentsPoint {
+  month: MonthStamp
+  total: Money
+  byBucket: { savings: Money; investments: Money }
+}
+
+export interface SavingsAndInvestmentsHistory {
+  points: SavingsAndInvestmentsPoint[]
+  missingRateCount: number
+  missingPriceCount: number
+}
+
+/** Un punto por mes para los últimos `monthsBack` meses (valuado a fin de
+ *  mes, salvo el mes en curso, valuado a hoy) — misma técnica que
+ *  features/reports/service.ts:getNetWorthHistory: usa la cantidad/monto
+ *  de HOY de cada ahorro/posición, revaluada con el precio o tasa
+ *  vigente en cada mes (ni SavingsHolding ni InvestmentHolding tienen
+ *  historial propio — ver ADR "Evolución del patrimonio: cantidades de
+ *  hoy, precios de cada mes" en docs/DECISIONS.md). Deliberadamente
+ *  independiente de esa función de Reportes (no se comparte código):
+ *  dos consumidores distintos del mismo dominio, con distinto alcance. */
+export async function getSavingsAndInvestmentsHistory(monthsBack = 6): Promise<SavingsAndInvestmentsHistory> {
+  const settings = await settingsRepo.getSettings()
+  const displayCurrency = settings.displayCurrency ?? settings.baseCurrency
+  const currentMonth = currentMonthStamp()
+
+  const [rates, savings, holdings, assets] = await Promise.all([
+    exchangeRatesRepo.listExchangeRates(),
+    savingsHoldingsRepo.listSavingsHoldings(),
+    investmentsRepo.listInvestmentHoldings(),
+    investmentsRepo.listInvestmentAssets(),
+  ])
+  const assetById = new Map(assets.map((a) => [a.id, a]))
+
+  const points: SavingsAndInvestmentsPoint[] = []
+  let missingRateCount = 0
+  let missingPriceCount = 0
+
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const month = shiftMonth(currentMonth, -i)
+    const asOfDate = i === 0 ? todayStamp() : monthRange(month).end
+
+    const result = await valueSavingsAndInvestmentsAt(
+      asOfDate,
+      displayCurrency,
+      rates,
+      settings.rateProfile,
+      savings,
+      holdings,
+      assetById,
+    )
+
+    missingRateCount += result.missingRateCount
+    missingPriceCount += result.missingPriceCount
+    points.push({
+      month,
+      total: result.total,
+      byBucket: { savings: result.byBucket.savings, investments: result.byBucket.investments },
+    })
+  }
+
+  return { points, missingRateCount, missingPriceCount }
 }
 
 export async function createInvestmentAssetFromForm(values: InvestmentAssetFormValues) {
