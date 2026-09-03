@@ -181,6 +181,13 @@ y el costo aceptado de esa aproximación.
   en esta versión, ver ADR en `docs/DECISIONS.md`.
 - Multi-dispositivo (fuera de alcance del proyecto tal como está planteado hoy — ver
   `docs/PRODUCT.md` "No-objetivos").
+- Tracking de inversiones por lote (cada compra con su propia fecha/cantidad/precio, en
+  vez de una sola `InvestmentHolding` consolidada por activo) — daría ganancia/pérdida
+  realizada exacta sin promediar el costo a mano al comprar más de un activo que ya
+  tenés. Modelo de datos más grande (posiblemente FIFO o costo promedio por lote); sólo
+  se justifica si hace falta esa precisión fiscal/contable. Ver ADR "'Nueva posición' no
+  ofrece un activo que ya tiene holding" en `docs/DECISIONS.md` para el fix de corto
+  plazo (evitar el duplicado) que no requirió este modelo más grande.
 - ~~Informe mensual exportable~~ (hecho) — `/reportes/informe/:month`, una "foto" de un
   mes (cerrado o en curso): ingresos/gastos/balance, gasto por categoría, y patrimonio de
   ese mes si hay algo registrado. Exporta a PDF vía el diálogo de impresión nativo del

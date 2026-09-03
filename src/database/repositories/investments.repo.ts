@@ -73,13 +73,6 @@ export async function getInvestmentHolding(id: string): Promise<InvestmentHoldin
 }
 
 export async function createInvestmentHolding(input: CreateInvestmentHoldingInput): Promise<InvestmentHolding> {
-  const asset = await db.investmentAssets.get(input.assetId)
-  invariant(asset, `Activo no encontrado: ${input.assetId}`)
-  // Defense in depth, same as createAssetPrice's `price > 0` check — the
-  // form already validates this, but the repo shouldn't trust every
-  // future caller to (e.g. a backup import calling this directly).
-  quantity(input.quantity)
-
   const now = new Date().toISOString()
   const holding: InvestmentHolding = {
     id: generateId(),
@@ -90,7 +83,29 @@ export async function createInvestmentHolding(input: CreateInvestmentHoldingInpu
     ...(input.averageCost !== undefined && { averageCost: input.averageCost }),
     ...(input.notes !== undefined && { notes: input.notes }),
   }
-  await db.investmentHoldings.add(holding)
+
+  await db.transaction('rw', db.investmentAssets, db.investmentHoldings, async () => {
+    const asset = await db.investmentAssets.get(input.assetId)
+    invariant(asset, `Activo no encontrado: ${input.assetId}`)
+    // Defense in depth, same as createAssetPrice's `price > 0` check — the
+    // form already validates this, but the repo shouldn't trust every
+    // future caller to (e.g. a backup import calling this directly).
+    quantity(input.quantity)
+
+    // Un solo InvestmentHolding por activo — nunca dos lotes separados
+    // para el mismo assetId (no hay tracking por lote, ver
+    // docs/DATA_MODEL.md). El formulario ya saca del selector los
+    // activos que ya tienen holding (InvestmentHoldingFormDialog), pero
+    // eso sólo previene el caso feliz de un único tab — este chequeo
+    // dentro de la transacción es lo que realmente lo garantiza (dos
+    // tabs, o cualquier otro caller futuro). Ver ADR "'Nueva posición'
+    // no ofrece un activo que ya tiene holding" en docs/DECISIONS.md.
+    const existingCount = await db.investmentHoldings.where('assetId').equals(input.assetId).count()
+    invariant(existingCount === 0, 'Ese activo ya tiene una posición cargada — editá la existente en vez de crear otra')
+
+    await db.investmentHoldings.add(holding)
+  })
+
   return holding
 }
 

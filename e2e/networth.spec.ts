@@ -60,6 +60,47 @@ test('creates an investment asset, a position and a price, and sees the valued t
   await expect(page.getByText(/500[.,]00/).first()).toBeVisible()
 })
 
+test('"Nueva posición" no vuelve a ofrecer un activo que ya tiene holding', async ({ page }) => {
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('SPY Dup Test')
+  await page.getByLabel('Símbolo').fill('SPYX')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo', { exact: true }).click()
+  await page.getByRole('option', { name: /SPYX/ }).click()
+  await page.getByLabel('Cantidad').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // SPYX es el único activo y ya tiene holding — nada nuevo que crear.
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Nueva posición' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+
+  // Un segundo activo sin holding reactiva la opción, pero el primero
+  // (ya con posición) no debe aparecer en el selector. La lista ya no
+  // está vacía, así que "Nuevo activo" ahora vive en el dropdown "Nuevo"
+  // (antes era el CTA propio de EmptyState).
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('AAPL Dup Test')
+  await page.getByLabel('Símbolo').fill('AAPX')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo', { exact: true }).click()
+  await expect(page.getByRole('option', { name: /AAPX/ })).toBeVisible()
+  await expect(page.getByRole('option', { name: /SPYX/ })).not.toBeVisible()
+})
+
 test('a newly-created asset with no position shows up right away, instead of looking like nothing happened', async ({ page }) => {
   await page.goto('/patrimonio')
   await page.getByRole('tab', { name: 'Inversiones' }).click()

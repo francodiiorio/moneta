@@ -75,6 +75,24 @@ describe('createInvestmentHolding / listInvestmentHoldings', () => {
   it('rejects a holding for a non-existent asset', async () => {
     await expect(createInvestmentHolding({ assetId: 'missing', quantity: 100 })).rejects.toThrow(/no encontrado/)
   })
+
+  // Regression: nada en el schema de Dexie fuerza que `assetId` sea único
+  // en investmentHoldings (es sólo un índice secundario) — sin este
+  // chequeo, dos llamadas para el mismo activo (dos pestañas, un backup
+  // importado a mano, etc.) terminan en dos holdings separados que se
+  // suman por separado en todos lados (Distribución, el total de Ahorro
+  // e Inversiones, Ganancia/pérdida por posición). InvestmentHoldingFormDialog
+  // ya saca del selector los activos que ya tienen holding, pero eso sólo
+  // cubre el caso feliz de una pestaña — este es el guard real. Ver ADR
+  // "'Nueva posición' no ofrece un activo que ya tiene holding" en
+  // docs/DECISIONS.md.
+  it('refuses a second holding for an asset that already has one', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await createInvestmentHolding({ assetId: asset.id, quantity: 100 })
+
+    await expect(createInvestmentHolding({ assetId: asset.id, quantity: 200 })).rejects.toThrow(/ya tiene una posición/)
+    expect(await listInvestmentHoldings()).toHaveLength(1)
+  })
 })
 
 describe('updateInvestmentHolding / deleteInvestmentHolding', () => {

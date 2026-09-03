@@ -582,3 +582,60 @@ en `NetWorthSummary` y dejar `total`/`byBucket.accounts` como estaban. Innecesar
 fuera de esta feature consume `getNetWorthSummary`, así que redefinir directamente qué
 significa su `total` es más simple que mantener dos totales en paralelo donde uno queda
 sin usar en la práctica.
+
+## "Nueva posición" no ofrece un activo que ya tiene holding
+
+**Decisión:** dos capas, no una sola.
+
+1. **UI** — `InvestmentHoldingFormDialog` recibe un prop nuevo, `availableAssets` (los
+   activos sin holding — el mismo `assetsWithoutHolding` que `NetWorthPage.tsx` ya
+   calculaba para la fila "Agregar posición"), y usa esa lista en vez de `assets`
+   completo para las opciones del selector cuando se está **creando**. `assets` completo
+   se sigue pasando y usando tal cual al **editar** (ahí el selector va deshabilitado, y
+   necesita poder resolver el activo ya asignado — que por definición no está en
+   `assetsWithoutHolding`). El ítem "Nueva posición" del menú "Nuevo" en
+   `NetWorthPage.tsx` ahora se deshabilita cuando `assetsWithoutHolding` está vacío, no
+   sólo cuando no hay ningún activo cargado.
+2. **Repository** — `investments.repo.ts:createInvestmentHolding` corre ahora dentro de
+   una `db.transaction('rw', ...)` que cuenta los holdings existentes para ese `assetId`
+   y rechaza con un `InvariantError` si ya hay uno. Esto es lo que realmente garantiza la
+   invariante — la UI sólo la hace fácil de respetar en el caso feliz.
+
+**Por qué:** antes, el selector de "Nueva posición" listaba TODOS los activos sin
+filtrar — nada impedía elegir uno que ya tenía una posición (`investmentHoldings` sólo
+indexa `assetId`, no lo restringe a único) y terminar con dos filas separadas para el
+mismo activo. El resultado es plata mal representada en todos lados que suman por
+posición (Distribución, total de Ahorro e Inversiones, Ganancia/pérdida por posición).
+La forma correcta de "comprar más" de un activo que ya tenés es editar esa posición
+(sumar la cantidad nueva a la cantidad total y recalcular el costo promedio a mano —
+Moneta no promedia automáticamente entre compras, ver `docs/DATA_MODEL.md`); "Nueva
+posición" es sólo para un activo que todavía no tiene ninguna.
+
+Encontrado en revisión: la UI sola no cerraba el problema — dos pestañas abiertas al
+mismo tiempo (o cualquier otro caller futuro de `createInvestmentHolding`) podían leer
+`assetsWithoutHolding` antes de que la otra escribiera, y las dos terminaban creando un
+holding para el mismo activo. De ahí el chequeo en el repository, dentro de la
+transacción — verificado revirtiendo el `invariant` a mano y viendo fallar el test
+nuevo (`refuses a second holding for an asset that already has one`) antes de
+restaurarlo.
+
+**Riesgo residual, aceptado a propósito:** el import/merge de un backup escribe
+`investmentHoldings` directo a la tabla (`replaceAllTables`/`mergeAllTables` en
+`backup.repo.ts`), sin pasar por `createInvestmentHolding` — un backup que ya trae dos
+holdings para el mismo activo (por ejemplo, cargado en dos dispositivos antes de este
+fix) se importa igual, sin rechazo. Es el mismo costo ya aceptado para cuentas
+duplicadas tras un merge (ver "Merge de backup: la base local siempre gana" más abajo):
+agregar una validación de integridad en el import que rechace el archivo entero
+arriesga volver no-importable un backup viejo y legítimo por un problema menor, a
+cambio de cerrar un caso bastante más raro que el de crearlo a mano desde la UI. Si
+esto se vuelve un problema real, corregirlo ahí (en `validate.ts`, junto a
+`validateLedgerIntegrity`) es el próximo paso — no antes.
+
+**Descartado:** detectar la colisión al enviar el formulario (dejar elegir cualquier
+activo y, si ya tiene holding, redirigir a "sumar cantidad" con el promedio ya
+recalculado) en vez de sacarlo del selector. Más completo, pero agrega una segunda ruta
+de escritura (merge vs. create) y la UI para explicarle al usuario qué está pasando;
+sacar el activo del selector es más simple y ya resuelve el caso real. El tracking de
+compras por lote (cada compra con su fecha/precio, ganancia realizada exacta sin
+promediar a mano) queda en el backlog — es un modelo de datos más grande, sólo
+justificado si hace falta precisión fiscal/contable.

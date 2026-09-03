@@ -18,6 +18,15 @@ interface InvestmentHoldingFormDialogProps {
   /** undefined = create mode, defined = editing that holding. */
   holding: InvestmentHolding | undefined
   assets: InvestmentAsset[] | undefined
+  /** Sólo los activos que todavía no tienen una posición — son las
+   *  únicas opciones que se pueden elegir al crear una nueva (ver
+   *  `assets` arriba, que sigue haciendo falta completo para resolver
+   *  la moneda del activo ya asignado cuando se está editando).
+   *  Evita el caso real de elegir un activo que ya tiene holding y
+   *  terminar con dos filas separadas para el mismo activo — ver ADR
+   *  "'Nueva posición' no ofrece un activo que ya tiene holding" en
+   *  docs/DECISIONS.md. */
+  availableAssets: InvestmentAsset[] | undefined
   /** Pre-selects this asset in create mode — e.g. opening "Agregar
    *  posición" from an asset that doesn't have one yet. Ignored while editing. */
   initialAssetId?: string
@@ -32,10 +41,12 @@ export function InvestmentHoldingFormDialog({
   open,
   holding,
   assets,
+  availableAssets,
   initialAssetId,
   onOpenChange,
 }: InvestmentHoldingFormDialogProps) {
   const isEditing = !!holding
+  const selectableAssets = isEditing ? assets : availableAssets
 
   const form = useForm<InvestmentHoldingFormValues>({
     resolver: zodResolver(investmentHoldingFormSchema),
@@ -99,7 +110,7 @@ export function InvestmentHoldingFormDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {assets?.map((asset) => (
+                      {selectableAssets?.map((asset) => (
                         <SelectItem key={asset.id} value={asset.id}>
                           {asset.symbol ? `${asset.symbol} · ${asset.name}` : asset.name}
                         </SelectItem>

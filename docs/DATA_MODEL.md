@@ -143,6 +143,19 @@ moneda:
   `quantity` es un entero escalado (`domain/decimal/quantity.ts:Quantity`, 8 decimales,
   mismo espíritu que `Minor` para plata) — nunca un float, porque una cantidad
   fraccionaria de un activo alimenta un cálculo monetario (`quantity × precio`).
+  **Una sola fila por activo, sin lotes**: `quantity`/`averageCost` son la posición
+  consolidada de hoy, no un historial de compras — comprar más de un activo que ya
+  tenés se hace **editando** esa fila (nueva `quantity` total, nuevo `averageCost`
+  calculado a mano como promedio ponderado), nunca creando una segunda `InvestmentHolding`
+  para el mismo `assetId`. El schema de Dexie no fuerza esto (`assetId` es sólo un
+  índice secundario, no único) — lo garantiza `investments.repo.ts:createInvestmentHolding`
+  con un chequeo dentro de una transacción, y `InvestmentHoldingFormDialog` además saca
+  del selector los activos que ya tienen holding al crear, para que el caso normal ni
+  llegue a intentarlo — ver ADR "'Nueva posición' no ofrece un activo que ya tiene
+  holding" en `docs/DECISIONS.md` (incluye el riesgo residual que sí queda: un backup
+  importado puede traer holdings duplicados, porque el import escribe la tabla directo
+  sin pasar por el repository). Tracking por lote (cada compra con su propia
+  fecha/precio) queda en el backlog.
 - **`AssetPrice`** es el precio del activo en una fecha, **append-only**: cada
   actualización (manual o automática) inserta una fila nueva, nunca pisa la anterior — da
   el historial de precios gratis y permite que una carga manual y el último fetch

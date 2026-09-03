@@ -154,7 +154,15 @@ export function NetWorthPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={openAssetDialog}>Nuevo activo</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openCreateHoldingDialog()} disabled={!assets || assets.length === 0}>
+                {/* Deshabilitado también cuando todo activo ya tiene una
+                    posición — nada nuevo que crear ahí, y el selector de
+                    "Nueva posición" sólo ofrece activos sin holding
+                    (ver InvestmentHoldingFormDialog) para no terminar con
+                    dos filas separadas para el mismo activo. */}
+                <DropdownMenuItem
+                  onClick={() => openCreateHoldingDialog()}
+                  disabled={!assetsWithoutHolding || assetsWithoutHolding.length === 0}
+                >
                   Nueva posición
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -359,6 +367,7 @@ export function NetWorthPage() {
         open={holdingDialogOpen}
         holding={editingHolding}
         assets={assets}
+        availableAssets={assetsWithoutHolding}
         {...(newHoldingAssetId !== null && { initialAssetId: newHoldingAssetId })}
         onOpenChange={(open) => (open ? undefined : closeHoldingDialog())}
       />
