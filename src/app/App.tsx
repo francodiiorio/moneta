@@ -52,7 +52,7 @@ export function App() {
     if (!quotesRefreshedThisLoad) {
       quotesRefreshedThisLoad = true
       // Opt-in and silent: never runs unless the user turned it on
-      // (Patrimonio → Cotizaciones), and never shows a toast on its own
+      // (Ahorro e Inversiones → Cotizaciones), and never shows a toast on its own
       // — a failure here shouldn't interrupt opening the app, and the
       // Cotizaciones tab already surfaces "última actualización"
       // reactively for whoever cares to look.

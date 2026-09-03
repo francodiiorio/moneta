@@ -90,8 +90,8 @@ export const router = createBrowserRouter([
         },
       },
       {
-        // Absorbed into Patrimonio → Cotizaciones (Etapa 6C) — old
-        // bookmarks/links to this URL still land somewhere useful.
+        // Absorbed into Ahorro e Inversiones → Cotizaciones (Etapa 6C) —
+        // old bookmarks/links to this URL still land somewhere useful.
         path: 'ajustes/tasas',
         Component: () => <Navigate to="/patrimonio" replace />,
       },

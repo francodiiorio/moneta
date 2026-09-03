@@ -26,11 +26,10 @@ export function DashboardPage() {
   const month = currentMonthStamp()
   const summary = useMonthSummary(month)
   const previousSummary = useMonthSummary(shiftMonth(month, -1))
-  // Same source of truth as /patrimonio — Cuentas + Ahorros + Inversiones,
-  // not just Cuentas. See docs/DECISIONS.md "Un feature puede importar
-  // el service.ts/hooks de otro..." for why this predates and replaced
-  // features/reports:getCurrentNetWorth (accounts-only, now removed).
-  const netWorth = useNetWorthSummary()
+  // Same source of truth as /patrimonio (Ahorro e Inversiones) — Ahorros +
+  // Inversiones, deliberately not Cuentas (ya tiene su propia página). See
+  // docs/DECISIONS.md "Ahorro e Inversiones deja de incluir Cuentas".
+  const savingsAndInvestments = useNetWorthSummary()
   const expenseByCategory = useExpenseByCategory(month)
   const recentExpenses = useRecentExpenses(month)
   const budgets = useBudgetsWithProgress(month)
@@ -43,12 +42,12 @@ export function DashboardPage() {
   const expenseChange =
     summary && previousSummary ? percentChange(previousSummary.expense, summary.expense) : undefined
 
-  const missingRateCount = (summary?.missingRateCount ?? 0) + (netWorth?.missingRateCount ?? 0)
+  const missingRateCount = (summary?.missingRateCount ?? 0) + (savingsAndInvestments?.missingRateCount ?? 0)
 
   if (hasAccounts === false) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Dashboard" description="Resumen del mes y evolución de tu patrimonio." />
+        <PageHeader title="Dashboard" description="Resumen del mes, y de tus ahorros e inversiones." />
         <EmptyState
           icon={LayoutDashboard}
           title="Todavía no hay datos"
@@ -62,10 +61,13 @@ export function DashboardPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Dashboard"
-        description={`Resumen de ${formatMonthLabel(month).toLowerCase()} y tu patrimonio total.`}
+        description={`Resumen de ${formatMonthLabel(month).toLowerCase()} y de tus ahorros e inversiones.`}
       />
 
-      <MissingRateBanner count={missingRateCount} />
+      <MissingRateBanner
+        count={missingRateCount}
+        itemLabel={['movimiento, ahorro o inversión', 'movimientos, ahorros o inversiones']}
+      />
 
       {/* One card, not four — the four numbers are read together at a
           glance (that's the point of a dashboard), so four separately
@@ -105,9 +107,13 @@ export function DashboardPage() {
             </p>
           </div>
           <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
-            <p className="text-xs text-muted-foreground">Patrimonio total</p>
+            <p className="text-xs text-muted-foreground">Ahorro e inversiones</p>
             <p className="mt-1 text-xl font-semibold">
-              {netWorth ? <MoneyText value={netWorth.total} /> : <span className="text-muted-foreground">—</span>}
+              {savingsAndInvestments ? (
+                <MoneyText value={savingsAndInvestments.total} />
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
             </p>
           </div>
         </CardContent>

@@ -125,8 +125,8 @@ export function NetWorthPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="Patrimonio"
-        description="Ahorros e inversiones, y tu patrimonio total consolidado."
+        title="Ahorro e Inversiones"
+        description="Plata guardada e invertida, fuera de tus cuentas."
         actions={
           tab === 'savings' ? (
             <Button onClick={openCreateSavingsDialog}>
@@ -173,14 +173,14 @@ export function NetWorthPage() {
           <div className="flex flex-col gap-4">
             <MissingRateBanner
               count={summary.missingRateCount}
-              itemLabel={['cuenta, ahorro o inversión', 'cuentas, ahorros o inversiones']}
+              itemLabel={['ahorro o inversión', 'ahorros o inversiones']}
             />
             <MissingPriceBanner count={summary.missingPriceCount} />
 
             <Card>
               <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">Patrimonio total</p>
+                  <p className="text-xs text-muted-foreground">Total ahorros e inversiones</p>
                   <p className="mt-1 text-3xl font-semibold">
                     <MoneyText value={summary.total} />
                   </p>
@@ -212,11 +212,7 @@ export function NetWorthPage() {
                 <CardTitle>Distribución</CardTitle>
               </CardHeader>
               <CardContent>
-                <NetWorthDistribution
-                  accounts={summary.byBucket.accounts}
-                  savings={summary.byBucket.savings}
-                  investments={summary.byBucket.investments}
-                />
+                <NetWorthDistribution savings={summary.byBucket.savings} investments={summary.byBucket.investments} />
               </CardContent>
             </Card>
           </div>
@@ -290,7 +286,7 @@ export function NetWorthPage() {
               <EmptyState
                 icon={TrendingUp}
                 title="Todavía no cargaste ninguna tasa"
-                description="Sin tasas, las cuentas e inversiones en otra moneda no se pueden consolidar."
+                description="Sin tasas, los ahorros e inversiones en otra moneda no se pueden consolidar."
                 action={<Button onClick={openRateDialog}>Nueva tasa</Button>}
               />
             ) : (

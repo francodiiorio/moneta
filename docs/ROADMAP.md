@@ -186,3 +186,11 @@ y el costo aceptado de esa aproximación.
   ese mes si hay algo registrado. Exporta a PDF vía el diálogo de impresión nativo del
   navegador — cero dependencias nuevas. Ver ADR "Informe mensual: PDF vía el diálogo de
   impresión del navegador" en `docs/DECISIONS.md`.
+- ~~Ahorro e Inversiones deja de incluir Cuentas~~ (hecho) — reversión parcial de
+  "Dashboard consolidado con Patrimonio" arriba. `/patrimonio` se renombra a "Ahorro e
+  Inversiones" y su Resumen (total + Distribución) pasa a sumar sólo Ahorros +
+  Inversiones — `features/networth/service.ts:getNetWorthSummary` llama a
+  `valuateNetWorth` con `accounts: []`. El Dashboard sigue usando esa misma función, así
+  que los dos números siguen coincidiendo entre sí — sólo cambió qué representan. El
+  patrimonio consolidado con Cuentas no desaparece: sigue viviendo, sin cambios, en
+  Reportes (`getNetWorthHistory`, el informe mensual). Ver ADR en `docs/DECISIONS.md`.

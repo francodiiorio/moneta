@@ -15,11 +15,11 @@ test('mobile bottom nav shows 5 tabs and "Más" opens the overflow sheet', async
 
   await bottomNav.getByRole('button', { name: 'Más' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
-  for (const label of ['Planes', 'Patrimonio', 'Reportes', 'Ajustes']) {
+  for (const label of ['Planes', 'Ahorro e Inversiones', 'Reportes', 'Ajustes']) {
     await expect(page.getByRole('link', { name: label })).toBeVisible()
   }
 
-  await page.getByRole('link', { name: 'Patrimonio' }).click()
+  await page.getByRole('link', { name: 'Ahorro e Inversiones' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(page).toHaveURL(/\/patrimonio/)
 })

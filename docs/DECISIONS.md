@@ -552,3 +552,33 @@ levemente entre navegadores (Chrome/Safari/Firefox difieren en su diálogo de im
 No es posible verificar el PDF real en tests automatizados — el e2e (`e2e/monthly-report.spec.ts`)
 sólo confirma, con `page.emulateMedia({ media: 'print' })`, que los estilos de impresión
 efectivamente ocultan la barra de acciones de sólo-pantalla.
+
+## Ahorro e Inversiones deja de incluir Cuentas
+
+**Decisión:** `/patrimonio` se renombra a "Ahorro e Inversiones" (nav, `PageHeader`) y su
+pestaña Resumen (total + gráfico de Distribución) deja de sumar Cuentas — pasa a ser
+sólo Ahorros + Inversiones. `features/networth/service.ts:getNetWorthSummary` llama a
+`domain/networth:valuateNetWorth` con `accounts: []` en vez de consultar
+`accountsRepo.listAccountsWithBalances()`; el resto de la función (savings, positions,
+rates) no cambia. El Dashboard usa esa misma función para su tarjeta "Ahorro e
+inversiones", así que los dos números siguen coincidiendo — lo que cambió es qué
+representan, no la garantía de "misma fuente, mismo número" establecida en "Post-6C —
+Dashboard consolidado con Patrimonio" (`docs/ROADMAP.md`).
+
+**Por qué:** pedido directo del usuario — el número de "patrimonio" en el Dashboard no le
+resultaba útil porque mezclaba sus cuentas (ya visibles en `/cuentas`) con la plata que
+realmente quiere seguir de cerca: ahorros e inversiones. Cuentas y Ahorro e Inversiones
+quedan como dos vistas separadas y sin superposición, cada una con su propio total.
+
+**Qué NO cambió:** `domain/networth:valuateNetWorth` sigue siendo capaz de valuar
+Cuentas — no se le sacó esa capacidad, sólo se dejó de usarla desde esta feature.
+`features/reports/service.ts` (`getMonthlyReport`, `getNetWorthHistory`) llama a
+`valuateNetWorth` de forma independiente, con su propia lista de cuentas, así que el
+patrimonio consolidado (Cuentas + Ahorros + Inversiones) de Reportes y del informe
+mensual exportable no se tocó.
+
+**Descartado:** agregar un campo nuevo tipo `savingsAndInvestments` al lado de `total`
+en `NetWorthSummary` y dejar `total`/`byBucket.accounts` como estaban. Innecesario: nada
+fuera de esta feature consume `getNetWorthSummary`, así que redefinir directamente qué
+significa su `total` es más simple que mantener dos totales en paralelo donde uno queda
+sin usar en la práctica.

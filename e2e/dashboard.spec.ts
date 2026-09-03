@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test'
 
-// Regression: the Dashboard's "Patrimonio total" card used to only sum
-// Accounts (features/reports:getCurrentNetWorth predates the Patrimonio
-// module and was never updated) — it silently ignored Ahorros/Inversiones,
-// showing a different total than /patrimonio for the same label.
-test('Dashboard "Patrimonio total" includes savings, matching /patrimonio', async ({ page }) => {
-  // Create an account with a balance so the dashboard isn't in its empty state.
+// Regression: the Dashboard's "Ahorro e inversiones" card must match
+// /patrimonio's own total (both come from the same getNetWorthSummary),
+// and — the part that actually matters here — neither one may fold in a
+// cuenta's balance. See docs/DECISIONS.md "Ahorro e Inversiones deja de
+// incluir Cuentas".
+test('Dashboard "Ahorro e inversiones" matches /patrimonio and excludes cuentas', async ({ page }) => {
+  // Create an account with a balance so the dashboard isn't in its empty
+  // state — its balance must NOT show up in the "Ahorro e inversiones" card.
   await page.goto('/cuentas')
   await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
   await page.getByLabel('Nombre').fill('Banco Prueba')
@@ -23,11 +25,15 @@ test('Dashboard "Patrimonio total" includes savings, matching /patrimonio', asyn
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.getByRole('tab', { name: 'Resumen' }).click()
-  await expect(page.getByText(/1[.,]500,00/).first()).toBeVisible()
+  // 500 from the ahorro — NOT 1.500, which is what it'd be if the 1000 from
+  // Banco Prueba leaked in.
+  await expect(page.getByText('Total ahorros e inversiones', { exact: true })).toBeVisible()
+  await expect(page.getByText(/500,00/).first()).toBeVisible()
 
   await page.goto('/')
-  await expect(page.getByText('Patrimonio total', { exact: true })).toBeVisible()
-  await expect(page.getByText(/1[.,]500,00/).first()).toBeVisible()
+  await expect(page.getByText('Ahorro e inversiones', { exact: true })).toBeVisible()
+  await expect(page.getByText(/500,00/).first()).toBeVisible()
+  await expect(page.getByText(/1[.,]500,00/)).not.toBeVisible()
 
   // Regression: these cards used to always render, showing an inline
   // "sin datos" message — they should be absent entirely when there's

@@ -294,7 +294,7 @@ localmente** — ver el ADR en `docs/DECISIONS.md` para el porqué.
   `capturedAt`, `resolveRate()` desempata por la más reciente (igual que dentro de un
   solo dispositivo, ver más abajo); si alguna de las dos no tiene `capturedAt` (una fila
   vieja, de antes de la Etapa 6C), el desempate vuelve a ser no determinístico. De
-  cualquier forma conviene revisar la pestaña Cotizaciones en Patrimonio después de un
+  cualquier forma conviene revisar la pestaña Cotizaciones en Ahorro e Inversiones después de un
   merge si se cargaron tasas manualmente en ambos dispositivos). `AssetPrice` tiene
   la misma limitación (sin clave natural `(assetId, date)`, `generateId()` produce IDs
   distintos en cada dispositivo para lo que conceptualmente es "el mismo precio del mismo

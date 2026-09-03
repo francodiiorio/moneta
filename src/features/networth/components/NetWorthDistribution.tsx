@@ -7,7 +7,6 @@ interface DistributionRow {
 }
 
 interface NetWorthDistributionProps {
-  accounts: Money
   savings: Money
   investments: Money
 }
@@ -28,9 +27,8 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: { paylo
   )
 }
 
-export function NetWorthDistribution({ accounts, savings, investments }: NetWorthDistributionProps) {
+export function NetWorthDistribution({ savings, investments }: NetWorthDistributionProps) {
   const rows: DistributionRow[] = [
-    { label: 'Cuentas', amount: accounts },
     { label: 'Ahorros', amount: savings },
     { label: 'Inversiones', amount: investments },
   ].filter((row) => row.amount.amount !== 0)
@@ -46,9 +44,9 @@ export function NetWorthDistribution({ accounts, savings, investments }: NetWort
   // Read top-to-bottom in the order defined above; Recharts renders
   // vertical-layout categories bottom-to-top, so the data is reversed.
   //
-  // A bucket total can be negative (e.g. Cuentas net of a credit-card-style
-  // account with a negative balance). The bar length uses the magnitude —
-  // otherwise a negative value pulls the XAxis domain below zero, which
+  // A bucket total isn't expected to go negative today, but the bar length
+  // still uses the magnitude defensively — a negative value would pull the
+  // XAxis domain below zero, which
   // shifts the zero-crossing away from the plot's left edge and renders
   // the bar (and its label) on top of the YAxis category text instead of
   // to its right. The label text still shows the real signed amount via

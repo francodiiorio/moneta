@@ -4,9 +4,10 @@ import { TriangleAlert } from 'lucide-react'
 interface MissingRateBannerProps {
   count: number
   /** What the excluded items are, for the message — singular/plural pair.
-   *  Defaults to "movimiento"/"movimientos o cuentas" (Dashboard/Reportes/
-   *  Presupuestos); Patrimonio passes its own since the excluded item
-   *  there can be an ahorro or una inversión, not sólo un movimiento. */
+   *  Defaults to "movimiento"/"movimientos o cuentas" (Reportes/
+   *  Presupuestos); Dashboard y Ahorro e Inversiones pasan el suyo, ya
+   *  que el ítem excluido ahí puede ser un ahorro o una inversión, no
+   *  sólo un movimiento. */
   itemLabel?: [singular: string, plural: string]
 }
 

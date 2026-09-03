@@ -15,7 +15,7 @@ test('creates a savings holding and sees it added to the net worth total', async
   await expect(page.getByText('Ahorro Prueba')).toBeVisible()
 
   await page.getByRole('tab', { name: 'Resumen' }).click()
-  await expect(page.getByText('Patrimonio total', { exact: true })).toBeVisible()
+  await expect(page.getByText('Total ahorros e inversiones', { exact: true })).toBeVisible()
   await expect(page.getByText(/1[.,]000,00/).first()).toBeVisible()
 })
 
@@ -138,7 +138,7 @@ test('shows unrealized gain/loss vs. the average cost once both a cost and a pri
   await expect(page.getByText(/\+USD\s?250[.,]00\s?\(\+8%\)/)).toBeVisible()
 })
 
-test('/ajustes/tasas redirects to Patrimonio, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {
+test('/ajustes/tasas redirects to Ahorro e Inversiones, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {
   await page.goto('/ajustes/tasas')
   await expect(page).toHaveURL('/patrimonio')
 

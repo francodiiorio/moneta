@@ -72,8 +72,7 @@ describe('createSavingsHoldingFromForm / updateSavingsHoldingFromForm', () => {
 })
 
 describe('getNetWorthSummary', () => {
-  it('consolidates accounts + savings into the display currency, with no investments yet', async () => {
-    await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(1_000_000) })
+  it('consolidates savings into the display currency, with no investments yet', async () => {
     await createSavingsHoldingFromForm({ name: 'USD efectivo', currency: 'USD', amount: '8000' })
     await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1450 })
     await updateSettings({ baseCurrency: 'ARS' })
@@ -81,21 +80,34 @@ describe('getNetWorthSummary', () => {
     const summary = await getNetWorthSummary()
 
     expect(summary.displayCurrency).toBe('ARS')
-    // openingBalance is in minor units already: 1_000_000 minor = ARS 10.000,00.
-    // 10.000 ARS + 8.000 USD * 1450 = 10.000 + 11.600.000 = 11.610.000
-    expect(summary.total).toEqual(money(11_610_000_00, 'ARS'))
+    // 8.000 USD * 1450 = 11.600.000
+    expect(summary.total).toEqual(money(11_600_000_00, 'ARS'))
     expect(summary.byBucket.investments).toEqual(money(0, 'ARS'))
     expect(summary.missingRateCount).toBe(0)
     expect(summary.missingPriceCount).toBe(0)
   })
 
+  // Regression: this feature is scoped to Ahorro e Inversiones only — a
+  // cuenta's balance must never leak into its total, even though the
+  // domain-level valuateNetWorth() it calls into is fully capable of
+  // pricing accounts too (Reportes uses it that way). See
+  // docs/DECISIONS.md "Ahorro e Inversiones deja de incluir Cuentas".
+  it('never includes an account balance in the total, even with no savings/investments at all', async () => {
+    await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(1_000_000) })
+
+    const summary = await getNetWorthSummary('ARS')
+
+    expect(summary.total).toEqual(money(0, 'ARS'))
+    expect(summary.byBucket.accounts).toEqual(money(0, 'ARS'))
+    expect(summary.missingRateCount).toBe(0)
+  })
+
   it('respects an explicit display currency override without touching stored amounts', async () => {
-    await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(1_450_00) })
-    await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1450 })
+    await createSavingsHoldingFromForm({ name: 'USD efectivo', currency: 'USD', amount: '100' })
 
     const summary = await getNetWorthSummary('USD')
     expect(summary.displayCurrency).toBe('USD')
-    expect(summary.total).toEqual(money(100, 'USD'))
+    expect(summary.total).toEqual(money(100_00, 'USD'))
   })
 
   it('includes investment positions, valuing quantity x price before converting', async () => {
@@ -119,8 +131,8 @@ describe('getNetWorthSummary', () => {
     expect(summary.byBucket.investments).toEqual(money(0, 'ARS'))
   })
 
-  it('excludes an account with no usable rate and counts the miss', async () => {
-    await createAccount({ name: 'Cuenta EUR', type: 'bank', currency: 'EUR', openingBalance: minor(100_00) })
+  it('excludes a savings holding with no usable rate and counts the miss', async () => {
+    await createSavingsHoldingFromForm({ name: 'Ahorro EUR', currency: 'EUR', amount: '100' })
 
     const summary = await getNetWorthSummary('ARS')
     expect(summary.missingRateCount).toBe(1)

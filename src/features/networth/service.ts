@@ -1,5 +1,4 @@
 import {
-  accountsRepo,
   assetPricesRepo,
   exchangeRatesRepo,
   investmentsRepo,
@@ -72,16 +71,23 @@ export interface NetWorthSummary extends ValuationResult {
 }
 
 /** Orchestrates every repository `domain/networth:valuateNetWorth` needs
- *  (accounts, ahorros, posiciones + sus activos + su último precio,
- *  tasas) and calls it — the only place besides the domain layer itself
- *  that knows the quantity -> native value -> conversion order. */
+ *  (ahorros, posiciones + sus activos + su último precio, tasas) and
+ *  calls it — the only place besides the domain layer itself that knows
+ *  the quantity -> native value -> conversion order.
+ *
+ *  Deliberately excludes Cuentas (`accounts: []` below): this feature is
+ *  scoped to Ahorro e Inversiones only — plata que no aparece ya en
+ *  /cuentas. A consolidated total that also folds in cuentas still
+ *  exists, but only in Reportes (`getMonthlyReport`/`getNetWorthHistory`
+ *  in features/reports/service.ts, which call `valuateNetWorth`
+ *  independently with its own accounts list) — see docs/DECISIONS.md
+ *  "Ahorro e Inversiones deja de incluir Cuentas". */
 export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode): Promise<NetWorthSummary> {
   const settings = await settingsRepo.getSettings()
   const displayCurrency = overrideDisplayCurrency ?? settings.displayCurrency ?? settings.baseCurrency
   const date = todayStamp()
 
-  const [accounts, savings, holdings, assets, rates] = await Promise.all([
-    accountsRepo.listAccountsWithBalances(),
+  const [savings, holdings, assets, rates] = await Promise.all([
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
@@ -104,7 +110,7 @@ export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode)
   })
 
   const result = valuateNetWorth({
-    accounts: accounts.map((a) => ({ balance: a.balance, currency: a.currency })),
+    accounts: [],
     savings,
     positions,
     rates,
