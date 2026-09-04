@@ -817,3 +817,66 @@ de responder sin aviso — mismo tipo de riesgo ya aceptado para dolarapi.com y 
 No hay SLA ni contacto de soporte; si esto se vuelve un problema recurrente, la salida es
 simplemente apagar el switch por activo (o desactivar `Settings.autoQuotesEnabled` del
 todo) y seguir cargando el precio a mano, sin perder ningún dato ya guardado.
+
+## `valuePosition`/`aggregateLots`: multiplicar en `BigInt`, no en `number`
+
+**Decisión:** `domain/decimal/quantity.ts:valuePosition` y
+`domain/investments/lots.ts:aggregateLots` hacen su multiplicación intermedia
+(`quantity × price`, y `totalCost × QUANTITY_SCALE`) en `BigInt`, no en `number` — el
+guard de "no desbordar `Number.MAX_SAFE_INTEGER`" se aplica sobre el valor **final**
+(ya dividido por `QUANTITY_SCALE`), nunca sobre el producto intermedio.
+
+**Encontrado en producción, bloqueante:** con un CEDEAR ya auto-actualizándose en ARS
+(feature de arriba), el usuario reportó un crash real de toda la app —
+`InvariantError: Position value overflows safe integer range (quantity=38000000000,
+price=2037000)` — al abrir el Dashboard, con una posición de 380 unidades a
+ARS 20.370,00/unidad. Ese caso es completamente ordinario (el valor final es
+ARS 7.740.600,00), pero la implementación anterior calculaba
+`quantity × price.amount` como `number` **antes** de dividir por `QUANTITY_SCALE`
+(1e8) — el producto intermedio (≈7,74×10^16) supera `Number.MAX_SAFE_INTEGER`
+(≈9×10^15) mucho antes de que la división lo vuelva a bajar a un rango seguro. El guard
+existente (`Number.isSafeInteger(raw)`) estaba revisando exactamente el número
+equivocado: el intermedio, no el resultado real. `aggregateLots`'s cálculo del costo
+promedio ponderado (`totalCost.amount × QUANTITY_SCALE`) tenía el mismo patrón, y
+hubiera fallado igual al cargar una compra real de un CEDEAR con esa escala de precio.
+
+**Por qué nunca apareció antes:** hasta esta sesión, el único proveedor automático era
+CoinGecko (USD, números chicos — un bitcoin a USD 77.000 nunca se acercaba a este
+límite). Un CEDEAR en pesos argentinos, con precios rutinariamente en los miles/decenas
+de miles de ARS, expone el mismo problema con posiciones de tamaño perfectamente normal
+— no hacía falta ningún valor absurdo para dispararlo.
+
+**Fix:** ambas funciones multiplican con `BigInt` (precisión exacta, sin límite
+práctico) y sólo convierten de vuelta a `number` después de dividir por
+`QUANTITY_SCALE` — momento en el que sí importa que el resultado (el `Minor` que
+termina persistido) sea un entero seguro. `domain/decimal/quantity.ts` expone
+`divideHalfUp`/`isSafeBigInt` como utilidades `BigInt` compartidas, reusadas por
+`aggregateLots` para el mismo cálculo inverso (recuperar costo promedio desde costo
+total y cantidad total). Redondeo half-up preservado exactamente (mismo contrato
+simétrico que `roundHalfUp`), ahora con aritmética entera exacta en vez de división de
+punto flotante — estrictamente más preciso, no sólo "igual de preciso".
+
+**Verificado revirtiendo a la implementación vieja** (multiplicación en `number` antes
+de dividir) y confirmando que fallan, en los tres niveles, exactamente con el error
+reportado: el test de dominio `quantity.test.ts` (con los números exactos del reporte),
+el test de dominio `lots.test.ts` (el cálculo de costo promedio), y un test e2e nuevo
+(`dashboard.spec.ts`, carga una posición CEDEAR de 380 unidades a ARS 20.370 y visita el
+Dashboard) — que sin el fix efectivamente crashea toda la ruta (React Router muestra su
+error boundary default en vez de la app) — antes de restaurar el fix y confirmar que
+los tres vuelven a pasar.
+
+**Encontrado en revisión — `divideHalfUp` sin invariante de signo (medio, corregido
+antes de mergear):** el docstring original decía "both non-negative" para
+`numerator`/`denominator`, pero no había ningún `invariant` que lo exigiera. La
+división de `BigInt` trunca hacia cero, no hacia `-∞` — un `numerator` negativo hubiera
+redondeado hacia cero en vez de alejarse de cero, rompiendo en silencio el contrato
+simétrico que la función dice replicar de `roundHalfUp` (`roundHalfUp(-0,5)` es `-1`,
+no `0`). Hoy no es alcanzable desde la UI (`Quantity` no puede ser negativo por su
+propio invariante), pero nada al nivel de schema de dominio impide un `costPerUnit`
+negativo (`investmentLotSchema.costPerUnit` es sólo `minorAmount.optional()`, sin
+`.nonnegative()`) — un backup `.finance` editado a mano con un lote de costo negativo
+pasa Zod y `validateLedgerIntegrity()` sin problema, y recién al recalcular el
+agregado (`aggregateLots`) daría un promedio ponderado silenciosamente mal calculado en
+vez de un error. Se agregó el `invariant` que el comentario ya prometía, para que ese
+caso falle fuerte en vez de corromper un cálculo en silencio — coherente con la regla
+general del repo de invariantes ruidosos sobre corrección silenciosa.

@@ -55,12 +55,29 @@ describe('aggregateLots', () => {
     ).toThrow(/overflow/)
   })
 
-  it('rejects a total cost that overflows the safe integer range', () => {
-    // Each lot's own valuePosition stays safe (1 unit × 60.000.000 = 6e15,
-    // under Number.MAX_SAFE_INTEGER), but the sum (1,2e8) × QUANTITY_SCALE
-    // (1e8) is 1,2e16 — past it. Isolates aggregateLots's own guard from
-    // valuePosition's (already tested in domain/decimal/quantity.test.ts).
+  // Regression: this used to throw here even though the real average cost
+  // (60.000.000, exactly what each identical lot already costs) is a
+  // perfectly ordinary number — the old computation multiplied the total
+  // cost by QUANTITY_SCALE (1e8) as a plain float *before* dividing by
+  // the total quantity, an intermediate product that overflows
+  // Number.MAX_SAFE_INTEGER long before the division brings it back down
+  // to something safe. Same class of bug as valuePosition's own fix (see
+  // domain/decimal/quantity.ts) — confirmed this throws with the pre-fix
+  // float multiplication before the BigInt rewrite.
+  it('averages two identical lots without overflowing, even though the intermediate scaled cost would as a float', () => {
     const lot = { quantity: quantity(1 * QUANTITY_SCALE), costPerUnit: money(60_000_000, 'USD') }
-    expect(() => aggregateLots([lot, lot])).toThrow(/overflow/)
+    const result = aggregateLots([lot, lot])
+    expect(result).toEqual({ quantity: quantity(2 * QUANTITY_SCALE), averageCost: 60_000_000 })
+  })
+
+  // A genuine overflow, isolated from valuePosition's own guard: each
+  // lot's valuePosition stays safe (1 raw unit × 1e16 / QUANTITY_SCALE =
+  // 1e8), but re-scaling that already-safe total cost by QUANTITY_SCALE
+  // again (to recover a per-unit average against a tiny total quantity)
+  // pushes the *final* averageCost itself past Number.MAX_SAFE_INTEGER —
+  // a case aggregateLots's own guard has to catch, not valuePosition's.
+  it('rejects an average cost that genuinely overflows the safe integer range', () => {
+    const lot = { quantity: quantity(1), costPerUnit: money(1e16, 'USD') }
+    expect(() => aggregateLots([lot])).toThrow(/overflow/)
   })
 })

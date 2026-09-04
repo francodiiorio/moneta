@@ -152,6 +152,54 @@ test('Dashboard shows a "Progreso de tus inversiones" card once a position has a
   await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
 })
 
+// Regression: a peso-denominated position (a CEDEAR routinely prices in
+// the tens of thousands of ARS) with an ordinary-sized quantity used to
+// crash the entire app with "Position value overflows safe integer
+// range" — domain/decimal:valuePosition multiplied quantity × price as a
+// plain float *before* dividing back down, an intermediate product that
+// overflows Number.MAX_SAFE_INTEGER long before the real, final position
+// value (a few million pesos) ever would. Covered precisely at the
+// domain level (quantity.test.ts, lots.test.ts) — this confirms the fix
+// end-to-end, through the exact page (Dashboard, via
+// getSavingsAndInvestmentsHistory) whose crash report first surfaced it.
+test('a large peso-denominated CEDEAR position does not crash the Dashboard', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Banco Prueba')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('SPY Overflow Test')
+  await page.getByLabel('Símbolo').fill('SPYOF')
+  await page.getByLabel('Tipo').click()
+  await page.getByRole('option', { name: 'CEDEAR' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo', { exact: true }).click()
+  await page.getByRole('option', { name: /SPYOF/ }).click()
+  await page.getByLabel('Cantidad').fill('380')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByTitle('Cargar precio').click()
+  await page.getByLabel(/Precio/).fill('20370')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // If valuePosition's overflow guard still had the pre-fix false
+  // positive, this whole route would render React Router's default error
+  // boundary instead of the app — this assertion alone would fail (the
+  // card, and the rest of the page, simply wouldn't be there).
+  await page.goto('/')
+  await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
+})
+
 test('el ícono de ojo oculta el monto de "Ahorro e inversiones" y lo recuerda entre recargas', async ({ page }) => {
   await page.goto('/cuentas')
   await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()

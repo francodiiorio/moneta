@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { money } from '@/domain/money'
-import { formatQuantity, parseQuantity, quantity, valuePosition, QUANTITY_SCALE } from './quantity'
+import { divideHalfUp, formatQuantity, parseQuantity, quantity, valuePosition, QUANTITY_SCALE } from './quantity'
 
 describe('quantity / parseQuantity', () => {
   it('rejects a non-integer scaled value', () => {
@@ -86,5 +86,47 @@ describe('valuePosition', () => {
   it('rejects a position value that overflows the safe integer range', () => {
     const price = money(Number.MAX_SAFE_INTEGER, 'USD')
     expect(() => valuePosition(parseQuantity('2'), price)).toThrow(/overflow/)
+  })
+
+  // Regression: 380 CEDEAR units at ARS 20.370,00/unit — a perfectly
+  // ordinary position (final value ARS 7.740.600,00) that used to crash
+  // the whole app with "Position value overflows safe integer range".
+  // `q * price.amount` (quantity(380) = 38_000_000_000, price.amount =
+  // 2_037_000) overflows Number.MAX_SAFE_INTEGER as an *intermediate*
+  // product — ARS CEDEAR prices are routinely in the tens of thousands,
+  // unlike the USD prices this function was originally exercised with —
+  // even though the real, final position value never does. Confirmed
+  // this fails with the pre-fix float multiplication before the BigInt
+  // rewrite (`InvariantError: Position value overflows safe integer
+  // range (quantity=38000000000, price=2037000)`).
+  it('values a large peso-denominated position whose intermediate product would overflow as a float, but whose final value does not', () => {
+    const price = money(2_037_000, 'ARS') // ARS 20.370,00 — a realistic CEDEAR price
+    expect(valuePosition(quantity(38_000_000_000), price)).toEqual(money(774_060_000, 'ARS'))
+  })
+})
+
+describe('divideHalfUp', () => {
+  it('rounds ties up for a non-negative numerator, same as roundHalfUp', () => {
+    expect(divideHalfUp(5n, 10n)).toBe(1n) // 0,5 -> 1
+    expect(divideHalfUp(15n, 10n)).toBe(2n) // 1,5 -> 2
+    expect(divideHalfUp(4n, 10n)).toBe(0n) // 0,4 -> 0
+  })
+
+  // Regression found in review: BigInt division truncates toward zero,
+  // not toward -Infinity, so a negative numerator would round *toward*
+  // zero instead of away from it — quietly breaking the symmetric
+  // half-up contract this function claims to match (roundHalfUp(-0.5)
+  // is -1, not 0). Both current callers only ever pass a non-negative
+  // numerator (Quantity can't be negative; a genuinely negative
+  // costPerUnit would have to come from a corrupted or hand-edited
+  // backup, since nothing at the domain-schema level rejects one), so
+  // this is a loud rejection rather than a silent wrong average.
+  it('rejects a negative numerator instead of silently rounding toward zero', () => {
+    expect(() => divideHalfUp(-5n, 10n)).toThrow(/non-negative/)
+  })
+
+  it('rejects a non-positive denominator', () => {
+    expect(() => divideHalfUp(5n, 0n)).toThrow(/positive/)
+    expect(() => divideHalfUp(5n, -10n)).toThrow(/positive/)
   })
 })

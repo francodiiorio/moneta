@@ -1,5 +1,5 @@
 import type { Money } from '@/domain/money'
-import { money, roundHalfUp } from '@/domain/money'
+import { money } from '@/domain/money'
 import { invariant } from '@/lib/invariant'
 
 /** Fixed-point scale for a `Quantity` — 8 decimal places, enough for a
@@ -54,16 +54,56 @@ export function formatQuantity(q: Quantity): string {
   return value.toLocaleString('es-AR', { maximumFractionDigits: 8, useGrouping: false })
 }
 
+/** Half-up rounded `numerator / denominator`, both non-negative — same
+ *  symmetric-half-up contract as `domain/money:roundHalfUp`, but done
+ *  entirely in `BigInt` so a numerator far past `Number.MAX_SAFE_INTEGER`
+ *  (an intermediate product routinely is, even when the final rounded
+ *  value is perfectly ordinary — see `valuePosition` below and
+ *  `domain/investments/lots.ts:aggregateLots`, its other caller) never
+ *  loses precision the way a float division would.
+ *
+ *  Enforced, not just documented: BigInt division truncates toward zero,
+ *  not toward `-Infinity`, so a negative `numerator` would round toward
+ *  zero instead of away from it — silently breaking the symmetric
+ *  contract this claims to match, rather than throwing. Both callers
+ *  only ever pass a non-negative numerator today (a `Quantity` can't be
+ *  negative by its own invariant; `Money.amount`/`costPerUnit` isn't
+ *  itself sign-checked at the domain-schema level), so this is the
+ *  actual backstop against a corrupted or hand-edited backup smuggling
+ *  a negative cost into `aggregateLots` and getting a quietly wrong
+ *  weighted average instead of a loud rejection. */
+export function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
+  invariant(numerator >= 0n, `divideHalfUp: numerator must be non-negative, got ${numerator}`)
+  invariant(denominator > 0n, `divideHalfUp: denominator must be positive, got ${denominator}`)
+  return (numerator * 2n + denominator) / (denominator * 2n)
+}
+
+/** `true` if `n` fits in a `number` without losing precision — the
+ *  BigInt equivalent of `Number.isSafeInteger`, for a value that started
+ *  life as a `BigInt` computation and needs converting back. */
+export function isSafeBigInt(n: bigint): boolean {
+  return n >= BigInt(Number.MIN_SAFE_INTEGER) && n <= BigInt(Number.MAX_SAFE_INTEGER)
+}
+
 /** Values a position: `quantity × price`, in the price's currency.
  *  Converting to any other currency is a separate step
  *  (`domain/currency/convert`) — this function never does it, so the
  *  order of operations is always quantity -> native value -> conversion,
- *  never a precomputed "value in display currency" shortcut. */
+ *  never a precomputed "value in display currency" shortcut.
+ *
+ *  The multiplication happens in `BigInt`, not `number`: `q` (scaled by
+ *  `QUANTITY_SCALE`, 1e8) times a price that's realistically large for a
+ *  peso-denominated instrument (a CEDEAR routinely prices in the tens of
+ *  thousands of ARS) produces an intermediate product well past
+ *  `Number.MAX_SAFE_INTEGER` long before dividing back down by
+ *  `QUANTITY_SCALE` — even though the actual position value (a few
+ *  million pesos, say) is perfectly ordinary. Guarding the *intermediate*
+ *  product (as this used to) rejects that ordinary case; guarding the
+ *  *final* value (after dividing) is what actually matters, since that's
+ *  the number that becomes a `Minor` amount. */
 export function valuePosition(q: Quantity, price: Money): Money {
-  const raw = q * price.amount
-  invariant(
-    Number.isSafeInteger(raw),
-    `Position value overflows safe integer range (quantity=${q}, price=${price.amount})`,
-  )
-  return money(roundHalfUp(raw / QUANTITY_SCALE), price.currency)
+  const raw = BigInt(q) * BigInt(price.amount)
+  const divided = divideHalfUp(raw, BigInt(QUANTITY_SCALE))
+  invariant(isSafeBigInt(divided), `Position value overflows safe integer range (quantity=${q}, price=${price.amount})`)
+  return money(Number(divided), price.currency)
 }

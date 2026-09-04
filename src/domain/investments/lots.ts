@@ -1,5 +1,5 @@
-import { QUANTITY_SCALE, quantity, valuePosition, type Quantity } from '@/domain/decimal'
-import { minor, roundHalfUp, sumMoney, type Minor, type Money } from '@/domain/money'
+import { divideHalfUp, isSafeBigInt, QUANTITY_SCALE, quantity, valuePosition, type Quantity } from '@/domain/decimal'
+import { minor, sumMoney, type Minor, type Money } from '@/domain/money'
 import { invariant } from '@/lib/invariant'
 
 export interface LotInput {
@@ -41,10 +41,15 @@ export function aggregateLots(lots: readonly LotInput[]): LotAggregate {
     lots.map((lot) => valuePosition(lot.quantity, lot.costPerUnit!)),
   )
   // Inverse of valuePosition (quantity × price / QUANTITY_SCALE): recovers
-  // a per-unit price from a total cost and a total quantity.
-  const scaledCost = totalCost.amount * QUANTITY_SCALE
-  invariant(Number.isSafeInteger(scaledCost), `Lot total cost overflows safe integer range (cost=${totalCost.amount})`)
-  const averageCost = minor(roundHalfUp(scaledCost / totalQuantity))
+  // a per-unit price from a total cost and a total quantity. Same BigInt
+  // reasoning as valuePosition itself — totalCost.amount × QUANTITY_SCALE
+  // (1e8) is routinely past Number.MAX_SAFE_INTEGER as an intermediate
+  // product for a peso-denominated instrument, even when the resulting
+  // averageCost is perfectly ordinary.
+  const scaledCost = BigInt(totalCost.amount) * BigInt(QUANTITY_SCALE)
+  const averageCostBig = divideHalfUp(scaledCost, BigInt(totalQuantity))
+  invariant(isSafeBigInt(averageCostBig), `Lot total cost overflows safe integer range (cost=${totalCost.amount})`)
+  const averageCost = minor(Number(averageCostBig))
 
   return { quantity: quantity(totalQuantity), averageCost }
 }
