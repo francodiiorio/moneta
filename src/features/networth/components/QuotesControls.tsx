@@ -64,8 +64,9 @@ export function QuotesControls({ settings }: QuotesControlsProps) {
           <div>
             <Label htmlFor="auto-quotes">Traer cotizaciones solas al abrir la app</Label>
             <p className="text-xs text-muted-foreground">
-              Dólar (oficial, blue, MEP, CCL, mayorista, cripto, tarjeta) y EUR/USD. Nunca envía datos de tus
-              cuentas ni movimientos — sólo los pares de moneda que necesita.
+              Dólar (oficial, blue, MEP, CCL, mayorista, cripto, tarjeta), EUR/USD, y el precio de cripto y
+              CEDEARs para los activos con "Actualizar precio automáticamente" activado. Nunca envía datos de
+              tus cuentas ni movimientos — sólo los pares de moneda o símbolos que necesita.
             </p>
           </div>
           <Switch id="auto-quotes" checked={!!settings.autoQuotesEnabled} onCheckedChange={(c) => void handleToggleAuto(c)} />

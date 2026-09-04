@@ -10,7 +10,9 @@ function jsonResponse(body: unknown, ok = true): Response {
   return { ok, json: () => Promise.resolve(body) } as Response
 }
 
-function stubFetch(overrides: { dolar?: unknown; frankfurter?: unknown; coingecko?: unknown } = {}) {
+function stubFetch(
+  overrides: { dolar?: unknown; frankfurter?: unknown; coingecko?: unknown; data912?: unknown } = {},
+) {
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
@@ -31,6 +33,9 @@ function stubFetch(overrides: { dolar?: unknown; frankfurter?: unknown; coingeck
       }
       if (url.includes('coingecko.com')) {
         return Promise.resolve(jsonResponse(overrides.coingecko ?? {}))
+      }
+      if (url.includes('data912.com')) {
+        return Promise.resolve(jsonResponse(overrides.data912 ?? []))
       }
       return Promise.resolve(jsonResponse({}, false))
     }),
@@ -156,6 +161,87 @@ describe('refreshQuotes', () => {
     expect(result.pricesAdded).toBe(2)
     expect(await listAssetPrices(exchangeHolding.id)).toHaveLength(1)
     expect(await listAssetPrices(coldStorage.id)).toHaveLength(1)
+  })
+
+  it('only fetches and writes CEDEAR prices for auto-priceMode cedear assets with an externalId', async () => {
+    const autoAsset = await createInvestmentAsset({
+      name: 'Coca-Cola CEDEAR',
+      symbol: 'KO',
+      type: 'cedear',
+      currency: 'ARS',
+      priceMode: 'auto',
+      externalId: 'KO',
+    })
+    await createInvestmentAsset({ name: 'SPY CEDEAR', symbol: 'SPY', type: 'cedear', currency: 'ARS', priceMode: 'manual' })
+
+    stubFetch({ data912: [{ symbol: 'KO', c: 28220 }] })
+    const result = await refreshQuotes()
+
+    expect(result.pricesAdded).toBe(1)
+    const prices = await listAssetPrices(autoAsset.id)
+    expect(prices).toHaveLength(1)
+    expect(prices[0]).toMatchObject({ price: 28220_00, currency: 'ARS', source: 'automatic' })
+  })
+
+  // Regression: a single Map shared between crypto and CEDEAR quotes,
+  // keyed only by externalId, would let one provider's quote silently
+  // win for an asset of the *other* type if they happened to share the
+  // same externalId string (externalId is free text, never validated
+  // against a real provider id) — handing a crypto asset an ARS CEDEAR
+  // price, or vice versa.
+  it('never lets a crypto and a cedear asset with the same externalId string steal each other\'s quote', async () => {
+    const cryptoAsset = await createInvestmentAsset({
+      name: 'Some coin literally named spy',
+      type: 'crypto',
+      currency: 'USD',
+      priceMode: 'auto',
+      externalId: 'spy',
+    })
+    const cedearAsset = await createInvestmentAsset({
+      name: 'SPY CEDEAR',
+      symbol: 'SPY',
+      type: 'cedear',
+      currency: 'ARS',
+      priceMode: 'auto',
+      externalId: 'spy',
+    })
+
+    stubFetch({ coingecko: { spy: { usd: 12 } }, data912: [{ symbol: 'spy', c: 20400 }] })
+    const result = await refreshQuotes()
+
+    expect(result.pricesAdded).toBe(2)
+    const [cryptoPrice] = await listAssetPrices(cryptoAsset.id)
+    const [cedearPrice] = await listAssetPrices(cedearAsset.id)
+    expect(cryptoPrice).toMatchObject({ price: 12_00, currency: 'USD' })
+    expect(cedearPrice).toMatchObject({ price: 20400_00, currency: 'ARS' })
+  })
+
+  it('does not call data912 at all when there are no auto-priceMode cedear assets', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes('data912.com')) throw new Error('should not be called')
+      return Promise.resolve(jsonResponse([], false))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await refreshQuotes()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('data912.com'))).toBe(false)
+  })
+
+  it('reports data912 as failed when a cedear is eligible but the request comes back empty', async () => {
+    await createInvestmentAsset({
+      name: 'Coca-Cola CEDEAR',
+      symbol: 'KO',
+      type: 'cedear',
+      currency: 'ARS',
+      priceMode: 'auto',
+      externalId: 'KO',
+    })
+
+    stubFetch({ data912: [] })
+    const result = await refreshQuotes()
+
+    expect(result.failed).toContain('data912')
+    expect(result.pricesAdded).toBe(0)
   })
 
   it('skips a crypto price that rounds to zero in the asset currency, instead of throwing or writing a corrupt value', async () => {

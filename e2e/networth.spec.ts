@@ -301,3 +301,41 @@ test('a crypto asset offers the automatic price toggle with a CoinGecko id field
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
 })
+
+test('a CEDEAR asset offers the data912 auto-price toggle, and it can be switched back to manual later', async ({
+  page,
+}) => {
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('Coca-Cola CEDEAR')
+  await page.getByLabel('Símbolo (opcional)').fill('KO')
+
+  await page.getByLabel('Tipo').click()
+  await page.getByRole('option', { name: 'CEDEAR' }).click()
+  await expect(page.getByText('Actualizar precio automáticamente')).toBeVisible()
+
+  await page.getByLabel('Actualizar precio automáticamente (BYMA vía data912)').click()
+  await expect(page.getByLabel('Símbolo en BYMA')).toBeVisible()
+  await page.getByLabel('Símbolo en BYMA').fill('KO')
+
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // "Configurar activo" (el engranaje) abre el mismo formulario en modo
+  // edición — tipo y moneda bloqueados, el resto precargado.
+  await page.getByRole('button', { name: 'Configurar activo' }).click()
+  await expect(page.getByText('Editar activo')).toBeVisible()
+  await expect(page.getByLabel('Tipo')).toBeDisabled()
+  const autoToggle = page.getByLabel('Actualizar precio automáticamente (BYMA vía data912)')
+  await expect(autoToggle).toBeChecked()
+  await expect(page.getByLabel('Símbolo en BYMA')).toHaveValue('KO')
+
+  // El respaldo manual: apagar el switch sin borrar el activo.
+  await autoToggle.click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Configurar activo' }).click()
+  await expect(page.getByLabel('Actualizar precio automáticamente (BYMA vía data912)')).not.toBeChecked()
+})

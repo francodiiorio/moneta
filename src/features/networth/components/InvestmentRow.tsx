@@ -1,4 +1,4 @@
-import { Pencil, RefreshCw, Trash2 } from 'lucide-react'
+import { Pencil, RefreshCw, Settings, Trash2 } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,9 +15,13 @@ interface InvestmentRowProps {
   onManageLots: () => void
   onDelete: () => void
   onLoadPrice: () => void
+  /** Opens InvestmentAssetFormDialog in edit mode — nombre/símbolo y,
+   *  para crypto/CEDEAR, el switch de precio automático (con su respaldo
+   *  manual si el proveedor no responde). */
+  onEditAsset: () => void
 }
 
-export function InvestmentRow({ item, onManageLots, onDelete, onLoadPrice }: InvestmentRowProps) {
+export function InvestmentRow({ item, onManageLots, onDelete, onLoadPrice, onEditAsset }: InvestmentRowProps) {
   const { holding, asset, price, nativeValue, convertedValue, gainLoss, gainLossPercent } = item
   const isGain = gainLoss !== undefined && isPositive(gainLoss)
   const isLoss = gainLoss !== undefined && isNegative(gainLoss)
@@ -39,6 +43,9 @@ export function InvestmentRow({ item, onManageLots, onDelete, onLoadPrice }: Inv
           </Button>
           <Button variant="ghost" size="icon" onClick={onManageLots} title="Compras">
             <Pencil className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onEditAsset} title="Configurar activo">
+            <Settings className="size-3.5" />
           </Button>
           <Button variant="ghost" size="icon" onClick={onDelete}>
             <Trash2 className="size-3.5" />

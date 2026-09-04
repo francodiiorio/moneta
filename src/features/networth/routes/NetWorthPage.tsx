@@ -64,7 +64,9 @@ export function NetWorthPage() {
     openEditSavingsDialog,
     closeSavingsDialog,
     assetDialogOpen,
-    openAssetDialog,
+    editingAssetId,
+    openCreateAssetDialog,
+    openEditAssetDialog,
     closeAssetDialog,
     lotDialogOpen,
     newLotAssetId,
@@ -97,6 +99,7 @@ export function NetWorthPage() {
   )
 
   const editingSavings = savings?.find((h) => h.id === editingSavingsId)
+  const editingAsset = assets?.find((a) => a.id === editingAssetId)
   const managingLotsAsset = assets?.find((a) => a.id === managingLotsAssetId) ?? null
   const pricingAsset = assets?.find((a) => a.id === pricingAssetId) ?? null
   // An asset the user just created has no holding yet, so it never shows
@@ -155,7 +158,7 @@ export function NetWorthPage() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={openAssetDialog}>Nuevo activo</DropdownMenuItem>
+                <DropdownMenuItem onClick={openCreateAssetDialog}>Nuevo activo</DropdownMenuItem>
                 {/* Deshabilitado también cuando todo activo ya tiene una
                     posición — nada nuevo que crear ahí, y el selector de
                     "Nueva posición" sólo ofrece activos sin holding
@@ -296,7 +299,7 @@ export function NetWorthPage() {
             icon={LineChart}
             title="Todavía no cargaste inversiones"
             description="Creá un activo (ej. SPY, un CEDEAR, Bitcoin) y después una posición para ver cuánto tenés."
-            action={<Button onClick={openAssetDialog}>Nuevo activo</Button>}
+            action={<Button onClick={openCreateAssetDialog}>Nuevo activo</Button>}
           />
         ) : (
           <div className="flex flex-col gap-3">
@@ -307,6 +310,7 @@ export function NetWorthPage() {
                 onManageLots={() => openManageLotsDialog(item.asset.id)}
                 onDelete={() => setPendingDelete({ kind: 'holding', id: item.holding.id })}
                 onLoadPrice={() => openPriceDialog(item.asset.id)}
+                onEditAsset={() => openEditAssetDialog(item.asset.id)}
               />
             ))}
             {assetsWithoutHolding?.map((asset) => (
@@ -314,6 +318,7 @@ export function NetWorthPage() {
                 key={asset.id}
                 asset={asset}
                 onAddHolding={() => openCreateLotDialog(asset.id)}
+                onEditAsset={() => openEditAssetDialog(asset.id)}
                 onDelete={() => setPendingDelete({ kind: 'asset', id: asset.id })}
               />
             ))}
@@ -363,6 +368,7 @@ export function NetWorthPage() {
 
       <InvestmentAssetFormDialog
         open={assetDialogOpen}
+        {...(editingAsset && { asset: editingAsset })}
         onOpenChange={(open) => (open ? undefined : closeAssetDialog())}
       />
       <InvestmentLotFormDialog

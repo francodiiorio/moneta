@@ -207,6 +207,13 @@ export type SavingsHolding = z.infer<typeof savingsHoldingSchema>
 
 export const investmentAssetTypeSchema = z.enum(['etf', 'stock', 'cedear', 'bond', 'fund', 'crypto', 'other'])
 
+/** The only types with an automatic price provider wired up — see
+ *  features/quotes/providers/. Single source of truth reused by the
+ *  refine below, `features/networth/service.ts`, `features/quotes/
+ *  service.ts` and the asset form, so a 5th provider (or a currency
+ *  requirement change) only needs updating in one place. */
+export const AUTO_PRICE_ASSET_TYPES = ['crypto', 'cedear'] as const
+
 export const priceModeSchema = z.enum(['manual', 'auto'])
 
 export const investmentAssetSchema = z
@@ -223,14 +230,24 @@ export const investmentAssetSchema = z
     createdAt: isoInstant,
     updatedAt: isoInstant,
   })
-  // Defense in depth: today only crypto (via CoinGecko) has an automatic
-  // provider — see features/quotes/providers/. Without this, a backup
-  // import/merge could otherwise slip in an 'auto' non-crypto asset that
-  // refreshQuotes() would then silently never update (it's not eligible
-  // for any provider, but nothing would say so).
-  .refine((a) => a.priceMode !== 'auto' || (a.type === 'crypto' && !!a.externalId), {
-    message: "priceMode 'auto' requires type 'crypto' and a non-empty externalId",
+  // Defense in depth: today only crypto (via CoinGecko) and cedear (via
+  // data912) have an automatic provider — see features/quotes/providers/.
+  // Without this, a backup import/merge could otherwise slip in an
+  // 'auto' asset of some other type that refreshQuotes() would then
+  // silently never update (it's not eligible for any provider, but
+  // nothing would say so).
+  .refine((a) => a.priceMode !== 'auto' || ((AUTO_PRICE_ASSET_TYPES as readonly string[]).includes(a.type) && !!a.externalId), {
+    message: "priceMode 'auto' requires type 'crypto' or 'cedear', and a non-empty externalId",
     path: ['priceMode'],
+  })
+  // A CEDEAR only ever trades in pesos on BYMA — there's no such thing as
+  // a USD-denominated one. Without this, an asset created with type
+  // 'cedear' and currency left at its form default ('USD') would fetch a
+  // data912 quote (always ARS) that then gets treated as "no price" by
+  // getInvestmentHoldingsWithDetails's currency guard, silently.
+  .refine((a) => a.type !== 'cedear' || a.currency === 'ARS', {
+    message: "Un activo 'cedear' sólo puede estar en ARS",
+    path: ['currency'],
   })
 export type InvestmentAsset = z.infer<typeof investmentAssetSchema>
 

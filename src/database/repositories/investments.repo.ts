@@ -13,9 +13,16 @@ export interface CreateInvestmentAssetInput {
   externalId?: string
 }
 
-export type UpdateInvestmentAssetInput = Partial<
-  Pick<InvestmentAsset, 'name' | 'symbol' | 'priceMode' | 'externalId'>
->
+/** `symbol: null` clears it explicitly; omitted leaves it untouched; a
+ *  value sets it — same tri-state as `InvestmentLot`'s `costPerUnit` (see
+ *  investmentLots.repo.ts's `UpdateInvestmentLotInput`), needed because
+ *  `symbol` can go from "has a value" to "cleared", and `symbol` also
+ *  doubles as the row's display title (`asset.symbol ?? asset.name`) —
+ *  a lingering value silently editing to '' would break that fallback,
+ *  since `?? ''` never triggers on an already-defined empty string. */
+export type UpdateInvestmentAssetInput = Partial<Pick<InvestmentAsset, 'name' | 'priceMode' | 'externalId'>> & {
+  symbol?: InvestmentAsset['symbol'] | null
+}
 
 export interface CreateInvestmentHoldingInput {
   assetId: string
@@ -35,6 +42,12 @@ export async function getInvestmentAsset(id: string): Promise<InvestmentAsset | 
 }
 
 export async function createInvestmentAsset(input: CreateInvestmentAssetInput): Promise<InvestmentAsset> {
+  // Defense in depth — the form already locks this, but a CEDEAR only
+  // ever trades in pesos on BYMA; a mismatched currency would silently
+  // make its data912 auto-price look like "no price" downstream (see
+  // getInvestmentHoldingsWithDetails's currency guard).
+  invariant(input.type !== 'cedear' || input.currency === 'ARS', "Un activo 'cedear' sólo puede estar en ARS")
+
   const now = new Date().toISOString()
   const asset: InvestmentAsset = {
     id: generateId(),
@@ -51,8 +64,29 @@ export async function createInvestmentAsset(input: CreateInvestmentAssetInput): 
   return asset
 }
 
+/** A full `put()`, not `update()`, for the same reason
+ *  `investmentLots.repo.ts`'s `updateInvestmentLot` uses one: `symbol`
+ *  can go from defined to absent, and Dexie's `update()` can't remove a
+ *  field that's simply missing from the patch — it leaves the old value
+ *  in place. */
 export async function updateInvestmentAsset(id: string, patch: UpdateInvestmentAssetInput): Promise<void> {
-  await db.investmentAssets.update(id, { ...patch, updatedAt: new Date().toISOString() })
+  const asset = await db.investmentAssets.get(id)
+  invariant(asset, `Activo no encontrado: ${id}`)
+
+  const updated: InvestmentAsset = {
+    ...asset,
+    ...(patch.name !== undefined && { name: patch.name }),
+    ...(patch.priceMode !== undefined && { priceMode: patch.priceMode }),
+    ...(patch.externalId !== undefined && { externalId: patch.externalId }),
+    updatedAt: new Date().toISOString(),
+  }
+  if (patch.symbol === null) {
+    delete updated.symbol
+  } else if (patch.symbol !== undefined) {
+    updated.symbol = patch.symbol
+  }
+
+  await db.investmentAssets.put(updated)
 }
 
 export async function deleteInvestmentAsset(id: string): Promise<void> {

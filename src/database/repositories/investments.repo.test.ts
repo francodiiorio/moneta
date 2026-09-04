@@ -32,6 +32,25 @@ describe('updateInvestmentAsset', () => {
     expect(updated?.priceMode).toBe('auto')
     expect(updated?.externalId).toBe('bitcoin')
   })
+
+  it('leaves symbol untouched when omitted from the patch', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', symbol: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await updateInvestmentAsset(asset.id, { name: 'SPDR S&P 500' })
+    const [updated] = await listInvestmentAssets()
+    expect(updated?.symbol).toBe('SPY')
+  })
+
+  // Regression: symbol doubles as the row's display title
+  // (asset.symbol ?? asset.name) — a lingering value after the user
+  // clears the field would silently keep showing the old symbol instead
+  // of falling back to the name. Dexie's update()/modify() leaves a key
+  // absent from the patch untouched, so clearing needs an explicit null.
+  it('clears symbol when explicitly nulled', async () => {
+    const asset = await createInvestmentAsset({ name: 'SPY', symbol: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    await updateInvestmentAsset(asset.id, { symbol: null })
+    const [updated] = await listInvestmentAssets()
+    expect(updated?.symbol).toBeUndefined()
+  })
 })
 
 describe('deleteInvestmentAsset', () => {

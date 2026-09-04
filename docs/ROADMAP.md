@@ -131,6 +131,19 @@ cross-currency (ARS → USD).
   (`features/exchangeRates/` se borró; la ruta vieja redirige) — ver ADRs en
   `docs/DECISIONS.md`.
 
+**Cerrado después: precio automático de CEDEARs (data912) + modo manual como respaldo
+explícito.** Cuarto proveedor, `features/quotes/providers/data912.ts` — mirror gratis,
+sin key, con CORS habilitado de datos de BYMA, verificado a mano antes de conectarlo.
+Extiende `priceMode: 'auto'` a activos `type: 'cedear'` (antes sólo `crypto`); el
+`externalId` es el ticker BYMA (ej. "KO"), no un id de proveedor aparte. Un activo ya
+creado ahora se puede editar (`InvestmentAssetFormDialog` en modo edición, ícono de
+engranaje en su fila) para prender/apagar el switch de auto sin tener que borrarlo y
+recrearlo — el apagado explícito es el respaldo pedido para cuando el proveedor no
+responde: `refreshQuotes()` ya mantenía el último precio válido ante cualquier fallo de
+red, y ahora además el usuario puede optar por dejar de intentarlo del todo y cargar el
+precio a mano desde "Cargar precio", sin esperar a que data912 vuelva. Ver ADR
+"Cotizaciones automáticas de CEDEARs (data912)" en `docs/DECISIONS.md`.
+
 Con 6C cerrada, el módulo de Patrimonio queda completo: Resumen, Ahorros, Inversiones y
 Cotizaciones, todo en `/patrimonio`.
 

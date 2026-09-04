@@ -14,7 +14,9 @@ interface NetWorthUiState {
   closeSavingsDialog: () => void
 
   assetDialogOpen: boolean
-  openAssetDialog: () => void
+  editingAssetId: string | null
+  openCreateAssetDialog: () => void
+  openEditAssetDialog: (id: string) => void
   closeAssetDialog: () => void
 
   // Crear una posición nueva o agregar otra compra a una existente —
@@ -57,8 +59,10 @@ export const useNetWorthUiStore = create<NetWorthUiState>((set) => ({
   closeSavingsDialog: () => set({ savingsDialogOpen: false, editingSavingsId: null }),
 
   assetDialogOpen: false,
-  openAssetDialog: () => set({ assetDialogOpen: true }),
-  closeAssetDialog: () => set({ assetDialogOpen: false }),
+  editingAssetId: null,
+  openCreateAssetDialog: () => set({ assetDialogOpen: true, editingAssetId: null }),
+  openEditAssetDialog: (id) => set({ assetDialogOpen: true, editingAssetId: id }),
+  closeAssetDialog: () => set({ assetDialogOpen: false, editingAssetId: null }),
 
   lotDialogOpen: false,
   newLotAssetId: null,

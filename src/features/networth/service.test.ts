@@ -20,6 +20,7 @@ import {
   listExchangeRates,
   listInvestmentAssets,
   listSavingsHoldings,
+  updateInvestmentAssetFromForm,
   updateInvestmentLotFromForm,
   updateSavingsHoldingFromForm,
 } from './service'
@@ -414,7 +415,7 @@ describe('getInvestmentHoldingsWithDetails', () => {
   })
 })
 
-describe('createInvestmentAssetFromForm — auto price (crypto only)', () => {
+describe('createInvestmentAssetFromForm — auto price (crypto, cedear)', () => {
   it('sets priceMode auto and stores externalId when type is crypto, autoPrice is on and externalId is set', async () => {
     const asset = await createInvestmentAssetFromForm({
       name: 'Bitcoin',
@@ -425,6 +426,19 @@ describe('createInvestmentAssetFromForm — auto price (crypto only)', () => {
     })
     expect(asset.priceMode).toBe('auto')
     expect(asset.externalId).toBe('bitcoin')
+  })
+
+  it('sets priceMode auto for a cedear too, with the BYMA ticker as externalId', async () => {
+    const asset = await createInvestmentAssetFromForm({
+      name: 'Coca-Cola CEDEAR',
+      symbol: 'KO',
+      type: 'cedear',
+      currency: 'ARS',
+      autoPrice: true,
+      externalId: 'KO',
+    })
+    expect(asset.priceMode).toBe('auto')
+    expect(asset.externalId).toBe('KO')
   })
 
   it('falls back to manual when autoPrice is on but externalId is blank', async () => {
@@ -439,7 +453,7 @@ describe('createInvestmentAssetFromForm — auto price (crypto only)', () => {
     expect('externalId' in asset).toBe(false)
   })
 
-  it('falls back to manual when the type is not crypto, even with autoPrice on and an externalId', async () => {
+  it('falls back to manual when the type has no provider, even with autoPrice on and an externalId', async () => {
     const asset = await createInvestmentAssetFromForm({
       name: 'SPY',
       type: 'etf',
@@ -449,6 +463,56 @@ describe('createInvestmentAssetFromForm — auto price (crypto only)', () => {
     })
     expect(asset.priceMode).toBe('manual')
     expect('externalId' in asset).toBe(false)
+  })
+
+  // Regression: a CEDEAR only ever trades in pesos on BYMA — a mismatched
+  // currency would make data912's (always ARS) quote silently look like
+  // "no price" downstream. The form locks this, but the service/repo
+  // layer is the real defense against any other caller.
+  it('rejects a cedear created with a currency other than ARS', async () => {
+    await expect(
+      createInvestmentAssetFromForm({ name: 'Coca-Cola CEDEAR', type: 'cedear', currency: 'USD', autoPrice: false }),
+    ).rejects.toThrow(/ARS/)
+  })
+})
+
+describe('updateInvestmentAssetFromForm', () => {
+  it('updates name and symbol, re-reading the asset\'s real type rather than trusting the caller', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', symbol: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
+
+    await updateInvestmentAssetFromForm(asset.id, { name: 'SPDR S&P 500', symbol: 'SPY', autoPrice: false, externalId: '' })
+
+    const [updated] = await listInvestmentAssets()
+    expect(updated).toMatchObject({ name: 'SPDR S&P 500', symbol: 'SPY', priceMode: 'manual' })
+  })
+
+  // Regression: symbol doubles as the row's display title
+  // (asset.symbol ?? asset.name) — silently leaving a stale symbol in
+  // place after the user clears the field would keep showing it instead
+  // of falling back to the name.
+  it('clears symbol when the field is emptied', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', symbol: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
+
+    await updateInvestmentAssetFromForm(asset.id, { name: 'SPY', symbol: '', autoPrice: false, externalId: '' })
+
+    const [updated] = await listInvestmentAssets()
+    expect(updated?.symbol).toBeUndefined()
+  })
+
+  it('turns priceMode auto on for an existing cedear, and back to manual — the explicit fallback for when the provider is unreliable', async () => {
+    const asset = await createInvestmentAssetFromForm({
+      name: 'Coca-Cola CEDEAR',
+      symbol: 'KO',
+      type: 'cedear',
+      currency: 'ARS',
+      autoPrice: false,
+    })
+
+    await updateInvestmentAssetFromForm(asset.id, { name: 'Coca-Cola CEDEAR', symbol: 'KO', autoPrice: true, externalId: 'KO' })
+    expect((await listInvestmentAssets())[0]).toMatchObject({ priceMode: 'auto', externalId: 'KO' })
+
+    await updateInvestmentAssetFromForm(asset.id, { name: 'Coca-Cola CEDEAR', symbol: 'KO', autoPrice: false, externalId: 'KO' })
+    expect((await listInvestmentAssets())[0]?.priceMode).toBe('manual')
   })
 })
 

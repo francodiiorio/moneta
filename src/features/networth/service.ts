@@ -10,6 +10,7 @@ import { quantity, parseQuantity, valuePosition } from '@/domain/decimal'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { convert, MissingRateError } from '@/domain/currency'
 import { money, parseAmount, percentChange, sub, type CurrencyCode, type Money } from '@/domain/money'
+import { AUTO_PRICE_ASSET_TYPES } from '@/domain/entities'
 import type { AssetPrice, ExchangeRate, InvestmentAsset, InvestmentHolding, SavingsHolding } from '@/domain/entities'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
@@ -205,21 +206,53 @@ export async function getSavingsAndInvestmentsHistory(monthsBack = 6): Promise<S
   return { points, missingRateCount, missingPriceCount }
 }
 
+/** CoinGecko (crypto) and data912 (cedear) are the only automatic price
+ *  providers wired up — auto only takes effect with an eligible type and
+ *  an externalId to look up; anything else falls back to manual
+ *  regardless of the switch (e.g. flipping type away from crypto/cedear
+ *  after checking it, or leaving externalId blank). */
+function hasAutoProvider(type: InvestmentAsset['type']): boolean {
+  return (AUTO_PRICE_ASSET_TYPES as readonly string[]).includes(type)
+}
+
 export async function createInvestmentAssetFromForm(values: InvestmentAssetFormValues) {
   const symbol = values.symbol?.trim()
   const externalId = values.externalId?.trim()
-  // CoinGecko is the only automatic price provider wired up (Etapa 6C),
-  // and it only covers crypto — auto only takes effect with both a
-  // crypto type and an externalId to look up; anything else falls back
-  // to manual regardless of the switch (e.g. flipping type away from
-  // crypto after checking it, or leaving externalId blank).
-  const isAuto = values.type === 'crypto' && values.autoPrice && !!externalId
+  const isAuto = hasAutoProvider(values.type) && values.autoPrice && !!externalId
   return investmentsRepo.createInvestmentAsset({
     name: values.name,
     type: values.type,
     currency: values.currency,
     priceMode: isAuto ? 'auto' : 'manual',
     ...(symbol && { symbol }),
+    ...(isAuto && { externalId }),
+  })
+}
+
+/** Name/symbol/autoPrice/externalId only — an asset's type and currency
+ *  never change after creation (changing currency would break the
+ *  invariant that every InvestmentLot's currency matches its asset's;
+ *  changing type would silently gain or lose auto-price eligibility).
+ *  Re-reads the asset's real `type` from the database rather than
+ *  trusting the caller, same pattern the lot-update functions use —
+ *  flipping `autoPrice` off is exactly the "fall back to manual" escape
+ *  hatch for when a provider is unreliable, so it's important this
+ *  can't be defeated by a stale type in the caller's UI state. */
+export async function updateInvestmentAssetFromForm(
+  id: string,
+  values: Pick<InvestmentAssetFormValues, 'name' | 'symbol' | 'autoPrice' | 'externalId'>,
+) {
+  const asset = await requireAsset(id)
+  const symbol = values.symbol?.trim()
+  const externalId = values.externalId?.trim()
+  const isAuto = hasAutoProvider(asset.type) && values.autoPrice && !!externalId
+  return investmentsRepo.updateInvestmentAsset(id, {
+    name: values.name,
+    priceMode: isAuto ? 'auto' : 'manual',
+    // Unlike create, this must be able to clear a previously-set symbol
+    // (the form always submits the field's full desired state) — see
+    // UpdateInvestmentAssetInput's tri-state.
+    symbol: symbol || null,
     ...(isAuto && { externalId }),
   })
 }

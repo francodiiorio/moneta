@@ -78,12 +78,15 @@ documentación) antes de conectarlo — ver `src/features/quotes/providers/`:
   cercano a "cuánto vale un dólar" para valuar patrimonio en ARS.
 - **CoinGecko** (`coinGecko.ts`) sólo para `InvestmentAsset` de tipo `crypto` con
   `priceMode: 'auto'` y un `externalId` cargado (el id de CoinGecko, ej. `"bitcoin"`,
-  no el símbolo) — gratis, sin key, CORS habilitado. Acciones/ETFs/CEDEARs/bonos/FCI
-  siguen manuales: no existe un proveedor gratuito, sin key y con CORS habilitado para
-  esos instrumentos (ver ADR "Modelo de dominio para inversiones").
+  no el símbolo) — gratis, sin key, CORS habilitado. Acciones/ETFs/bonos/FCI siguen
+  manuales: no existe un proveedor gratuito, sin key y con CORS habilitado para esos
+  instrumentos (ver ADR "Modelo de dominio para inversiones").
+
+**Actualización:** CEDEARs dejó de estar en esa lista de "sin proveedor" — ver ADR
+"Cotizaciones automáticas de CEDEARs (data912)" más abajo para el cuarto proveedor.
 
 Un `InvestmentAsset` nuevo siempre arranca en `priceMode: 'manual'` — el switch "auto"
-sólo aparece en el formulario cuando el tipo es `crypto`, y sólo tiene efecto real con
+sólo aparece en el formulario cuando el tipo es `crypto` o `cedear`, y sólo tiene efecto real con
 un `externalId` no vacío; cualquier otra combinación (tipo distinto, switch prendido sin
 id) cae a manual sin avisar con un error, porque no es un estado inválido, simplemente
 "todavía no configuraste el id".
@@ -715,3 +718,102 @@ limpia. Por eso el recompute usa `.put()` (reemplazo completo de la fila), no
 `.update()`. Verificado revirtiendo a `.update()` a mano y confirmando que el test
 `investmentLots.repo.test.ts` correspondiente falla (`expected undefined, received
 10000`) antes de restaurar el fix.
+
+## Cotizaciones automáticas de CEDEARs (data912)
+
+**Decisión:** cuarto proveedor automático, `features/quotes/providers/data912.ts` —
+verificado con una request real antes de conectarlo, mismo criterio que los otros tres
+(ver ADR "Cotizaciones automáticas: proveedores, frescura y fallos" arriba).
+**data912.com** (https://data912.com) es un mirror gratis, sin key y con CORS
+habilitado de datos de BYMA (Bolsas y Mercados Argentinos), mantenido por la comunidad
+fintech argentina — no es la bolsa ni un broker oficial. Su endpoint
+`/live/arg_cedears` devuelve todos los CEDEARs que conoce en una sola respuesta (sin
+query por símbolo), así que `refreshQuotes()` sólo lo llama cuando existe al menos un
+`InvestmentAsset` `cedear` con `priceMode: 'auto'`, para no hacer un request que nadie
+necesita. El campo `externalId` para este proveedor es directamente el ticker con el
+que el CEDEAR cotiza en BYMA (ej. `"KO"`, `"SPY"`) — a diferencia del id de CoinGecko,
+normalmente coincide con el símbolo que el usuario ya conoce.
+
+`investmentAssetSchema`'s `refine` (antes sólo `type === 'crypto'`) ahora acepta
+`priceMode: 'auto'` también para `type === 'cedear'` — mismo `externalId` obligatorio,
+mismo mensaje de invariante actualizado. El conjunto de tipos con proveedor
+(`AUTO_PRICE_ASSET_TYPES`) vive en `domain/entities/schemas.ts` como única fuente de
+verdad, reusada por ese `refine`, por `features/networth/service.ts` y por el formulario
+— evita que un quinto proveedor futuro actualice tres de los cuatro lugares que antes
+repetían este mismo chequeo por separado.
+
+**Encontrado en revisión — moneda de un CEDEAR (bloqueante, corregido antes de
+mergear):** un CEDEAR sólo cotiza en pesos en BYMA — no existe versión en otra moneda —
+pero nada impedía crear un activo `type: 'cedear'` con `currency: 'USD'` (el default del
+formulario), y `fetchData912CedearPrices()` siempre devuelve `currency: 'ARS'`. El
+resultado: `getInvestmentHoldingsWithDetails` descarta ese precio por currency mismatch
+y muestra "sin precio cargado" en Inversiones, mientras que `valuateNetWorth` (usada por
+el total del Dashboard y el gráfico de patrimonio) no tiene ese mismo guard y sí lo usa
+— dos pantallas mostrando información contradictoria sobre el mismo activo, sin ningún
+error visible. Se agregó un segundo `refine` al `investmentAssetSchema` (`type ===
+'cedear'` exige `currency === 'ARS'`), un invariante equivalente en
+`investments.repo.ts:createInvestmentAsset` (la validación de Zod sólo corre al
+importar un backup, nunca al crear un activo desde la UI — ver "Riesgo" más abajo), y en
+el formulario: elegir tipo CEDEAR fija la moneda a ARS automáticamente y bloquea el
+selector, en vez de dejar el default `USD` silencioso.
+
+**Encontrado en revisión — colisión de `externalId` entre proveedores (bloqueante,
+corregido antes de mergear):** la primera versión unía las cotizaciones de CoinGecko y
+data912 en un único `Map` indexado por `externalId` antes de escribir precios,
+razonando que "los espacios de id no se superponen en la práctica". Pero `externalId`
+es texto libre sin validar contra el proveedor real — nada impide que un activo
+`crypto` y uno `cedear` compartan el mismo string (typo, o un backup mergeado de dos
+dispositivos), y de darse el caso, uno de los dos recibía silenciosamente el precio del
+otro, en la moneda del otro. Se separó en un `Map` por proveedor (`applyQuotes()` en
+`features/quotes/service.ts`, llamado una vez por proveedor en vez de sobre una lista
+combinada) — mismo espíritu que ya evitaba la colisión de `externalId` *dentro* de un
+mismo proveedor (dos activos cripto con el mismo id de CoinGecko), extendido para que
+tampoco pase *entre* proveedores distintos. Verificado revirtiendo a un único `Map`
+combinado y confirmando que el test de regresión correspondiente
+(`quotes/service.test.ts`) falla exactamente así antes de restaurar el fix.
+
+**Por qué es seguro pese a no ser una fuente oficial:** sigue el mismo modelo de
+tolerancia a fallos que ya tenían los otros tres proveedores (ver "Fallos" en el ADR de
+arriba) — `fetchData912CedearPrices()` nunca tira, un fallo de red/timeout/forma
+inesperada devuelve `[]`, y `AssetPrice` sigue siendo append-only: `refreshQuotes()`
+nunca borra ni pisa una cotización ya cargada, así que si data912 está caído o
+desaparece, el precio más reciente válido en IndexedDB sigue siendo el que se usa en
+toda valuación — ninguna cuenta, movimiento ni balance depende de que este proveedor en
+particular esté disponible.
+
+**Respaldo manual explícito, pedido por el usuario:** hasta esta feature, un
+`InvestmentAsset` sólo podía configurarse en el momento de crearlo — no había forma de
+volver a modo manual después sin borrarlo y cargarlo de nuevo. Se agregó
+`updateInvestmentAssetFromForm` (`features/networth/service.ts`) y un modo de edición en
+`InvestmentAssetFormDialog` (ícono de engranaje en `InvestmentRow`/`InvestmentAssetRow`)
+que permite prender o apagar el switch de precio automático en cualquier momento, sin
+tocar tipo ni moneda (fijos desde la creación — cambiarlos rompería el invariante de
+que todo `InvestmentLot` comparte la moneda de su activo, o cambiaría silenciosamente
+la elegibilidad de proveedor). Apagar el switch hace que `refreshQuotes()` deje de
+intentar el fetch automático para ese activo, y "Cargar precio" (siempre disponible,
+independiente de `priceMode`) sigue siendo el camino para cargar un precio a mano —
+exactamente el respaldo pedido para el caso "la API está caída, quiero seguir yo".
+
+**Encontrado en revisión — borrar el símbolo al editar no lo borraba (medio, corregido
+antes de mergear):** mismo patrón que ya se había arreglado esta sesión para
+`InvestmentLot.costPerUnit` (ver ADR "Tracking de inversiones por lote" arriba), esta
+vez en `InvestmentAsset.symbol` — que además de cosmético dobla como título de la fila
+(`asset.symbol ?? asset.name`). `updateInvestmentAssetFromForm` omitía `symbol` del
+patch cuando el campo quedaba vacío (mismo criterio que sí es correcto en `create`, pero
+no en `update`), y `investments.repo.ts:updateInvestmentAsset` usaba `.update()`
+parcial de Dexie — que no puede borrar una clave ausente del patch. Se corrigió
+agregando el mismo tri-state (`symbol: null` para borrar explícito) y cambiando
+`updateInvestmentAsset` a `.put()` (reemplazo completo de la fila), igual que
+`investmentLots.repo.ts:updateInvestmentLot`.
+
+**Descartado:** exponer `type`/`currency` como editables también. Cambiar `currency`
+rompería el invariante `InvestmentLot.currency === asset.currency` para lotes ya
+cargados (ver ADR "Tracking de inversiones por lote" arriba); cambiar `type` ganaría o
+perdería elegibilidad de proveedor de forma no obvia para el usuario. Borrar el activo y
+cargarlo de nuevo ya cubre ese caso, mucho menos frecuente que ajustar el switch de auto.
+
+**Riesgo aceptado:** al ser un mirror no oficial, data912 puede cambiar de forma o dejar
+de responder sin aviso — mismo tipo de riesgo ya aceptado para dolarapi.com y CoinGecko.
+No hay SLA ni contacto de soporte; si esto se vuelve un problema recurrente, la salida es
+simplemente apagar el switch por activo (o desactivar `Settings.autoQuotesEnabled` del
+todo) y seguir cargando el precio a mano, sin perder ningún dato ya guardado.
