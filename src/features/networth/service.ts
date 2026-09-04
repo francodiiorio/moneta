@@ -1,6 +1,7 @@
 import {
   assetPricesRepo,
   exchangeRatesRepo,
+  investmentLotsRepo,
   investmentsRepo,
   savingsHoldingsRepo,
   settingsRepo,
@@ -15,13 +16,14 @@ import { invariant } from '@/lib/invariant'
 import { NO_PROFILE, rateValueToNumber, type ExchangeRateFormValues } from './schema'
 import type {
   InvestmentAssetFormValues,
-  InvestmentHoldingFormValues,
+  InvestmentLotFormValues,
   InvestmentPriceFormValues,
   SavingsFormValues,
 } from './schema'
 
 export { listSavingsHoldings, deleteSavingsHolding } from '@/database/repositories/savingsHoldings.repo'
 export { listInvestmentAssets, deleteInvestmentAsset, deleteInvestmentHolding } from '@/database/repositories/investments.repo'
+export { listInvestmentLots, deleteInvestmentLot } from '@/database/repositories/investmentLots.repo'
 export { listExchangeRates, deleteExchangeRate } from '@/database/repositories/exchangeRates.repo'
 // Cotizaciones automáticas (Etapa 6C) is a headless orchestration layer
 // with no UI of its own — the Cotizaciones tab here is its only consumer.
@@ -228,39 +230,53 @@ async function requireAsset(assetId: string): Promise<InvestmentAsset> {
   return asset
 }
 
-/** Shared quantity/averageCost parsing for create and update — averageCost
+/** Shared quantity/costPerUnit parsing for create and update — costPerUnit
  *  is always resolved against `assetCurrency`, never a currency chosen
- *  separately in the form (a holding's cost basis is always in its
- *  asset's own currency). */
-function parseHoldingFields(quantityInput: string, averageCostInput: string | undefined, assetCurrency: CurrencyCode) {
-  return {
-    quantity: parseQuantity(quantityInput),
-    ...(averageCostInput?.trim() && { averageCost: parseAmount(averageCostInput, assetCurrency).amount }),
-  }
+ *  separately in the form (a lot's cost is always in its asset's own
+ *  currency). */
+function parseLotFields(quantityInput: string, costPerUnitInput: string | undefined, assetCurrency: CurrencyCode) {
+  const costPerUnit = costPerUnitInput?.trim() ? parseAmount(costPerUnitInput, assetCurrency).amount : undefined
+  return { quantity: parseQuantity(quantityInput), costPerUnit }
 }
 
-export async function createInvestmentHoldingFromForm(values: InvestmentHoldingFormValues) {
+/** Records a purchase. `InvestmentHolding` (the position's cached
+ *  quantity/averageCost, everything else in the app reads) is never
+ *  written here directly — `investmentLotsRepo.createInvestmentLot`
+ *  recomputes it from every lot for the asset, inside the same
+ *  transaction as this write. Ver ADR "Tracking de inversiones por
+ *  lote" en docs/DECISIONS.md. */
+export async function createInvestmentLotFromForm(values: InvestmentLotFormValues) {
   const asset = await requireAsset(values.assetId)
-  const fields = parseHoldingFields(values.quantity, values.averageCost, asset.currency)
-  return investmentsRepo.createInvestmentHolding({ assetId: values.assetId, ...fields })
+  const { quantity, costPerUnit } = parseLotFields(values.quantity, values.costPerUnit, asset.currency)
+  return investmentLotsRepo.createInvestmentLot({
+    assetId: values.assetId,
+    currency: asset.currency,
+    date: values.date,
+    quantity,
+    ...(costPerUnit !== undefined && { costPerUnit }),
+  })
 }
 
-/** Quantity/averageCost only — the asset a holding belongs to never
- *  changes after creation (moving a position to a different asset means
- *  deleting it and creating a new one, same as an account's currency).
- *  Deliberately re-reads the holding's *real* `assetId` from the database
- *  instead of trusting the form's `assetId` field for currency resolution
- *  — the dialog disables that select while editing, but a service
- *  function shouldn't depend on a caller's UI state to stay correct. */
-export async function updateInvestmentHoldingFromForm(
+/** Quantity/costPerUnit/date only — the asset a lot belongs to never
+ *  changes after creation (same reasoning as a holding's asset used to
+ *  have: moving a purchase to a different asset means deleting it and
+ *  creating a new one). Deliberately re-reads the lot's *real* `assetId`
+ *  from the database instead of trusting a caller's UI state, same
+ *  pattern the old holding-update function used.
+ *
+ *  The form always submits the lot's full desired state (never a sparse
+ *  patch from multiple origins), so an empty "Costo por unidad" means
+ *  "clear it", not "leave it as is" — hence `costPerUnit ?? null`. See
+ *  `UpdateInvestmentLotInput`'s tri-state. */
+export async function updateInvestmentLotFromForm(
   id: string,
-  values: Pick<InvestmentHoldingFormValues, 'quantity' | 'averageCost'>,
+  values: Pick<InvestmentLotFormValues, 'quantity' | 'costPerUnit' | 'date'>,
 ) {
-  const holding = await investmentsRepo.getInvestmentHolding(id)
-  invariant(holding, `Posición no encontrada: ${id}`)
-  const asset = await requireAsset(holding.assetId)
-  const fields = parseHoldingFields(values.quantity, values.averageCost, asset.currency)
-  return investmentsRepo.updateInvestmentHolding(id, fields)
+  const lot = await investmentLotsRepo.getInvestmentLot(id)
+  invariant(lot, `Compra no encontrada: ${id}`)
+  const asset = await requireAsset(lot.assetId)
+  const { quantity, costPerUnit } = parseLotFields(values.quantity, values.costPerUnit, asset.currency)
+  return investmentLotsRepo.updateInvestmentLot(id, { date: values.date, quantity, costPerUnit: costPerUnit ?? null })
 }
 
 export async function createManualPriceFromForm(

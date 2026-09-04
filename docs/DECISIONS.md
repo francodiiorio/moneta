@@ -639,3 +639,79 @@ sacar el activo del selector es más simple y ya resuelve el caso real. El track
 compras por lote (cada compra con su fecha/precio, ganancia realizada exacta sin
 promediar a mano) queda en el backlog — es un modelo de datos más grande, sólo
 justificado si hace falta precisión fiscal/contable.
+
+## Tracking de inversiones por lote: `InvestmentHolding` pasa a ser un agregado cacheado
+
+**Decisión:** `InvestmentHolding.quantity`/`averageCost` dejan de ser campos editados a
+mano y pasan a ser un **agregado cacheado**, recalculado transaccionalmente, de una
+entidad nueva: `InvestmentLot` (una fila por compra — cantidad, costo por unidad
+opcional, moneda, fecha). Crear/editar/borrar un lote recalcula el holding entero
+(`recomputeHoldingAggregate`, `database/repositories/investmentLots.repo.ts`) dentro de
+la misma transacción Dexie que escribe el lote — nunca queda una ventana donde el
+agregado esté desincronizado de sus lotes. `aggregateLots` (`domain/investments/lots.ts`)
+es la función pura que calcula cantidad total y costo promedio ponderado, reusando
+`valuePosition`/`add`/`roundHalfUp` de `domain/money`/`domain/decimal` — nada de
+aritmética nueva.
+
+**Alcance confirmado con el usuario, explícitamente acotado:** sólo compras. Sin
+ganancia realizada ni método contable (FIFO/promedio/etc.) — eso queda en el backlog,
+ahora como una entrada más específica que la genérica "tracking por lote" que
+reemplaza.
+
+**Corrección post-implementación (encontrada en revisión):** el plan original decía
+"vender sigue siendo editar la cantidad del holding a mano, sin cambios" — pero
+`InvestmentHoldingFormDialog` (el único lugar donde se editaba `quantity` directo) se
+borró junto con `updateInvestmentHoldingFromForm`, así que ese camino ya no existe en la
+UI. `investments.repo.ts:updateInvestmentHolding` sigue en el código (con su propio
+test), pero sin ningún caller — es la función de bajo nivel que usa
+`recomputeHoldingAggregate` internamente, no algo que la UI llame directo. El
+equivalente real hoy es **editar hacia abajo la cantidad de una compra existente**
+desde "Administrar compras" (`InvestmentLotsDialog`), o borrarla del todo si la venta
+cubre esa compra entera — `investmentLotFormSchema.quantity` exige > 0, así que no hay
+forma de cargar una "venta" como su propio lote. Sigue siendo manual y sin ganancia
+realizada, como decía el alcance original, pero con un costo nuevo no documentado
+entonces: con más de un lote para el mismo activo, el usuario tiene que elegir a mano
+cuál compra absorbe la reducción — no hay ninguna noción de "cuál se vendió primero".
+Aceptable para el alcance confirmado (sólo compras, venta como afterthought manual),
+pero si en la práctica esto resulta confuso, un affordance explícito de "reducir
+cantidad" a nivel holding (sin atarlo a un lote puntual) queda como posible mejora de
+UX, no de modelo de datos.
+
+**Por qué agregado cacheado y no derivar todo al vuelo en cada lectura:** la alternativa
+"más pura" — borrar `InvestmentHolding` del todo y calcular cantidad/costo promedio con
+un `aggregateLots` en cada lectura — hubiera obligado a tocar cada consumidor existente
+de `InvestmentHolding` (`domain/networth/valuation.ts:valuateNetWorth`,
+`getInvestmentHoldingsWithDetails`, `NetWorthDistribution`, `InvestmentGainLossChart`,
+`getSavingsAndInvestmentsHistory`, `InvestmentRow`) y versionar el backup de forma más
+invasiva, a cambio de un beneficio (evitar que el cache se desincronice) que ya se cubre
+recalculando siempre dentro de la misma transacción que la escritura del lote que lo
+invalida. Mismo patrón ya usado en el repo para `RecurringPlan.lastMaterializedDate` y
+para el chequeo de holding duplicado (ver ADR "'Nueva posición' no ofrece un activo que
+ya tiene holding" arriba). Con el agregado cacheado, **ningún consumidor existente
+cambió una sola línea** — sólo cambió el camino de escritura, de "editar posición" a
+"agregar/editar/borrar una compra".
+
+**Migración — todo holding existente nace con un lote heredado:** para que la lógica de
+agregado nunca tenga que contemplar "cantidad sin lote" como caso especial, todo
+`InvestmentHolding` que ya existía al momento de este cambio recibe un `InvestmentLot`
+sintético que replica su `quantity`/`averageCost`/`currency`, fechado en su propio
+`createdAt`. Implementado independientemente en dos lugares porque son dos caminos de
+escritura que no se llaman entre sí: el `.upgrade()` de `db.version(3)` (para quien ya
+tiene datos locales) y `migrateV2ToV3` (para quien restaura un `.finance` viejo, que
+escribe la tabla directo vía `bulkAdd`/`addMissing`, sin pasar por el `.upgrade()` de
+Dexie). Verificado a mano contra la base real del usuario (con su consentimiento
+explícito, sin exportar backup antes por decisión suya) además de con tests que seedean
+una DB en versión 2 y confirman el lote heredado tras abrir en versión 3.
+
+**Riesgo residual, mismo aceptado que en el ADR anterior:** un backup con dos holdings
+duplicados para el mismo `assetId` (ya documentado como riesgo residual arriba) migra a
+dos lotes heredados en vez de uno — no se resuelve acá tampoco, mismo costo ya aceptado.
+
+**Detalle no obvio:** `recomputeHoldingAggregate` tiene que poder hacer que
+`averageCost` pase de tener valor a `undefined` (cuando se borra el único lote que
+tenía costo cargado, dejando sólo lotes sin costear). Un `.update(id, patch)` de Dexie
+no puede lograr esto — un campo ausente del `patch` conserva su valor viejo, nunca lo
+limpia. Por eso el recompute usa `.put()` (reemplazo completo de la fila), no
+`.update()`. Verificado revirtiendo a `.update()` a mano y confirmando que el test
+`investmentLots.repo.test.ts` correspondiente falla (`expected undefined, received
+10000`) antes de restaurar el fix.

@@ -181,13 +181,26 @@ y el costo aceptado de esa aproximación.
   en esta versión, ver ADR en `docs/DECISIONS.md`.
 - Multi-dispositivo (fuera de alcance del proyecto tal como está planteado hoy — ver
   `docs/PRODUCT.md` "No-objetivos").
-- Tracking de inversiones por lote (cada compra con su propia fecha/cantidad/precio, en
-  vez de una sola `InvestmentHolding` consolidada por activo) — daría ganancia/pérdida
-  realizada exacta sin promediar el costo a mano al comprar más de un activo que ya
-  tenés. Modelo de datos más grande (posiblemente FIFO o costo promedio por lote); sólo
-  se justifica si hace falta esa precisión fiscal/contable. Ver ADR "'Nueva posición' no
-  ofrece un activo que ya tiene holding" en `docs/DECISIONS.md` para el fix de corto
-  plazo (evitar el duplicado) que no requirió este modelo más grande.
+- ~~Tracking de inversiones por lote (sólo compras)~~ (hecho) — nueva entidad
+  `InvestmentLot` (una fila por compra: cantidad, costo por unidad opcional, moneda,
+  fecha); `InvestmentHolding.quantity`/`averageCost` pasan a ser un agregado cacheado,
+  recalculado transaccionalmente al crear/editar/borrar un lote
+  (`database/repositories/investmentLots.repo.ts`), en vez de campos editados a mano.
+  Comprar más de un activo que ya tenés ya no requiere promediar el costo ponderado a
+  mano — se carga la compra nueva como su propio lote y el costo promedio se recalcula
+  solo. Ningún consumidor existente de `InvestmentHolding` cambió (Distribución,
+  Ganancia/pérdida, Evolución, Dashboard) — sólo cambió el camino de escritura, de
+  "editar posición" a "agregar/editar/borrar una compra" (`InvestmentLotsDialog.tsx`).
+  Migración con lote heredado para todo holding existente, tanto vía `.upgrade()` de
+  Dexie (`db.version(3)`) como vía backup (`migrateV2ToV3`). Ver ADR "Tracking de
+  inversiones por lote: `InvestmentHolding` pasa a ser un agregado cacheado" en
+  `docs/DECISIONS.md`.
+- Venta con ganancia realizada exacta (FIFO/costo promedio por lote) — vender sigue
+  siendo, deliberadamente, editar la cantidad del holding a mano, sin ganancia realizada
+  ni consumir lotes específicos. Elegir un método contable de venta, UI de venta y
+  reporte de ganancia realizada es una feature bastante más grande que sólo se justifica
+  si hace falta esa precisión fiscal/contable — alcance explícitamente confirmado con el
+  usuario al encarar el tracking por lote (ver mismo ADR arriba).
 - ~~Informe mensual exportable~~ (hecho) — `/reportes/informe/:month`, una "foto" de un
   mes (cerrado o en curso): ingresos/gastos/balance, gasto por categoría, y patrimonio de
   ese mes si hay algo registrado. Exporta a PDF vía el diálogo de impresión nativo del

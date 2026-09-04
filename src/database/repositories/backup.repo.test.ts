@@ -22,6 +22,7 @@ afterEach(async () => {
     db.investmentAssets.clear(),
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
+    db.investmentLots.clear(),
   ])
 })
 
@@ -39,6 +40,7 @@ function emptyData(overrides: Partial<AllTablesData> = {}): AllTablesData {
     investmentAssets: [],
     investmentHoldings: [],
     assetPrices: [],
+    investmentLots: [],
     ...overrides,
   }
 }
@@ -301,6 +303,7 @@ describe('mergeAllTables', () => {
       investmentAssets: { added: 0, skipped: 0 },
       investmentHoldings: { added: 0, skipped: 0 },
       assetPrices: { added: 0, skipped: 0 },
+      investmentLots: { added: 0, skipped: 0 },
     })
     expect(await db.accounts.count()).toBe(before)
   })

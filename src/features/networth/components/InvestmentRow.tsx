@@ -10,12 +10,14 @@ import type { InvestmentHoldingWithDetails } from '../service'
 
 interface InvestmentRowProps {
   item: InvestmentHoldingWithDetails
-  onEdit: () => void
+  /** Opens InvestmentLotsDialog — a posición ya no se edita directo,
+   *  se administra como la suma de sus compras. */
+  onManageLots: () => void
   onDelete: () => void
   onLoadPrice: () => void
 }
 
-export function InvestmentRow({ item, onEdit, onDelete, onLoadPrice }: InvestmentRowProps) {
+export function InvestmentRow({ item, onManageLots, onDelete, onLoadPrice }: InvestmentRowProps) {
   const { holding, asset, price, nativeValue, convertedValue, gainLoss, gainLossPercent } = item
   const isGain = gainLoss !== undefined && isPositive(gainLoss)
   const isLoss = gainLoss !== undefined && isNegative(gainLoss)
@@ -35,7 +37,7 @@ export function InvestmentRow({ item, onEdit, onDelete, onLoadPrice }: Investmen
           <Button variant="ghost" size="icon" onClick={onLoadPrice} title="Cargar precio">
             <RefreshCw className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={onEdit}>
+          <Button variant="ghost" size="icon" onClick={onManageLots} title="Compras">
             <Pencil className="size-3.5" />
           </Button>
           <Button variant="ghost" size="icon" onClick={onDelete}>

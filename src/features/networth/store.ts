@@ -17,14 +17,24 @@ interface NetWorthUiState {
   openAssetDialog: () => void
   closeAssetDialog: () => void
 
-  holdingDialogOpen: boolean
-  editingHoldingId: string | null
-  /** Pre-selects the asset when opening "Nueva posición" from an
-   *  asset row that has none yet — null otherwise. */
-  newHoldingAssetId: string | null
-  openCreateHoldingDialog: (assetId?: string) => void
-  openEditHoldingDialog: (id: string) => void
-  closeHoldingDialog: () => void
+  // Crear una posición nueva o agregar otra compra a una existente —
+  // InvestmentLotFormDialog en modo "crear" (nunca "editar": editar una
+  // compra puntual es estado interno de InvestmentLotsDialog, más abajo).
+  lotDialogOpen: boolean
+  /** Pre-selects (y bloquea) el activo — "Agregar posición" desde una
+   *  fila que ya tiene una, o desde un activo que todavía no tiene
+   *  ninguna. Null cuando se crea desde "Nueva posición" en el menú, sin
+   *  activo preelegido. */
+  newLotAssetId: string | null
+  openCreateLotDialog: (assetId?: string) => void
+  closeLotDialog: () => void
+
+  /** Qué posición se está administrando (lista de compras) — abierto por
+   *  el lápiz de un InvestmentRow. Null cierra InvestmentLotsDialog. Ver
+   *  ADR "Tracking de inversiones por lote" en docs/DECISIONS.md. */
+  managingLotsAssetId: string | null
+  openManageLotsDialog: (assetId: string) => void
+  closeManageLotsDialog: () => void
 
   /** Which asset's price is being loaded — null when the dialog is closed. */
   pricingAssetId: string | null
@@ -50,13 +60,14 @@ export const useNetWorthUiStore = create<NetWorthUiState>((set) => ({
   openAssetDialog: () => set({ assetDialogOpen: true }),
   closeAssetDialog: () => set({ assetDialogOpen: false }),
 
-  holdingDialogOpen: false,
-  editingHoldingId: null,
-  newHoldingAssetId: null,
-  openCreateHoldingDialog: (assetId) =>
-    set({ holdingDialogOpen: true, editingHoldingId: null, newHoldingAssetId: assetId ?? null }),
-  openEditHoldingDialog: (id) => set({ holdingDialogOpen: true, editingHoldingId: id, newHoldingAssetId: null }),
-  closeHoldingDialog: () => set({ holdingDialogOpen: false, editingHoldingId: null, newHoldingAssetId: null }),
+  lotDialogOpen: false,
+  newLotAssetId: null,
+  openCreateLotDialog: (assetId) => set({ lotDialogOpen: true, newLotAssetId: assetId ?? null }),
+  closeLotDialog: () => set({ lotDialogOpen: false, newLotAssetId: null }),
+
+  managingLotsAssetId: null,
+  openManageLotsDialog: (assetId) => set({ managingLotsAssetId: assetId }),
+  closeManageLotsDialog: () => set({ managingLotsAssetId: null }),
 
   pricingAssetId: null,
   openPriceDialog: (assetId) => set({ pricingAssetId: assetId }),

@@ -11,7 +11,7 @@ import { generateId } from '@/lib/ids'
 import {
   createExchangeRateFromForm,
   createInvestmentAssetFromForm,
-  createInvestmentHoldingFromForm,
+  createInvestmentLotFromForm,
   createManualPriceFromForm,
   createSavingsHoldingFromForm,
   getInvestmentHoldingsWithDetails,
@@ -20,7 +20,7 @@ import {
   listExchangeRates,
   listInvestmentAssets,
   listSavingsHoldings,
-  updateInvestmentHoldingFromForm,
+  updateInvestmentLotFromForm,
   updateSavingsHoldingFromForm,
 } from './service'
 import { NO_PROFILE } from './schema'
@@ -34,6 +34,7 @@ afterEach(async () => {
     db.investmentAssets.clear(),
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
+    db.investmentLots.clear(),
   ])
 })
 
@@ -208,44 +209,53 @@ describe('createInvestmentAssetFromForm', () => {
   })
 })
 
-describe('createInvestmentHoldingFromForm / updateInvestmentHoldingFromForm', () => {
-  it('parses quantity and averageCost in the asset currency', async () => {
+describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
+  it('parses quantity and costPerUnit in the asset currency, and the holding aggregate matches a single lot exactly', async () => {
     const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
-    const holding = await createInvestmentHoldingFromForm({ assetId: asset.id, quantity: '5', averageCost: '600' })
+    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '5', costPerUnit: '600', date: '2026-01-01' })
 
-    expect(holding.quantity).toBe(500_000_000) // 5.00000000 scaled
-    expect(holding.averageCost).toBe(60_000) // "600" parsed as major units -> 600.00 USD
+    expect(lot.quantity).toBe(500_000_000) // 5.00000000 scaled
+    expect(lot.costPerUnit).toBe(60_000) // "600" parsed as major units -> 600.00 USD
 
-    await updateInvestmentHoldingFromForm(holding.id, { quantity: '7', averageCost: '' })
-    const [updated] = await listInvestmentHoldings()
-    expect(updated?.quantity).toBe(700_000_000)
+    const [holding] = await listInvestmentHoldings()
+    expect(holding).toMatchObject({ assetId: asset.id, quantity: 500_000_000, averageCost: 60_000 })
+
+    await updateInvestmentLotFromForm(lot.id, { quantity: '7', costPerUnit: '', date: '2026-01-01' })
+    const [updatedHolding] = await listInvestmentHoldings()
+    expect(updatedHolding?.quantity).toBe(700_000_000)
+    // Clearing "Costo por unidad" must actually clear it, not just leave
+    // the quantity change through while the old cost lingers underneath.
+    expect(updatedHolding?.averageCost).toBeUndefined()
   })
 
-  it('resolves averageCost against the holding\'s real asset currency, ignoring a mismatched assetId if one were passed', async () => {
+  it('resolves costPerUnit against the lot\'s real asset currency, ignoring a mismatched assetId if one were passed', async () => {
     const usdAsset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
     const eurAsset = await createInvestmentAssetFromForm({ name: 'Bono EUR', type: 'bond', currency: 'EUR', autoPrice: false })
-    const holding = await createInvestmentHoldingFromForm({ assetId: usdAsset.id, quantity: '1' })
+    const lot = await createInvestmentLotFromForm({ assetId: usdAsset.id, quantity: '1', date: '2026-01-01' })
 
     // A caller passing a different asset's id can't smuggle the wrong
-    // currency in — updateInvestmentHoldingFromForm's signature doesn't
-    // even accept assetId, so this can't compile with one; verifying the
-    // currency used is still the holding's real (USD) one.
-    await updateInvestmentHoldingFromForm(holding.id, { quantity: '1', averageCost: '600' })
-    const [updated] = (await listInvestmentHoldings()).filter((h) => h.id === holding.id)
-    expect(updated?.averageCost).toBe(60_000) // 600.00 USD, not EUR — resolved from the holding, not eurAsset
+    // currency in — updateInvestmentLotFromForm's signature doesn't even
+    // accept assetId, so this can't compile with one; verifying the
+    // currency used is still the lot's real (USD) one.
+    await updateInvestmentLotFromForm(lot.id, { quantity: '1', costPerUnit: '600', date: '2026-01-01' })
+    const [holding] = await listInvestmentHoldings()
+    expect(holding?.averageCost).toBe(60_000) // 600.00 USD, not EUR — resolved from the lot, not eurAsset
     expect(eurAsset.currency).toBe('EUR') // sanity: the mismatched asset really is a different currency
   })
 
-  it('rejects a holding for a non-existent asset', async () => {
+  it('rejects a lot for a non-existent asset', async () => {
     await expect(
-      createInvestmentHoldingFromForm({ assetId: 'missing', quantity: '1' }),
+      createInvestmentLotFromForm({ assetId: 'missing', quantity: '1', date: '2026-01-01' }),
     ).rejects.toThrow(/no encontrado/)
   })
 
-  it('omits averageCost when left blank', async () => {
+  it('omits costPerUnit when left blank, and the holding aggregate has no averageCost either', async () => {
     const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD', autoPrice: false })
-    const holding = await createInvestmentHoldingFromForm({ assetId: asset.id, quantity: '1' })
-    expect('averageCost' in holding).toBe(false)
+    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '1', date: '2026-01-01' })
+    expect('costPerUnit' in lot).toBe(false)
+
+    const [holding] = await listInvestmentHoldings()
+    expect('averageCost' in (holding ?? {})).toBe(false)
   })
 })
 

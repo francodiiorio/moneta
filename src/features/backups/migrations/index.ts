@@ -1,10 +1,12 @@
 import { z } from 'zod'
 import { backupV1Schema } from '../schemas/v1'
-import { backupV2Schema, type BackupDataV2 } from '../schemas/v2'
+import { backupV2Schema } from '../schemas/v2'
+import { backupV3Schema, type BackupDataV3 } from '../schemas/v3'
 import { migrateV1ToV2 } from './v1_to_v2'
+import { migrateV2ToV3 } from './v2_to_v3'
 
-export const LATEST_VERSION = 2
-export type LatestBackupData = BackupDataV2
+export const LATEST_VERSION = 3
+export type LatestBackupData = BackupDataV3
 
 const versionEnvelopeSchema = z.object({ version: z.number().int() })
 
@@ -33,10 +35,18 @@ export function migrateToLatest(raw: unknown): LatestBackupData {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)
       }
-      return migrateV1ToV2(result.data.data)
+      return migrateV2ToV3(migrateV1ToV2(result.data.data))
     }
     case 2: {
       const result = backupV2Schema.safeParse(raw)
+      if (!result.success) {
+        const detail = result.error.issues.map((issue) => issue.message).join('; ')
+        throw new Error(`El backup no es válido: ${detail}`)
+      }
+      return migrateV2ToV3(result.data.data)
+    }
+    case 3: {
+      const result = backupV3Schema.safeParse(raw)
       if (!result.success) {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)

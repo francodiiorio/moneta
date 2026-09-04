@@ -72,6 +72,13 @@ export async function getInvestmentHolding(id: string): Promise<InvestmentHoldin
   return db.investmentHoldings.get(id)
 }
 
+/** Direct, low-level write of the `InvestmentHolding` row — quantity and
+ *  averageCost are no longer meant to be entered by hand from the UI
+ *  (see `investmentLots.repo.ts`, which recomputes the holding from its
+ *  `InvestmentLot`s on every write). Kept here as the primitive that
+ *  guarantees "one holding per asset" — still exercised directly by
+ *  tests, and available for any future caller that legitimately needs
+ *  to write a holding outside the lot-driven path. */
 export async function createInvestmentHolding(input: CreateInvestmentHoldingInput): Promise<InvestmentHolding> {
   const now = new Date().toISOString()
   const holding: InvestmentHolding = {
@@ -113,6 +120,16 @@ export async function updateInvestmentHolding(id: string, patch: UpdateInvestmen
   await db.investmentHoldings.update(id, { ...patch, updatedAt: new Date().toISOString() })
 }
 
+/** Eliminar una posición borra todas sus compras (`InvestmentLot`) — no
+ *  tendría sentido dejar lotes huérfanos apuntando a un holding que ya
+ *  no existe, y la posición se reconstruiría sola desde ellos la
+ *  próxima vez que se recalculara el agregado. Ver ADR "Tracking de
+ *  inversiones por lote" en docs/DECISIONS.md. */
 export async function deleteInvestmentHolding(id: string): Promise<void> {
-  await db.investmentHoldings.delete(id)
+  await db.transaction('rw', db.investmentHoldings, db.investmentLots, async () => {
+    const holding = await db.investmentHoldings.get(id)
+    if (!holding) return
+    await db.investmentLots.where('assetId').equals(holding.assetId).delete()
+    await db.investmentHoldings.delete(id)
+  })
 }

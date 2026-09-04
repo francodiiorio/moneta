@@ -31,21 +31,22 @@ export const investmentAssetFormSchema = z.object({
 
 export type InvestmentAssetFormValues = z.infer<typeof investmentAssetFormSchema>
 
-export const investmentHoldingFormSchema = z.object({
+export const investmentLotFormSchema = z.object({
   assetId: z.string().min(1, 'Elegí un activo'),
   quantity: z
     .string()
     .min(1, 'Ingresá una cantidad')
     .refine((v) => !v.trim().startsWith('-'), { message: 'La cantidad no puede ser negativa' })
     .refine((v) => /[1-9]/.test(v), { message: 'La cantidad debe ser mayor a cero' }),
-  averageCost: z
+  costPerUnit: z
     .string()
     .optional()
-    .refine((v) => !v || !v.trim().startsWith('-'), { message: 'El costo promedio no puede ser negativo' })
-    .refine((v) => !v || /\d/.test(v), { message: 'Ingresá un costo promedio válido' }),
+    .refine((v) => !v || !v.trim().startsWith('-'), { message: 'El costo no puede ser negativo' })
+    .refine((v) => !v || /\d/.test(v), { message: 'Ingresá un costo válido' }),
+  date: z.string().min(1, 'Ingresá una fecha'),
 })
 
-export type InvestmentHoldingFormValues = z.infer<typeof investmentHoldingFormSchema>
+export type InvestmentLotFormValues = z.infer<typeof investmentLotFormSchema>
 
 export const investmentPriceFormSchema = z.object({
   price: z

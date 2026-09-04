@@ -9,6 +9,7 @@ import type {
   InstallmentPlan,
   InvestmentAsset,
   InvestmentHolding,
+  InvestmentLot,
   Posting,
   RecurringPlan,
   SavingsHolding,
@@ -30,6 +31,7 @@ export interface AllTablesData {
   investmentAssets: InvestmentAsset[]
   investmentHoldings: InvestmentHolding[]
   assetPrices: AssetPrice[]
+  investmentLots: InvestmentLot[]
 }
 
 /** Every table a full backup touches — shared by replaceAllTables and
@@ -50,6 +52,7 @@ function allTables() {
     db.investmentAssets,
     db.investmentHoldings,
     db.assetPrices,
+    db.investmentLots,
   ] as const
 }
 
@@ -68,6 +71,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     investmentAssets,
     investmentHoldings,
     assetPrices,
+    investmentLots,
   ] = await Promise.all([
     db.accounts.toArray(),
     db.categories.toArray(),
@@ -82,6 +86,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     db.investmentAssets.toArray(),
     db.investmentHoldings.toArray(),
     db.assetPrices.toArray(),
+    db.investmentLots.toArray(),
   ])
   return {
     accounts,
@@ -96,6 +101,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     investmentAssets,
     investmentHoldings,
     assetPrices,
+    investmentLots,
     ...(settings !== undefined && { settings }),
   }
 }
@@ -119,6 +125,7 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.investmentAssets.clear(),
       db.investmentHoldings.clear(),
       db.assetPrices.clear(),
+      db.investmentLots.clear(),
     ])
     await Promise.all([
       db.accounts.bulkAdd(data.accounts),
@@ -134,6 +141,7 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.investmentAssets.bulkAdd(data.investmentAssets),
       db.investmentHoldings.bulkAdd(data.investmentHoldings),
       db.assetPrices.bulkAdd(data.assetPrices),
+      db.investmentLots.bulkAdd(data.investmentLots),
     ])
   })
 }
@@ -161,6 +169,7 @@ export interface MergeSummary {
   investmentAssets: MergeCounts
   investmentHoldings: MergeCounts
   assetPrices: MergeCounts
+  investmentLots: MergeCounts
 }
 
 /** Adds only the rows of `incoming` whose id isn't already present in
@@ -241,6 +250,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       investmentAssets,
       investmentHoldings,
       assetPrices,
+      investmentLots,
     ] = await Promise.all([
       addMissing(db.accounts, data.accounts),
       addMissing(db.categories, data.categories),
@@ -252,6 +262,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       addMissing(db.investmentAssets, data.investmentAssets),
       addMissing(db.investmentHoldings, data.investmentHoldings),
       addMissing(db.assetPrices, data.assetPrices),
+      addMissing(db.investmentLots, data.investmentLots),
     ])
 
     if (data.settings && !(await db.settings.get('singleton'))) {
@@ -314,6 +325,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       investmentAssets: { added: investmentAssets.added.length, skipped: investmentAssets.skipped },
       investmentHoldings: { added: investmentHoldings.added.length, skipped: investmentHoldings.skipped },
       assetPrices: { added: assetPrices.added.length, skipped: assetPrices.skipped },
+      investmentLots: { added: investmentLots.added.length, skipped: investmentLots.skipped },
     }
   })
 }

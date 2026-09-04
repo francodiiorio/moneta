@@ -129,9 +129,9 @@ movimientos (efectivo, una caja de ahorro que no concilia). `amount` es el impor
 completo en `currency` — no hay concepto de "postings" ni de historial de movimientos
 para un ahorro, es un valor que se edita directamente.
 
-### InvestmentAsset / InvestmentHolding / AssetPrice
+### InvestmentAsset / InvestmentHolding / InvestmentLot / AssetPrice
 
-Tres entidades separadas a propósito (ver ADR "Modelo de dominio para inversiones" en
+Cuatro entidades separadas a propósito (ver ADR "Modelo de dominio para inversiones" en
 `docs/DECISIONS.md`) — nunca se modela una inversión como si fuera simplemente una
 moneda:
 
@@ -139,23 +139,29 @@ moneda:
   (`investmentAssetTypeSchema`: `etf | stock | cedear | bond | fund | crypto | other`), y
   la moneda en la que cotiza. `priceMode` (`'manual' | 'auto'`) decide si un refresh
   automático de cotizaciones lo toca.
-- **`InvestmentHolding`** es la posición del usuario: cuánto tiene de ese activo.
-  `quantity` es un entero escalado (`domain/decimal/quantity.ts:Quantity`, 8 decimales,
-  mismo espíritu que `Minor` para plata) — nunca un float, porque una cantidad
-  fraccionaria de un activo alimenta un cálculo monetario (`quantity × precio`).
-  **Una sola fila por activo, sin lotes**: `quantity`/`averageCost` son la posición
-  consolidada de hoy, no un historial de compras — comprar más de un activo que ya
-  tenés se hace **editando** esa fila (nueva `quantity` total, nuevo `averageCost`
-  calculado a mano como promedio ponderado), nunca creando una segunda `InvestmentHolding`
-  para el mismo `assetId`. El schema de Dexie no fuerza esto (`assetId` es sólo un
-  índice secundario, no único) — lo garantiza `investments.repo.ts:createInvestmentHolding`
-  con un chequeo dentro de una transacción, y `InvestmentHoldingFormDialog` además saca
-  del selector los activos que ya tienen holding al crear, para que el caso normal ni
-  llegue a intentarlo — ver ADR "'Nueva posición' no ofrece un activo que ya tiene
-  holding" en `docs/DECISIONS.md` (incluye el riesgo residual que sí queda: un backup
-  importado puede traer holdings duplicados, porque el import escribe la tabla directo
-  sin pasar por el repository). Tracking por lote (cada compra con su propia
-  fecha/precio) queda en el backlog.
+- **`InvestmentLot`** es una compra real — cantidad, costo por unidad (opcional, mismo
+  criterio que tenía `averageCost` antes: si no se cargó, no se inventa uno), moneda
+  (denormalizada, mismo patrón que `AssetPrice`) y fecha. Es la fuente de verdad de
+  cuánto tenés de un activo; nunca se edita una posición directo, se agrega/edita/borra
+  una compra — ver ADR "Tracking de inversiones por lote" en `docs/DECISIONS.md`.
+- **`InvestmentHolding`** es un **agregado cacheado**: la suma de los `InvestmentLot`
+  de un activo (cantidad total + costo promedio ponderado —
+  `domain/investments/lots.ts:aggregateLots`), recalculado transaccionalmente cada vez
+  que un lote se crea/edita/borra (`database/repositories/investmentLots.repo.ts`) —
+  nunca escrito a mano desde la UI. `quantity` es un entero escalado
+  (`domain/decimal/quantity.ts:Quantity`, 8 decimales, mismo espíritu que `Minor` para
+  plata) — nunca un float, porque una cantidad fraccionaria de un activo alimenta un
+  cálculo monetario (`quantity × precio`). Sigue siendo la fila que lee todo el resto de
+  la app (`valuateNetWorth`, `getInvestmentHoldingsWithDetails`, los gráficos de
+  Ahorro e Inversiones) — el cambio a lotes no les pidió aprender nada nuevo.
+  **Una sola fila por activo**, igual que antes de que existieran los lotes: el schema
+  de Dexie no lo fuerza (`assetId` es sólo un índice secundario, no único), lo garantiza
+  `investments.repo.ts:createInvestmentHolding` con un chequeo dentro de una transacción
+  — ver ADR "'Nueva posición' no ofrece un activo que ya tiene holding" en
+  `docs/DECISIONS.md` (incluye el riesgo residual que sigue existiendo: un backup
+  importado puede traer holdings o lotes duplicados, porque el import escribe las tablas
+  directo, sin pasar por el repository). Venta con ganancia realizada (consumir lotes
+  por FIFO, en vez de sólo editar la cantidad a mano como hoy) queda en el backlog.
 - **`AssetPrice`** es el precio del activo en una fecha, **append-only**: cada
   actualización (manual o automática) inserta una fila nueva, nunca pisa la anterior — da
   el historial de precios gratis y permite que una carga manual y el último fetch
@@ -217,6 +223,15 @@ investmentHoldings:  id, assetId
 assetPrices:         id, [assetId+date], assetId, date
 ```
 
+**Versión 3** (tracking de inversiones por lote — `investmentLots` es tabla nueva, pero
+**sí** tiene `.upgrade()`: le crea un lote heredado a cada `InvestmentHolding` que ya
+existía, para que de ahí en más todo holding tenga siempre ≥1 lote — ver ADR "Tracking
+de inversiones por lote" en `docs/DECISIONS.md`):
+
+```
+investmentLots:      id, assetId, date
+```
+
 Dexie omite del índice las claves `undefined`, así que el índice compuesto
 `[accountId+date]` sólo contiene postings de cuenta, y `[categoryId+date]` sólo los de
 categoría — eso es lo que permite consultar "todos los postings de esta cuenta,
@@ -231,16 +246,18 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
 - Un cambio de forma (agregar un índice, cambiar un campo) es una versión nueva, con su
   `.upgrade()` si hace falta migrar datos existentes.
 - Bajar `LATEST_VERSION` o reordenar versiones corrompe las bases de usuarios existentes.
-- Agregar una tabla completamente nueva (el caso de la versión 2) no necesita
-  `.upgrade()` — Dexie la crea vacía; sólo hace falta uno si una versión nueva transforma
-  datos que ya existían en una tabla previa.
+- Agregar una tabla completamente nueva **sin** datos previos que migrar (el caso de la
+  versión 2) no necesita `.upgrade()` — Dexie la crea vacía. Una tabla nueva que sí
+  necesita heredar datos de una tabla existente (el caso de la versión 3:
+  `investmentLots` nace poblada con un lote por cada `InvestmentHolding` previo) lleva su
+  propio `.upgrade()`.
 
 ## Formato de backup (independiente del schema de Dexie)
 
 ```jsonc
 {
   "format": "moneta-backup",
-  "version": 2,
+  "version": 3,
   "exportedAt": "2026-08-23T14:03:11.000Z",
   "app": { "name": "moneta", "version": "0.0.0" },
   "checksum": "sha256 hex sobre `data` canonicalizado",
@@ -249,7 +266,7 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
     "recurringPlans": [], "installmentPlans": [], "budgets": [],
     "exchangeRates": [], "settings": {},
     "savingsHoldings": [], "investmentAssets": [], "investmentHoldings": [],
-    "assetPrices": []
+    "assetPrices": [], "investmentLots": []
   }
 }
 ```
@@ -261,7 +278,11 @@ Reglas (ver `src/features/backups/`):
   importarse siempre. Un cambio de formato agrega una versión nueva más su migración
   (`migrations/vN_to_vN+1.ts`). La v2 (patrimonio) migra un v1 agregando las cuatro tablas
   nuevas como arrays vacíos (`migrations/v1_to_v2.ts`) — un `.finance` viejo se sigue
-  pudiendo importar siempre, sólo que sin ahorros/inversiones porque nunca existieron.
+  pudiendo importar siempre, sólo que sin ahorros/inversiones porque nunca existieron. La
+  v3 (tracking por lote) migra un v2 sintetizando un `InvestmentLot` heredado por cada
+  `InvestmentHolding` con cantidad positiva (`migrations/v2_to_v3.ts`) — misma lógica que
+  el `.upgrade()` de Dexie de la versión 3, para el camino de import en vez del de uso
+  normal de la app.
 - `migrateToLatest()` corre la cadena hasta la versión más reciente y falla explícito si
   el archivo es de una versión más nueva que la app instalada (mensaje claro, no un
   crash).

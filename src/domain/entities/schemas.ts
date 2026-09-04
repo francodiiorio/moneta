@@ -234,6 +234,10 @@ export const investmentAssetSchema = z
   })
 export type InvestmentAsset = z.infer<typeof investmentAssetSchema>
 
+// InvestmentHolding.quantity/averageCost son un agregado cacheado de sus
+// InvestmentLot (ver más abajo) — nunca se editan a mano directamente,
+// se recalculan transaccionalmente cada vez que un lote cambia. Ver ADR
+// "Tracking de inversiones por lote" en docs/DECISIONS.md.
 export const investmentHoldingSchema = z.object({
   id,
   assetId: id,
@@ -247,6 +251,23 @@ export const investmentHoldingSchema = z.object({
   updatedAt: isoInstant,
 })
 export type InvestmentHolding = z.infer<typeof investmentHoldingSchema>
+
+// Una compra real de un activo — fecha, cantidad, costo por unidad.
+// InvestmentHolding es la suma de sus lotes; nunca al revés. costPerUnit
+// es opcional con el mismo criterio que InvestmentHolding.averageCost
+// tenía antes: si no se cargó costo, no se inventa uno.
+export const investmentLotSchema = z.object({
+  id,
+  assetId: id,
+  quantity: quantityScaled,
+  costPerUnit: minorAmount.optional(),
+  currency: currencyCode,
+  date: dateStamp,
+  notes: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type InvestmentLot = z.infer<typeof investmentLotSchema>
 
 export const assetPriceSchema = z.object({
   id,

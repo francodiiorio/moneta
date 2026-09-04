@@ -2,7 +2,7 @@ import { readAllTables } from '@/database/repositories/backup.repo'
 import { computeChecksum } from './checksum'
 import { encryptPayload } from './encryption'
 import { BACKUP_FORMAT } from './schemas/v1'
-import type { BackupDataV2, BackupV2 } from './schemas/v2'
+import type { BackupDataV3, BackupV3 } from './schemas/v3'
 import packageJson from '../../../package.json'
 
 export interface ExportedBackup {
@@ -10,9 +10,9 @@ export interface ExportedBackup {
   blob: Blob
 }
 
-export async function buildBackupPayload(): Promise<BackupV2> {
+export async function buildBackupPayload(): Promise<BackupV3> {
   const tables = await readAllTables()
-  const data: BackupDataV2 = {
+  const data: BackupDataV3 = {
     accounts: tables.accounts,
     categories: tables.categories,
     transactions: tables.transactions,
@@ -25,12 +25,13 @@ export async function buildBackupPayload(): Promise<BackupV2> {
     investmentAssets: tables.investmentAssets,
     investmentHoldings: tables.investmentHoldings,
     assetPrices: tables.assetPrices,
+    investmentLots: tables.investmentLots,
     ...(tables.settings !== undefined && { settings: tables.settings }),
   }
   const checksum = await computeChecksum(data)
   return {
     format: BACKUP_FORMAT,
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     app: { name: 'moneta', version: packageJson.version },
     checksum,

@@ -7,49 +7,58 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DateField } from '@/components/DateField'
 import { formatQuantity, quantity } from '@/domain/decimal'
 import { formatMoney, money } from '@/domain/money'
-import type { InvestmentAsset, InvestmentHolding } from '@/domain/entities'
-import { investmentHoldingFormSchema, type InvestmentHoldingFormValues } from '../schema'
-import { createInvestmentHoldingFromForm, updateInvestmentHoldingFromForm } from '../service'
+import type { InvestmentAsset, InvestmentLot } from '@/domain/entities'
+import { todayStamp } from '@/lib/dates'
+import { investmentLotFormSchema, type InvestmentLotFormValues } from '../schema'
+import { createInvestmentLotFromForm, updateInvestmentLotFromForm } from '../service'
 
-interface InvestmentHoldingFormDialogProps {
+interface InvestmentLotFormDialogProps {
   open: boolean
-  /** undefined = create mode, defined = editing that holding. */
-  holding: InvestmentHolding | undefined
+  /** undefined = create mode, defined = editing that lot. */
+  lot: InvestmentLot | undefined
   assets: InvestmentAsset[] | undefined
   /** Sólo los activos que todavía no tienen una posición — son las
-   *  únicas opciones que se pueden elegir al crear una nueva (ver
-   *  `assets` arriba, que sigue haciendo falta completo para resolver
-   *  la moneda del activo ya asignado cuando se está editando).
-   *  Evita el caso real de elegir un activo que ya tiene holding y
-   *  terminar con dos filas separadas para el mismo activo — ver ADR
-   *  "'Nueva posición' no ofrece un activo que ya tiene holding" en
-   *  docs/DECISIONS.md. */
+   *  únicas opciones que se pueden elegir al crear una compra nueva sin
+   *  `initialAssetId` (ver `assets` arriba, que sigue haciendo falta
+   *  completo para resolver la moneda del activo ya asignado al editar
+   *  o al agregar otra compra a una posición existente). Evita el caso
+   *  real de elegir un activo que ya tiene holding y terminar con dos
+   *  filas separadas para el mismo activo — ver ADR "'Nueva posición'
+   *  no ofrece un activo que ya tiene holding" en docs/DECISIONS.md. */
   availableAssets: InvestmentAsset[] | undefined
-  /** Pre-selects this asset in create mode — e.g. opening "Agregar
-   *  posición" from an asset that doesn't have one yet. Ignored while editing. */
+  /** Fija (y bloquea) el activo al crear — agregar otra compra a una
+   *  posición que ya existe, desde InvestmentLotsDialog. Ignorado al
+   *  editar, donde el activo ya viene fijo por el propio `lot`. */
   initialAssetId?: string
   onOpenChange: (open: boolean) => void
 }
 
-function defaultValues(initialAssetId?: string): InvestmentHoldingFormValues {
-  return { assetId: initialAssetId ?? '', quantity: '', averageCost: '' }
+function defaultValues(initialAssetId?: string): InvestmentLotFormValues {
+  return { assetId: initialAssetId ?? '', quantity: '', costPerUnit: '', date: todayStamp() }
 }
 
-export function InvestmentHoldingFormDialog({
+export function InvestmentLotFormDialog({
   open,
-  holding,
+  lot,
   assets,
   availableAssets,
   initialAssetId,
   onOpenChange,
-}: InvestmentHoldingFormDialogProps) {
-  const isEditing = !!holding
-  const selectableAssets = isEditing ? assets : availableAssets
+}: InvestmentLotFormDialogProps) {
+  const isEditing = !!lot
+  // El activo va fijo (y el selector deshabilitado) tanto al editar una
+  // compra existente como al agregar una compra nueva a una posición que
+  // ya existe (initialAssetId) — en ambos casos ese activo ya tiene
+  // holding, así que no está en availableAssets y hace falta la lista
+  // completa para poder mostrarlo igual.
+  const assetLocked = isEditing || initialAssetId !== undefined
+  const selectableAssets = assetLocked ? assets : availableAssets
 
-  const form = useForm<InvestmentHoldingFormValues>({
-    resolver: zodResolver(investmentHoldingFormSchema),
+  const form = useForm<InvestmentLotFormValues>({
+    resolver: zodResolver(investmentLotFormSchema),
     defaultValues: defaultValues(),
   })
   const selectedAssetId = form.watch('assetId')
@@ -57,33 +66,34 @@ export function InvestmentHoldingFormDialog({
 
   useEffect(() => {
     if (!open) return
-    const asset = holding ? assets?.find((a) => a.id === holding.assetId) : undefined
+    const asset = lot ? assets?.find((a) => a.id === lot.assetId) : undefined
     form.reset(
-      holding
+      lot
         ? {
-            assetId: holding.assetId,
-            quantity: formatQuantity(quantity(holding.quantity)),
-            averageCost:
-              holding.averageCost !== undefined && asset
-                ? formatMoney(money(holding.averageCost, asset.currency)).replace(/[^\d,.-]/g, '')
+            assetId: lot.assetId,
+            quantity: formatQuantity(quantity(lot.quantity)),
+            costPerUnit:
+              lot.costPerUnit !== undefined && asset
+                ? formatMoney(money(lot.costPerUnit, asset.currency)).replace(/[^\d,.-]/g, '')
                 : '',
+            date: lot.date,
           }
         : defaultValues(initialAssetId),
     )
-  }, [open, holding, assets, initialAssetId, form])
+  }, [open, lot, assets, initialAssetId, form])
 
-  async function onSubmit(values: InvestmentHoldingFormValues) {
+  async function onSubmit(values: InvestmentLotFormValues) {
     try {
       if (isEditing) {
-        await updateInvestmentHoldingFromForm(holding.id, values)
-        toast.success('Posición actualizada')
+        await updateInvestmentLotFromForm(lot.id, values)
+        toast.success('Compra actualizada')
       } else {
-        await createInvestmentHoldingFromForm(values)
-        toast.success('Posición creada')
+        await createInvestmentLotFromForm(values)
+        toast.success('Compra registrada')
       }
       onOpenChange(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo guardar la posición')
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar la compra')
     }
   }
 
@@ -91,8 +101,8 @@ export function InvestmentHoldingFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Editar posición' : 'Nueva posición'}</DialogTitle>
-          <DialogDescription>Cuánto tenés de un activo que ya cargaste.</DialogDescription>
+          <DialogTitle>{isEditing ? 'Editar compra' : 'Nueva compra'}</DialogTitle>
+          <DialogDescription>Cuánto compraste, a qué costo y cuándo.</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
@@ -103,7 +113,7 @@ export function InvestmentHoldingFormDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Activo</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange} disabled={isEditing}>
+                  <Select value={field.value} onValueChange={field.onChange} disabled={assetLocked}>
                     <FormControl>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Elegí un activo" />
@@ -139,12 +149,10 @@ export function InvestmentHoldingFormDialog({
 
               <FormField
                 control={form.control}
-                name="averageCost"
+                name="costPerUnit"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      Costo promedio {selectedAsset ? `(${selectedAsset.currency})` : ''} (opcional)
-                    </FormLabel>
+                    <FormLabel>Costo por unidad {selectedAsset ? `(${selectedAsset.currency})` : ''} (opcional)</FormLabel>
                     <FormControl>
                       <Input inputMode="decimal" placeholder="0,00" {...field} />
                     </FormControl>
@@ -153,6 +161,20 @@ export function InvestmentHoldingFormDialog({
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="date"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Fecha</FormLabel>
+                  <FormControl>
+                    <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

@@ -42,7 +42,8 @@ import { SavingsRow } from '../components/SavingsRow'
 import { NetWorthDistribution } from '../components/NetWorthDistribution'
 import { InvestmentGainLossChart } from '../components/InvestmentGainLossChart'
 import { InvestmentAssetFormDialog } from '../components/InvestmentAssetFormDialog'
-import { InvestmentHoldingFormDialog } from '../components/InvestmentHoldingFormDialog'
+import { InvestmentLotFormDialog } from '../components/InvestmentLotFormDialog'
+import { InvestmentLotsDialog } from '../components/InvestmentLotsDialog'
 import { InvestmentPriceDialog } from '../components/InvestmentPriceDialog'
 import { InvestmentRow } from '../components/InvestmentRow'
 import { InvestmentAssetRow } from '../components/InvestmentAssetRow'
@@ -65,12 +66,13 @@ export function NetWorthPage() {
     assetDialogOpen,
     openAssetDialog,
     closeAssetDialog,
-    holdingDialogOpen,
-    editingHoldingId,
-    newHoldingAssetId,
-    openCreateHoldingDialog,
-    openEditHoldingDialog,
-    closeHoldingDialog,
+    lotDialogOpen,
+    newLotAssetId,
+    openCreateLotDialog,
+    closeLotDialog,
+    managingLotsAssetId,
+    openManageLotsDialog,
+    closeManageLotsDialog,
     pricingAssetId,
     openPriceDialog,
     closePriceDialog,
@@ -95,7 +97,7 @@ export function NetWorthPage() {
   )
 
   const editingSavings = savings?.find((h) => h.id === editingSavingsId)
-  const editingHolding = holdings?.find((h) => h.holding.id === editingHoldingId)?.holding
+  const managingLotsAsset = assets?.find((a) => a.id === managingLotsAssetId) ?? null
   const pricingAsset = assets?.find((a) => a.id === pricingAssetId) ?? null
   // An asset the user just created has no holding yet, so it never shows
   // up in `holdings` — without this, creating one looked like it silently
@@ -157,10 +159,10 @@ export function NetWorthPage() {
                 {/* Deshabilitado también cuando todo activo ya tiene una
                     posición — nada nuevo que crear ahí, y el selector de
                     "Nueva posición" sólo ofrece activos sin holding
-                    (ver InvestmentHoldingFormDialog) para no terminar con
+                    (ver InvestmentLotFormDialog) para no terminar con
                     dos filas separadas para el mismo activo. */}
                 <DropdownMenuItem
-                  onClick={() => openCreateHoldingDialog()}
+                  onClick={() => openCreateLotDialog()}
                   disabled={!assetsWithoutHolding || assetsWithoutHolding.length === 0}
                 >
                   Nueva posición
@@ -302,7 +304,7 @@ export function NetWorthPage() {
               <InvestmentRow
                 key={item.holding.id}
                 item={item}
-                onEdit={() => openEditHoldingDialog(item.holding.id)}
+                onManageLots={() => openManageLotsDialog(item.asset.id)}
                 onDelete={() => setPendingDelete({ kind: 'holding', id: item.holding.id })}
                 onLoadPrice={() => openPriceDialog(item.asset.id)}
               />
@@ -311,7 +313,7 @@ export function NetWorthPage() {
               <InvestmentAssetRow
                 key={asset.id}
                 asset={asset}
-                onAddHolding={() => openCreateHoldingDialog(asset.id)}
+                onAddHolding={() => openCreateLotDialog(asset.id)}
                 onDelete={() => setPendingDelete({ kind: 'asset', id: asset.id })}
               />
             ))}
@@ -363,13 +365,18 @@ export function NetWorthPage() {
         open={assetDialogOpen}
         onOpenChange={(open) => (open ? undefined : closeAssetDialog())}
       />
-      <InvestmentHoldingFormDialog
-        open={holdingDialogOpen}
-        holding={editingHolding}
+      <InvestmentLotFormDialog
+        open={lotDialogOpen}
+        lot={undefined}
         assets={assets}
         availableAssets={assetsWithoutHolding}
-        {...(newHoldingAssetId !== null && { initialAssetId: newHoldingAssetId })}
-        onOpenChange={(open) => (open ? undefined : closeHoldingDialog())}
+        {...(newLotAssetId !== null && { initialAssetId: newLotAssetId })}
+        onOpenChange={(open) => (open ? undefined : closeLotDialog())}
+      />
+      <InvestmentLotsDialog
+        asset={managingLotsAsset}
+        assets={assets}
+        onOpenChange={(open) => (open ? undefined : closeManageLotsDialog())}
       />
       <InvestmentPriceDialog
         asset={pricingAsset}

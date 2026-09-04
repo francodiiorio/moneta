@@ -160,7 +160,7 @@ test('shows unrealized gain/loss vs. the average cost once both a cost and a pri
   await page.getByLabel('Activo', { exact: true }).click()
   await page.getByRole('option', { name: /SPYT/ }).click()
   await page.getByLabel('Cantidad').fill('5')
-  await page.getByLabel(/Costo promedio/).fill('600')
+  await page.getByLabel(/Costo por unidad/).fill('600')
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
@@ -182,6 +182,83 @@ test('shows unrealized gain/loss vs. the average cost once both a cost and a pri
   await page.getByRole('tab', { name: 'Resumen' }).click()
   await expect(page.getByText('Ganancia/pérdida por posición')).toBeVisible()
   await expect(page.getByText('+8%')).toBeVisible()
+})
+
+test('administrar las compras de una posición recalcula la cantidad y el costo promedio solos', async ({ page }) => {
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('SPY Lotes Test')
+  await page.getByLabel('Símbolo').fill('SPYL')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo', { exact: true }).click()
+  await page.getByRole('option', { name: /SPYL/ }).click()
+  await page.getByLabel('Cantidad').fill('5')
+  await page.getByLabel(/Costo por unidad/).fill('100')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText('5 unidades')).toBeVisible()
+
+  // "Compras" (el lápiz) abre la administración de lotes — agregar una
+  // segunda compra con costo distinto recalcula cantidad y promedio solo,
+  // sin tocar la fila a mano.
+  await page.getByTitle('Compras').click()
+  await expect(page.getByText('Compras de SPYL')).toBeVisible()
+  await page.getByRole('button', { name: 'Agregar compra' }).click()
+  await page.getByLabel('Cantidad').fill('3')
+  await page.getByLabel(/Costo por unidad/).fill('120')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await page.getByRole('button', { name: 'Close' }).click()
+
+  // Costo promedio ponderado: (5*100 + 3*120) / 8 = 107,50 — no se muestra
+  // directo en ningún lado, así que se verifica indirecto vía la
+  // ganancia/pérdida no realizada, que sí lo usa (costBasis = 8*107,50 =
+  // 860; a precio 120, nativeValue = 960 -> +100, +11,63% -> redondea a +12%).
+  await expect(page.getByText('8 unidades')).toBeVisible()
+  await page.getByTitle('Cargar precio').click()
+  await page.getByLabel(/Precio/).fill('120')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText(/\+USD\s?100[.,]00\s?\(\+12%\)/)).toBeVisible()
+})
+
+test('borrar el único lote de una posición hace que la posición desaparezca', async ({ page }) => {
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('SPY Delete Test')
+  await page.getByLabel('Símbolo').fill('SPYD2')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo', { exact: true }).click()
+  await page.getByRole('option', { name: /SPYD2/ }).click()
+  await page.getByLabel('Cantidad').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText('5 unidades')).toBeVisible()
+
+  await page.getByTitle('Compras').click()
+  await expect(page.getByText('Compras de SPYD2')).toBeVisible()
+  await page.getByRole('button', { name: 'Eliminar compra' }).click()
+  await page.getByRole('button', { name: 'Eliminar' }).click()
+
+  // Sin lotes, el diálogo (que sigue abierto — borrar el lote no borra
+  // el activo) muestra su propio estado vacío.
+  await expect(page.getByText('Todavía no hay compras cargadas.')).toBeVisible()
+
+  // Al cerrar, la posición desapareció por completo — el activo vuelve a
+  // mostrarse como "Sin posición cargada" en la lista de Inversiones.
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByText('Sin posición cargada')).toBeVisible()
 })
 
 test('/ajustes/tasas redirects to Ahorro e Inversiones, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {

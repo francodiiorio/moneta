@@ -8,12 +8,14 @@ import type {
   InstallmentPlan,
   InvestmentAsset,
   InvestmentHolding,
+  InvestmentLot,
   Posting,
   RecurringPlan,
   SavingsHolding,
   Settings,
   Transaction,
 } from '@/domain/entities'
+import { generateId } from '@/lib/ids'
 
 /**
  * IndexedDB is the source of truth during normal use. The `.finance`
@@ -37,6 +39,7 @@ export class MonetaDatabase extends Dexie {
   investmentAssets!: EntityTable<InvestmentAsset, 'id'>
   investmentHoldings!: EntityTable<InvestmentHolding, 'id'>
   assetPrices!: EntityTable<AssetPrice, 'id'>
+  investmentLots!: EntityTable<InvestmentLot, 'id'>
 
   constructor(name = 'moneta') {
     super(name)
@@ -59,6 +62,34 @@ export class MonetaDatabase extends Dexie {
       investmentHoldings: 'id, assetId',
       assetPrices: 'id, [assetId+date], assetId, date',
     })
+    // Tracking de inversiones por lote — ver ADR "Tracking de inversiones
+    // por lote" en docs/DECISIONS.md. InvestmentHolding.quantity/averageCost
+    // pasan a ser un agregado cacheado de sus InvestmentLot, nunca editado
+    // a mano — este .upgrade() le crea un lote heredado a cada holding que
+    // ya existía, para que de acá en más todo holding tenga siempre ≥1 lote.
+    this.version(3)
+      .stores({ investmentLots: 'id, assetId, date' })
+      .upgrade(async (tx) => {
+        const holdings = await tx.table<InvestmentHolding>('investmentHoldings').toArray()
+        const assets = await tx.table<InvestmentAsset>('investmentAssets').toArray()
+        const assetById = new Map(assets.map((a) => [a.id, a]))
+        const lots: InvestmentLot[] = holdings
+          .filter((h) => h.quantity > 0)
+          .map((h) => ({
+            id: generateId(),
+            assetId: h.assetId,
+            quantity: h.quantity,
+            // Un holding sin su asset no debería existir (deleteInvestmentAsset
+            // lo bloquea), pero un .upgrade() corre sobre datos reales de
+            // producción y nunca debe poder tirar por un dato inconsistente.
+            currency: assetById.get(h.assetId)?.currency ?? 'ARS',
+            date: h.createdAt.slice(0, 10),
+            createdAt: h.createdAt,
+            updatedAt: h.createdAt,
+            ...(h.averageCost !== undefined && { costPerUnit: h.averageCost }),
+          }))
+        await tx.table('investmentLots').bulkAdd(lots)
+      })
   }
 }
 

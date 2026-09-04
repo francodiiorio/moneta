@@ -21,6 +21,7 @@ afterEach(async () => {
     db.investmentAssets.clear(),
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
+    db.investmentLots.clear(),
   ])
 })
 
@@ -153,6 +154,17 @@ async function seedFullDatabase() {
     updatedAt: now,
   })
 
+  await db.investmentLots.add({
+    id: generateId(),
+    assetId: asset.id,
+    quantity: 500_000_000,
+    costPerUnit: 65_000_00,
+    currency: 'USD',
+    date: '2026-07-20',
+    createdAt: now,
+    updatedAt: now,
+  })
+
   await db.assetPrices.add({
     id: generateId(),
     assetId: asset.id,
@@ -202,6 +214,7 @@ async function snapshotAllTables() {
     investmentAssets: sortById(await db.investmentAssets.toArray()),
     investmentHoldings: sortById(await db.investmentHoldings.toArray()),
     assetPrices: sortById(await db.assetPrices.toArray()),
+    investmentLots: sortById(await db.investmentLots.toArray()),
     settings: await db.settings.get('singleton'),
   }
 }
@@ -221,6 +234,7 @@ async function clearAllTables() {
     db.investmentAssets.clear(),
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
+    db.investmentLots.clear(),
   ])
 }
 
@@ -402,6 +416,7 @@ describe('backup round-trip — merge', () => {
       investmentAssets: { added: 1, skipped: 0 },
       investmentHoldings: { added: 1, skipped: 0 },
       assetPrices: { added: 1, skipped: 0 },
+      investmentLots: { added: 1, skipped: 0 },
     })
 
     const accountIds = (await db.accounts.toArray()).map((a) => a.id).sort()
@@ -434,6 +449,7 @@ describe('backup round-trip — merge', () => {
       investmentAssets: { added: 0, skipped: 1 },
       investmentHoldings: { added: 0, skipped: 1 },
       assetPrices: { added: 0, skipped: 1 },
+      investmentLots: { added: 0, skipped: 1 },
     })
     expect(await db.transactions.count()).toBe(countBefore)
   })
@@ -465,6 +481,7 @@ describe('migration — v1 to v2', () => {
     expect(migrated.investmentAssets).toEqual([])
     expect(migrated.investmentHoldings).toEqual([])
     expect(migrated.assetPrices).toEqual([])
+    expect(migrated.investmentLots).toEqual([])
   })
 
   it('importing a v1 .finance file (via importBackup) lands with the patrimonio tables empty', async () => {
@@ -493,5 +510,87 @@ describe('migration — v1 to v2', () => {
     expect(await db.investmentAssets.count()).toBe(0)
     expect(await db.investmentHoldings.count()).toBe(0)
     expect(await db.assetPrices.count()).toBe(0)
+    expect(await db.investmentLots.count()).toBe(0)
+  })
+})
+
+describe('migration — v2 to v3', () => {
+  function v2PayloadWithHolding(holding: { quantity: number; averageCost?: number }) {
+    return {
+      format: 'moneta-backup' as const,
+      version: 2 as const,
+      exportedAt: new Date().toISOString(),
+      app: { name: 'moneta', version: '0.0.0' },
+      checksum: 'irrelevant-for-this-test',
+      data: {
+        accounts: [],
+        categories: [],
+        transactions: [],
+        postings: [],
+        recurringPlans: [],
+        installmentPlans: [],
+        budgets: [],
+        exchangeRates: [],
+        savingsHoldings: [],
+        investmentAssets: [
+          {
+            id: 'asset1',
+            name: 'SPY',
+            type: 'etf' as const,
+            currency: 'USD',
+            priceMode: 'manual' as const,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        investmentHoldings: [
+          {
+            id: 'holding1',
+            assetId: 'asset1',
+            createdAt: '2026-02-15T12:00:00.000Z',
+            updatedAt: '2026-02-15T12:00:00.000Z',
+            ...holding,
+          },
+        ],
+        assetPrices: [],
+      },
+    }
+  }
+
+  it('grandfathers a pre-existing holding into one inherited lot', () => {
+    const migrated = migrateToLatest(v2PayloadWithHolding({ quantity: 500_000_000, averageCost: 60000 }))
+
+    expect(migrated.investmentLots).toHaveLength(1)
+    expect(migrated.investmentLots[0]).toMatchObject({
+      assetId: 'asset1',
+      quantity: 500_000_000,
+      costPerUnit: 60000,
+      currency: 'USD',
+      date: '2026-02-15',
+    })
+  })
+
+  it('inherits a lot with no cost when the holding never had one', () => {
+    const migrated = migrateToLatest(v2PayloadWithHolding({ quantity: 500_000_000 }))
+
+    expect(migrated.investmentLots).toHaveLength(1)
+    expect(migrated.investmentLots[0]?.costPerUnit).toBeUndefined()
+  })
+
+  it('creates no lot for a zero-quantity holding', () => {
+    const migrated = migrateToLatest(v2PayloadWithHolding({ quantity: 0 }))
+
+    expect(migrated.investmentLots).toEqual([])
+  })
+
+  it('importing a v2 .finance file with a holding lands with its inherited lot in Dexie', async () => {
+    const payload = v2PayloadWithHolding({ quantity: 500_000_000, averageCost: 60000 })
+    const file = new File([JSON.stringify(payload)], 'old-v2.finance', { type: 'application/json' })
+
+    await importBackup(file)
+
+    const lots = await db.investmentLots.toArray()
+    expect(lots).toHaveLength(1)
+    expect(lots[0]).toMatchObject({ assetId: 'asset1', quantity: 500_000_000, costPerUnit: 60000 })
   })
 })
