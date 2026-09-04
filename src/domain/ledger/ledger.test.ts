@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { minor, money } from '@/domain/money'
-import { buildExpense, buildFxTransfer, buildIncome, buildTransfer } from './builders'
+import { buildExpense, buildFxTransfer, buildIncome, buildInvestmentPurchase, buildTransfer } from './builders'
 import { validateLedgerEntry } from './invariants'
 import { calculateAccountBalance } from './balance'
 
@@ -23,6 +23,24 @@ describe('buildExpense', () => {
     expect(entry.postings).toEqual([
       { target: 'account', accountId: 'bank-ars', amount: -1050, currency: 'ARS' },
       { target: 'category', categoryId: 'food', amount: 1050, currency: 'ARS' },
+    ])
+    expect(() => validateLedgerEntry(entry, accountCurrencies)).not.toThrow()
+  })
+})
+
+describe('buildInvestmentPurchase', () => {
+  it('debits the account and credits the investment category, kind investment — same shape as an expense', () => {
+    const entry = buildInvestmentPurchase({
+      date: '2026-08-23',
+      description: 'Compra SPY',
+      accountId: 'bank-ars',
+      categoryId: 'category-investment-purchases',
+      amount: money(50_000_00, 'ARS'),
+    })
+    expect(entry.kind).toBe('investment')
+    expect(entry.postings).toEqual([
+      { target: 'account', accountId: 'bank-ars', amount: -50_000_00, currency: 'ARS' },
+      { target: 'category', categoryId: 'category-investment-purchases', amount: 50_000_00, currency: 'ARS' },
     ])
     expect(() => validateLedgerEntry(entry, accountCurrencies)).not.toThrow()
   })

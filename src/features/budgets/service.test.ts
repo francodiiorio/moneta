@@ -5,7 +5,7 @@ import { createBudget, deleteBudget } from '@/database/repositories/budgets.repo
 import { createCategory } from '@/database/repositories/categories.repo'
 import { createExchangeRate } from '@/database/repositories/exchangeRates.repo'
 import { saveTransaction } from '@/database/repositories/transactions.repo'
-import { buildExpense } from '@/domain/ledger'
+import { buildExpense, buildInvestmentPurchase } from '@/domain/ledger'
 import { minor, money } from '@/domain/money'
 import { getBudgetsWithProgress } from './service'
 
@@ -37,6 +37,30 @@ describe('getBudgetsWithProgress', () => {
     expect(items[0]!.progress.actual).toEqual(money(4_000, 'ARS'))
     expect(items[0]!.progress.percentUsed).toBe(40)
     expect(missingRateCount).toBe(0)
+  })
+
+  // Regression: getBudgetsWithProgress reuses getExpenseByCategoryInRange
+  // for its "spent so far" number, which filters strictly on
+  // transaction.kind === 'expense' — a kind: 'investment' transaction
+  // posting against the SAME category never counts against a budget on
+  // it, no matter how the money's categorized. See ADR "Una compra de
+  // inversión no es un gasto".
+  it('does not count an investment purchase against a budget on the same category', async () => {
+    const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+    const investmentCat = await createCategory({ name: 'Compra de inversiones', kind: 'expense' })
+    await createBudget({ categoryId: investmentCat.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
+    await saveTransaction(
+      buildInvestmentPurchase({
+        date: '2026-08-05',
+        description: 'Compra SPY',
+        accountId: account.id,
+        categoryId: investmentCat.id,
+        amount: money(50_000, 'ARS'),
+      }),
+    )
+
+    const { items } = await getBudgetsWithProgress('2026-08')
+    expect(items[0]!.progress.actual).toEqual(money(0, 'ARS'))
   })
 
   it('carries the category\'s color/icon, omitting them when unset', async () => {

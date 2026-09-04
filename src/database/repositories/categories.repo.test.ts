@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '../db'
 import {
   createCategory,
+  getOrCreateInvestmentCategory,
+  INVESTMENT_CATEGORY_ID,
+  INVESTMENT_CATEGORY_NAME,
   listCategories,
   moveCategory,
   seedDefaultsIfEmpty,
@@ -178,5 +181,39 @@ describe('seedDefaultsIfEmpty', () => {
     await seedDefaultsIfEmpty()
     const categories = await listCategories()
     expect(categories).toEqual([expect.objectContaining({ name: 'Mi categoría' })])
+  })
+})
+
+describe('getOrCreateInvestmentCategory', () => {
+  it('creates it archived, at the fixed id, with the fixed name', async () => {
+    const category = await getOrCreateInvestmentCategory()
+    expect(category).toMatchObject({
+      id: INVESTMENT_CATEGORY_ID,
+      name: INVESTMENT_CATEGORY_NAME,
+      kind: 'expense',
+      isArchived: true,
+    })
+  })
+
+  it('is idempotent — a second call returns the same row instead of creating another', async () => {
+    const first = await getOrCreateInvestmentCategory()
+    const second = await getOrCreateInvestmentCategory()
+    expect(second.id).toBe(first.id)
+    expect(await db.categories.count()).toBe(1)
+  })
+
+  // Regression: DEFAULT_CATEGORIES already seeds an income category also
+  // named "Inversiones" — a name-based lookup would collide with it (or
+  // create a second, ambiguous "Inversiones"). The fixed id sidesteps
+  // that entirely; this confirms both coexist without interference.
+  it('coexists with the seeded income "Inversiones" category without colliding', async () => {
+    await seedDefaultsIfEmpty()
+    const investmentCategory = await getOrCreateInvestmentCategory()
+
+    const all = await listCategories()
+    const seededIncome = all.find((c) => c.name === 'Inversiones' && c.kind === 'income')
+    expect(seededIncome).toBeDefined()
+    expect(seededIncome?.id).not.toBe(investmentCategory.id)
+    expect(investmentCategory).toMatchObject({ id: INVESTMENT_CATEGORY_ID, name: INVESTMENT_CATEGORY_NAME })
   })
 })

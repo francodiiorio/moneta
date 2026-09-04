@@ -44,6 +44,13 @@ postings genera cada builder de `src/domain/ledger/builders.ts`:
 - **Transferencia cross-currency**: igual, pero cada posting está en la moneda de su
   cuenta y la `Transaction` lleva `fx: { rate, from, to }` para poder verificar que las
   dos puntas se corresponden.
+- **Compra de inversión** (`buildInvestmentPurchase`, opcional al cargar una compra en
+  Ahorro e Inversiones): misma forma de postings que un gasto (cuenta negativa +
+  categoría positiva), pero `kind: 'investment'` — Reportes y Presupuestos filtran por
+  `Transaction.kind`, nunca por el `kind` de la categoría, así que un gasto real y una
+  compra de inversión nunca se mezclan aunque ambos posteen contra una categoría. La
+  categoría contrapartida es fija y archivada (`INVESTMENT_CATEGORY_ID` en
+  `categories.repo.ts`) — ver ADR "Una compra de inversión no es un gasto".
 
 Un `Posting` es de cuenta (`target: 'account'`, `accountId` seteado, `categoryId` no) o
 de categoría (al revés) — nunca ambos ni ninguno. Esto se valida en
@@ -144,6 +151,11 @@ moneda:
   (denormalizada, mismo patrón que `AssetPrice`) y fecha. Es la fuente de verdad de
   cuánto tenés de un activo; nunca se edita una posición directo, se agrega/edita/borra
   una compra — ver ADR "Tracking de inversiones por lote" en `docs/DECISIONS.md`.
+  `transactionId` (opcional, no indexado) referencia el movimiento del ledger que
+  descontó la compra de una cuenta — sólo si se eligió "Cuenta de origen" al crearla
+  (no editable después). Se resincroniza si se edita cantidad, costo o fecha de la
+  compra; nunca se crea/cambia/borra al editar — ver ADR "Una compra de inversión no
+  es un gasto".
 - **`InvestmentHolding`** es un **agregado cacheado**: la suma de los `InvestmentLot`
   de un activo (cantidad total + costo promedio ponderado —
   `domain/investments/lots.ts:aggregateLots`), recalculado transaccionalmente cada vez
@@ -251,6 +263,11 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
   necesita heredar datos de una tabla existente (el caso de la versión 3:
   `investmentLots` nace poblada con un lote por cada `InvestmentHolding` previo) lleva su
   propio `.upgrade()`.
+- Un campo nuevo **no indexado** en una tabla ya existente (el caso de
+  `InvestmentLot.transactionId`, agregado sin una versión nueva) no necesita tocar
+  `db.ts` en absoluto — Dexie no sabe ni le importa qué campos no indexados tiene cada
+  fila. Sólo hace falta una versión nueva (con su `.stores()`) cuando cambia qué queda
+  **indexado**.
 
 ## Formato de backup (independiente del schema de Dexie)
 
@@ -283,6 +300,12 @@ Reglas (ver `src/features/backups/`):
   `InvestmentHolding` con cantidad positiva (`migrations/v2_to_v3.ts`) — misma lógica que
   el `.upgrade()` de Dexie de la versión 3, para el camino de import en vez del de uso
   normal de la app.
+- No todo cambio de forma necesita una versión de backup nueva: ensanchar un enum
+  compartido por import (no copia congelada) — `transactionKindSchema` ganando
+  `'investment'`, o antes `investmentAssetTypeSchema` ganando `'cedear'` — o agregar un
+  campo opcional a una entidad ya versionada (`InvestmentLot.transactionId`) son cambios
+  puramente aditivos: un `.finance` viejo se sigue importando exactamente igual, porque
+  `schemas/v2.ts`/`v3.ts` referencian esos tipos de dominio en vez de copiarlos.
 - `migrateToLatest()` corre la cadena hasta la versión más reciente y falla explícito si
   el archivo es de una versión más nueva que la app instalada (mensaje claro, no un
   crash).

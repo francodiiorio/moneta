@@ -57,8 +57,12 @@ function defaultValues(): RecurringPlanFormValues {
 function planToFormValues(plan: RecurringPlan): RecurringPlanFormValues {
   const { template, rule } = plan
   // A plan's template is only ever built by createRecurringPlanFromForm,
-  // which never accepts 'adjustment' — see buildTemplateEntry in service.ts.
-  invariant(template.kind !== 'adjustment', `Un recurrente no puede tener kind: ${template.kind}`)
+  // which never accepts 'adjustment' or 'investment' — see
+  // buildTemplateEntry in service.ts.
+  invariant(
+    template.kind !== 'adjustment' && template.kind !== 'investment',
+    `Un recurrente no puede tener kind: ${template.kind}`,
+  )
   return {
     description: template.description,
     kind: template.kind,

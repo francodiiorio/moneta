@@ -6,4 +6,8 @@ export const RECURRING_KIND_ICONS: Record<RecurringPlanListItem['kind'], LucideI
   income: ArrowUpCircle,
   transfer: ArrowLeftRight,
   adjustment: ArrowLeftRight,
+  // Unreachable in practice — a recurring plan can never generate a
+  // 'investment' transaction (buildTemplateEntry rejects it), same as
+  // 'adjustment'. Only here to satisfy the exhaustive Record.
+  investment: ArrowLeftRight,
 }

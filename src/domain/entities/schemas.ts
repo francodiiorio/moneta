@@ -41,7 +41,14 @@ export const categorySchema = z.object({
 })
 export type Category = z.infer<typeof categorySchema>
 
-export const transactionKindSchema = z.enum(['income', 'expense', 'transfer', 'adjustment'])
+// 'investment': una compra de inversión pagada desde una cuenta — misma
+// forma de postings que 'expense' (cuenta - / categoría +), pero un kind
+// distinto la deja afuera de "Gasto por categoría" y Presupuestos sin
+// ningún caso especial de filtrado (ambos filtran por Transaction.kind,
+// nunca por el kind de la categoría). Ver domain/ledger/builders.ts:
+// buildInvestmentPurchase y el ADR "Una compra de inversión no es un
+// gasto" en docs/DECISIONS.md.
+export const transactionKindSchema = z.enum(['income', 'expense', 'transfer', 'adjustment', 'investment'])
 export const transactionStatusSchema = z.enum(['confirmed', 'projected'])
 
 export const transactionFxSchema = z.object({
@@ -281,6 +288,12 @@ export const investmentLotSchema = z.object({
   currency: currencyCode,
   date: dateStamp,
   notes: z.string().optional(),
+  // Movimiento del ledger que descontó esta compra de una cuenta — sólo
+  // si se eligió "Cuenta de origen" al crearla. Se resincroniza (monto y
+  // fecha) si se edita cantidad/costo/fecha de la compra; nunca se
+  // crea/cambia/borra al editar. Ver ADR "Una compra de inversión no es
+  // un gasto" en docs/DECISIONS.md.
+  transactionId: id.optional(),
   createdAt: isoInstant,
   updatedAt: isoInstant,
 })

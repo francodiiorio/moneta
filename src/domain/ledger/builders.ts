@@ -45,6 +45,28 @@ export function buildIncome(
   }
 }
 
+/** Compra de una inversión pagada desde una cuenta: sale la plata de la
+ *  cuenta, entra a la categoría-contrapartida fija "Compra de
+ *  inversiones" — misma forma que buildExpense, pero kind: 'investment'
+ *  la deja afuera de Gasto por categoría y Presupuestos sin ningún caso
+ *  especial (los dos filtran por Transaction.kind, nunca por el kind de
+ *  la categoría). Ver ADR "Una compra de inversión no es un gasto" en
+ *  docs/DECISIONS.md. */
+export function buildInvestmentPurchase(
+  params: BaseParams & { accountId: string; categoryId: string; amount: Money },
+): LedgerEntryDraft {
+  const { accountId, categoryId, amount, ...base } = params
+  return {
+    ...base,
+    kind: 'investment',
+    status: base.status ?? 'confirmed',
+    postings: [
+      { target: 'account', accountId, amount: negate(amount).amount, currency: amount.currency },
+      { target: 'category', categoryId, amount: amount.amount, currency: amount.currency },
+    ],
+  }
+}
+
 /** Same-currency transfer between two accounts. */
 export function buildTransfer(
   params: BaseParams & { fromAccountId: string; toAccountId: string; amount: Money },

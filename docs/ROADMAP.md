@@ -161,6 +161,21 @@ historial propio, a diferencia de `AssetPrice`/`ExchangeRate`). Ver ADR "Evoluci
 patrimonio: cantidades de hoy, precios de cada mes" en `docs/DECISIONS.md` para el porqué
 y el costo aceptado de esa aproximación.
 
+**Cerrado después: una compra de inversión puede descontar una cuenta, sin contar como
+gasto.** Cargar una compra en Ahorro e Inversiones nunca tocaba ninguna `Cuenta` — el
+usuario notó que la única forma de reflejar el efectivo gastado era cargarlo a mano como
+"Gasto" en Movimientos, inflando sus reportes de gasto y sus Presupuestos (comprar una
+inversión no es consumo). Nuevo `kind: 'investment'` de transacción (misma forma de
+postings que un gasto, cuenta - / categoría +) — Reportes y Presupuestos ya filtran
+estrictamente por `transaction.kind`, así que queda afuera de los dos sin ningún código
+de filtrado nuevo. Campo opcional "Cuenta de origen" al cargar una compra
+(`InvestmentLotFormDialog`, sólo al crear, misma moneda que el activo): si se completa,
+genera el movimiento solo y guarda el vínculo (`InvestmentLot.transactionId`); editar
+cantidad/costo/fecha de la compra resincroniza ese movimiento en vez de dejarlo
+desactualizado. Borrar la compra ofrece la opción explícita de borrar también el
+movimiento (destildada por default, mismo patrón que borrar un recurrente). Ver ADR "Una
+compra de inversión no es un gasto" en `docs/DECISIONS.md`.
+
 ## Backlog / no priorizado
 
 - ~~Code-splitting por ruta~~ (hecho) — `src/app/router.tsx` usa `lazy` de React Router
@@ -214,6 +229,11 @@ y el costo aceptado de esa aproximación.
   reporte de ganancia realizada es una feature bastante más grande que sólo se justifica
   si hace falta esa precisión fiscal/contable — alcance explícitamente confirmado con el
   usuario al encarar el tracking por lote (ver mismo ADR arriba).
+- Compra de inversión pagada desde una cuenta en otra moneda — hoy la "Cuenta de origen"
+  al cargar una compra sólo ofrece cuentas en la misma moneda que el activo (sin FX). Si
+  hace falta pagar un activo en ARS desde una cuenta en USD (o viceversa), habría que
+  extender `buildInvestmentPurchase` con una pata `fx` igual que `buildFxTransfer` — ver
+  ADR "Una compra de inversión no es un gasto" en `docs/DECISIONS.md`.
 - ~~Informe mensual exportable~~ (hecho) — `/reportes/informe/:month`, una "foto" de un
   mes (cerrado o en curso): ingresos/gastos/balance, gasto por categoría, y patrimonio de
   ese mes si hay algo registrado. Exporta a PDF vía el diálogo de impresión nativo del

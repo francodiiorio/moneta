@@ -41,6 +41,42 @@ export async function listCategories(): Promise<Category[]> {
   return db.categories.orderBy('order').toArray()
 }
 
+/** Id literal, no generateId() — es la única forma de reencontrar esta
+ *  categoría que sobrevive a que el usuario la renombre (buscar por
+ *  nombre no: DEFAULT_CATEGORIES ya siembra una "Inversiones" propia,
+ *  de kind 'income', con la que un lookup por nombre chocaría). */
+export const INVESTMENT_CATEGORY_ID = 'category-investment-purchases'
+export const INVESTMENT_CATEGORY_NAME = 'Compra de inversiones'
+
+/** Contrapartida fija de toda compra de inversión pagada desde una
+ *  cuenta (domain/ledger:buildInvestmentPurchase). Nace archivada para
+ *  no aparecer en el selector de categorías de un Gasto manual ni en el
+ *  de Presupuestos (los dos filtran `!isArchived`) — sí en el filtro de
+ *  Movimientos, que no filtra archivadas, justo donde conviene poder
+ *  encontrar estas compras. No pasa por createCategory() porque esa
+ *  fuerza `isArchived: false`. Ver ADR "Una compra de inversión no es un
+ *  gasto" en docs/DECISIONS.md. */
+export async function getOrCreateInvestmentCategory(): Promise<Category> {
+  return db.transaction('rw', db.categories, async () => {
+    const existing = await db.categories.get(INVESTMENT_CATEGORY_ID)
+    if (existing) return existing
+
+    const now = new Date().toISOString()
+    const maxOrder = await db.categories.orderBy('order').last()
+    const category: Category = {
+      id: INVESTMENT_CATEGORY_ID,
+      name: INVESTMENT_CATEGORY_NAME,
+      kind: 'expense',
+      order: (maxOrder?.order ?? -1) + 1,
+      isArchived: true,
+      createdAt: now,
+      updatedAt: now,
+    }
+    await db.categories.add(category)
+    return category
+  })
+}
+
 async function assertValidParent(parentId: string | undefined, kind: Category['kind']): Promise<void> {
   if (!parentId) return
   const parent = await db.categories.get(parentId)

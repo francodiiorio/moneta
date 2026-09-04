@@ -54,6 +54,7 @@ function buildTemplateEntry(
       invariant(template.toAccountId, 'La plantilla de una transferencia recurrente necesita toAccountId')
       return buildTransfer({ ...base, fromAccountId: template.accountId, toAccountId: template.toAccountId, amount })
     case 'adjustment':
+    case 'investment':
       throw new Error(`Los recurrentes no soportan kind: ${template.kind}`)
   }
 }

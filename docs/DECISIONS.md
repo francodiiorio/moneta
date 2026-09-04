@@ -880,3 +880,118 @@ agregado (`aggregateLots`) daría un promedio ponderado silenciosamente mal calc
 vez de un error. Se agregó el `invariant` que el comentario ya prometía, para que ese
 caso falle fuerte en vez de corromper un cálculo en silencio — coherente con la regla
 general del repo de invariantes ruidosos sobre corrección silenciosa.
+
+## Una compra de inversión no es un gasto: `kind: 'investment'` + cuenta de origen opcional
+
+**Problema:** cargar una compra en Ahorro e Inversiones (`InvestmentLot`) nunca tocó el
+ledger — son dos sistemas separados por diseño (ver ADR "Ahorro e Inversiones deja de
+incluir Cuentas"). El usuario notó el problema real que eso genera: para que el saldo de
+su cuenta refleje la plata gastada en un CEDEAR, tenía que cargar el movimiento a mano,
+por separado, sin nada que lo vincule a la compra real — y si lo cargaba como "Gasto"
+(lo único que existía para "sacar plata de una cuenta con categoría"), inflaba sus
+reportes de "Gasto por categoría" y sus Presupuestos, porque comprar una inversión no es
+consumo, es convertir efectivo en otro activo.
+
+**Cómo lo resuelven otras apps:** YNAB separa cuentas de presupuesto de cuentas de
+seguimiento (mover plata a una de seguimiento es una transferencia, nunca gasto
+presupuestado); Mint/Copilot/Monarch categorizan la compra como "Transferencia", un tipo
+ya excluido de gasto; Beancount (partida doble pura) la modela con una pata de "cantidad
+de un activo" en vez de dinero — la más correcta en teoría, pero exige que el ledger
+entienda algo más que `Money`, una reescritura mucho más grande (schema de posting,
+invariantes, backup, cálculo de balance) que no se justifica para este caso.
+
+**Decisión:** un quinto `kind` de transacción, `'investment'`, con la misma forma
+interna que un gasto (2 postings: cuenta negativa + categoría positiva), pero un `kind`
+distinto. `features/reports/service.ts` y `features/budgets/service.ts` filtran
+estrictamente por `transaction.kind === 'expense'` — nunca por el `kind` de la
+categoría — así que un movimiento `kind: 'investment'` queda automáticamente afuera de
+"Gasto por categoría" y de Presupuestos, sin ningún caso especial de filtrado nuevo.
+Mismo mecanismo que ya excluye una transferencia hoy.
+
+La contrapartida tiene que ser una categoría real porque `postingTargetSchema` sólo
+admite `'account' | 'category'` — no existe una pata de posting para "cantidad de un
+activo" (esa sería la solución a lo Beancount, deliberadamente fuera de alcance). Es una
+categoría **fija, con id literal** (`INVESTMENT_CATEGORY_ID` en `categories.repo.ts`) y
+**nace archivada**: `DEFAULT_CATEGORIES` ya siembra una categoría "Inversiones" con
+`kind: 'income'` — buscar por nombre chocaría con esa o crearía una segunda ambigua. Se
+usa un nombre distinto, "Compra de inversiones", con id fijo (sobrevive a que el
+usuario la renombre; buscar por nombre no) y `isArchived: true` desde que se crea, así
+nunca aparece en el selector de categorías de un Gasto manual ni en el de Presupuestos
+(los dos filtran `!isArchived`) — sí en el filtro de Movimientos, que no filtra
+archivadas, justo donde conviene poder encontrar estas compras. Nada impide postear
+contra una categoría archivada — `validateLedgerEntry` ni siquiera lee la tabla de
+categorías.
+
+`domain/entities/schemas.ts` expone `AUTO_PRICE_ASSET_TYPES`-style: el conjunto
+`transactionKindSchema` se ensancha de forma aditiva (mismo criterio ya usado esta
+sesión para `'cedear'`) y `investmentLotSchema` gana `transactionId: id.optional()` —
+ninguno de los dos pisa un schema de backup ya publicado (`v2.ts`/`v3.ts` los
+referencian por import, no copia congelada).
+
+**Restricciones de v1, explícitas:**
+- **Sin FX**: la cuenta de origen tiene que estar en la misma moneda que el activo — el
+  selector del formulario sólo ofrece esas cuentas. Sin ninguna en esa moneda, el campo
+  queda sin opciones y se sigue pudiendo cargar la compra sin cuenta (el flujo manual de
+  siempre).
+- **Sólo al crear**: no se puede agregar/cambiar la cuenta de origen de una compra ya
+  cargada. Corregir una cuenta equivocada implica borrar la compra (con la opción de
+  borrar también el movimiento) y cargarla de nuevo.
+- **Se resincroniza al editar**: editar cantidad, costo o fecha de una compra con
+  movimiento vinculado actualiza ese movimiento (mismo monto y fecha recalculados,
+  mismo `transactionId` — `writeLedgerEntry`'s `existingId` reemplaza sus postings
+  wholesale). Deliberado: dejar el movimiento desactualizado sería no mejor que la
+  doble carga manual que esta feature reemplaza. Vaciar el costo de una compra con
+  vínculo se rechaza con un error explícito en vez de dejar un movimiento sin sentido.
+- **El movimiento no se edita directo desde Movimientos** — mismo trato que ya tenía
+  `kind: 'adjustment'` (dormant desde antes de esta feature): `editableKind` en
+  `TransactionsPage.tsx` ya excluye cualquier `kind` fuera de
+  `expense/income/transfer`, sin código nuevo. Para cambiarlo hay que editar/borrar la
+  compra. "Eliminar" sí queda disponible — si se borra desde Movimientos, la compra
+  queda con un `transactionId` colgando, mismo nivel de tolerancia ya aceptado para un
+  `sourcePlanId` apuntando a un plan borrado.
+- Un costo explícito de cero no genera movimiento (nada que descontar) — el lote lo
+  registra igual, consistente con "costed, not missing" de `aggregateLots`.
+- `deleteInvestmentHolding` (borra todos los lotes de un activo de una) no cascadea a
+  sus movimientos vinculados — mismo motivo que el borrado de un lote individual: la
+  plata realmente salió de la cuenta.
+- Un merge de backup entre dos dispositivos no garantiza que un lote con
+  `transactionId` traiga también su transacción — mismo nivel de tolerancia que otras
+  referencias huérfanas ya documentadas en "Merge de backup: la base local siempre
+  gana".
+
+**Descartado:** una cuenta ficticia tipo "Bróker" (`Account.type: 'investment'`, que ya
+existe en el schema pero es puramente cosmético) con una transferencia normal hacia
+ella. Es la opción que YNAB usa (cuenta de seguimiento) y funciona con cero cambios de
+código — el usuario puede hacerlo hoy mismo, a mano, sin esperar esta feature. Se
+descartó como el mecanismo *automático* porque deja un saldo fantasma: la "cuenta"
+recibe la transferencia pero nunca se achica cuando el efectivo se convierte
+efectivamente en el activo, así que el patrimonio total (Cuentas + Ahorros +
+Inversiones) terminaría contando la plata dos veces — una vez como saldo de esa cuenta,
+otra como valor de la posición en Ahorro e Inversiones — a menos que el usuario
+reduzca esa cuenta a mano cada vez, la misma doble carga manual que la feature busca
+evitar. La categoría-contrapartida no tiene ese problema: no es un saldo que alguien
+lea en ningún lado, es sólo la pata contable que el modelo de partida doble exige.
+
+**Encontrado en revisión — editar el costo a exactamente cero dejaba un movimiento
+fantasma de $0 (medio, corregido antes de mergear):** `createInvestmentLot` ya salteaba
+la creación del movimiento cuando el costo era cero explícito ("nada que descontar"),
+pero `updateInvestmentLot` no replicaba esa misma regla al resincronizar — editar el
+costo (o la cantidad) de una compra ya vinculada hasta que el total diera exactamente
+cero terminaba **reemplazando** los postings del movimiento existente por dos postings
+de `$0`, en vez de aplicar el mismo criterio. Esa transacción `kind: 'investment'` con
+monto cero quedaba viva para siempre — sin botón "Editar" desde Movimientos (excluida
+por `editableKind`, igual que cualquier compra de inversión) y sin forma de limpiarla
+salvo borrar la compra entera. Se corrigió para que, cuando el total recalculado sea
+cero, `updateInvestmentLot` borre el movimiento vinculado y limpie
+`lot.transactionId` — mismo comportamiento final que si nunca se hubiera vinculado una
+cuenta, en vez de un movimiento fantasma inmutable.
+
+**Encontrado en revisión — cambiar de activo en el formulario no reseteaba "Cuenta de
+origen" (importante, corregido antes de mergear):** el campo se filtra por la moneda
+del activo elegido, pero nada limpiaba `accountId` si el usuario cambiaba de activo sin
+cerrar el diálogo (el flujo real de "Nuevo → Nueva posición", donde el activo no viene
+prefijado). El resultado era un `Select` mostrando una cuenta que ya no estaba entre las
+opciones válidas, y un submit que fallaba recién en el invariant de moneda del
+repository — un error genuino pero con un toast que no explicaba qué corregir. Se
+agregó un `useEffect` que resetea `accountId` a `NO_ACCOUNT` cada vez que cambia el
+activo seleccionado.

@@ -1,4 +1,4 @@
-import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle, type LucideIcon } from 'lucide-react'
+import { ArrowDownCircle, ArrowLeftRight, ArrowUpCircle, TrendingUp, type LucideIcon } from 'lucide-react'
 import type { Transaction } from '@/domain/entities'
 
 export const TRANSACTION_KIND_LABELS: Record<Transaction['kind'], string> = {
@@ -6,6 +6,7 @@ export const TRANSACTION_KIND_LABELS: Record<Transaction['kind'], string> = {
   income: 'Ingreso',
   transfer: 'Transferencia',
   adjustment: 'Ajuste',
+  investment: 'Compra de inversión',
 }
 
 export const TRANSACTION_KIND_ICONS: Record<Transaction['kind'], LucideIcon> = {
@@ -13,4 +14,5 @@ export const TRANSACTION_KIND_ICONS: Record<Transaction['kind'], LucideIcon> = {
   income: ArrowUpCircle,
   transfer: ArrowLeftRight,
   adjustment: ArrowLeftRight,
+  investment: TrendingUp,
 }

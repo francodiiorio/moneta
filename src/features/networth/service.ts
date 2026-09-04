@@ -14,7 +14,7 @@ import { AUTO_PRICE_ASSET_TYPES } from '@/domain/entities'
 import type { AssetPrice, ExchangeRate, InvestmentAsset, InvestmentHolding, SavingsHolding } from '@/domain/entities'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
-import { NO_PROFILE, rateValueToNumber, type ExchangeRateFormValues } from './schema'
+import { NO_ACCOUNT, NO_PROFILE, rateValueToNumber, type ExchangeRateFormValues } from './schema'
 import type {
   InvestmentAssetFormValues,
   InvestmentLotFormValues,
@@ -26,6 +26,8 @@ export { listSavingsHoldings, deleteSavingsHolding } from '@/database/repositori
 export { listInvestmentAssets, deleteInvestmentAsset, deleteInvestmentHolding } from '@/database/repositories/investments.repo'
 export { listInvestmentLots, deleteInvestmentLot } from '@/database/repositories/investmentLots.repo'
 export { listExchangeRates, deleteExchangeRate } from '@/database/repositories/exchangeRates.repo'
+export { listAccountsWithBalances } from '@/database/repositories/accounts.repo'
+export type { AccountWithBalance } from '@/database/repositories/accounts.repo'
 // Cotizaciones automáticas (Etapa 6C) is a headless orchestration layer
 // with no UI of its own — the Cotizaciones tab here is its only consumer.
 // Re-exporting a service (not a component) across features is the
@@ -281,12 +283,14 @@ function parseLotFields(quantityInput: string, costPerUnitInput: string | undefi
 export async function createInvestmentLotFromForm(values: InvestmentLotFormValues) {
   const asset = await requireAsset(values.assetId)
   const { quantity, costPerUnit } = parseLotFields(values.quantity, values.costPerUnit, asset.currency)
+  const accountId = values.accountId && values.accountId !== NO_ACCOUNT ? values.accountId : undefined
   return investmentLotsRepo.createInvestmentLot({
     assetId: values.assetId,
     currency: asset.currency,
     date: values.date,
     quantity,
     ...(costPerUnit !== undefined && { costPerUnit }),
+    ...(accountId !== undefined && { accountId }),
   })
 }
 

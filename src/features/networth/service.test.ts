@@ -24,7 +24,7 @@ import {
   updateInvestmentLotFromForm,
   updateSavingsHoldingFromForm,
 } from './service'
-import { NO_PROFILE } from './schema'
+import { NO_ACCOUNT, NO_PROFILE } from './schema'
 
 afterEach(async () => {
   await Promise.all([
@@ -36,6 +36,9 @@ afterEach(async () => {
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
     db.investmentLots.clear(),
+    db.transactions.clear(),
+    db.postings.clear(),
+    db.categories.clear(),
   ])
 })
 
@@ -257,6 +260,36 @@ describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
 
     const [holding] = await listInvestmentHoldings()
     expect('averageCost' in (holding ?? {})).toBe(false)
+  })
+
+  it('links the lot to a generated movement when a funding account is chosen, debiting the account', async () => {
+    const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'USD', openingBalance: minor(100_000_00) })
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
+    const lot = await createInvestmentLotFromForm({
+      assetId: asset.id,
+      quantity: '5',
+      costPerUnit: '600',
+      date: '2026-01-01',
+      accountId: account.id,
+    })
+
+    expect(lot.transactionId).toBeDefined()
+    const transaction = await db.transactions.get(lot.transactionId!)
+    expect(transaction?.kind).toBe('investment')
+  })
+
+  it('the NO_ACCOUNT sentinel resolves to no funding account, same as leaving the field blank', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
+    const lot = await createInvestmentLotFromForm({
+      assetId: asset.id,
+      quantity: '1',
+      costPerUnit: '600',
+      date: '2026-01-01',
+      accountId: NO_ACCOUNT,
+    })
+
+    expect(lot.transactionId).toBeUndefined()
+    expect(await db.transactions.count()).toBe(0)
   })
 })
 

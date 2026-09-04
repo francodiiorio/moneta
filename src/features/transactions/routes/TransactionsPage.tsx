@@ -164,8 +164,11 @@ export function TransactionsPage() {
               <p className="mb-1 text-xs font-medium text-muted-foreground">{dateLabel(date)}</p>
               <div className="rounded-xl border border-border px-3">
                 {items.map((item) => {
-                  // No form handles 'adjustment' yet (nothing creates one today) —
-                  // hide "Editar" rather than open a dialog that can't represent it.
+                  // No form handles 'adjustment' (nothing creates one today) or
+                  // 'investment' (se edita desde la compra que lo generó, en
+                  // Ahorro e Inversiones — ver ADR "Una compra de inversión no
+                  // es un gasto") — hide "Editar" rather than open a dialog
+                  // that can't represent either.
                   const editableKind =
                     item.kind === 'expense' || item.kind === 'income' || item.kind === 'transfer'
                       ? item.kind

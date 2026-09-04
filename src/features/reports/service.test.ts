@@ -8,7 +8,7 @@ import { createInvestmentAsset, createInvestmentHolding } from '@/database/repos
 import { createSavingsHolding } from '@/database/repositories/savingsHoldings.repo'
 import { saveTransaction } from '@/database/repositories/transactions.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
-import { buildExpense, buildIncome, buildTransfer } from '@/domain/ledger'
+import { buildExpense, buildIncome, buildInvestmentPurchase, buildTransfer } from '@/domain/ledger'
 import { QUANTITY_SCALE } from '@/domain/decimal'
 import { minor, money } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
@@ -51,6 +51,32 @@ describe('getMonthSummary', () => {
     expect(summary.expense).toEqual(money(1000, 'ARS'))
     expect(summary.net).toEqual(money(4000, 'ARS'))
     expect(summary.missingRateCount).toBe(0)
+  })
+
+  // Regression: buying an investment is an asset conversion, not
+  // consumption — kind: 'investment' has to stay out of the expense
+  // total exactly like a transfer already does, with zero extra
+  // filtering (see the ADR "Una compra de inversión no es un gasto").
+  it('excludes an investment purchase from the expense total, same as a transfer', async () => {
+    const bank = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+    const foodCat = await createCategory({ name: 'Comida', kind: 'expense' })
+    const investmentCat = await createCategory({ name: 'Compra de inversiones', kind: 'expense' })
+
+    await saveTransaction(
+      buildExpense({ date: '2026-08-05', description: 'Super', accountId: bank.id, categoryId: foodCat.id, amount: money(1000, 'ARS') }),
+    )
+    await saveTransaction(
+      buildInvestmentPurchase({
+        date: '2026-08-06',
+        description: 'Compra SPY',
+        accountId: bank.id,
+        categoryId: investmentCat.id,
+        amount: money(50_000, 'ARS'),
+      }),
+    )
+
+    const summary = await getMonthSummary('2026-08')
+    expect(summary.expense).toEqual(money(1000, 'ARS'))
   })
 
   it('converts cross-currency expenses to the base currency using the rate at the transaction date', async () => {
@@ -138,6 +164,29 @@ describe('getExpenseByCategory', () => {
       { categoryId: transport.id, categoryName: 'Transporte', amount: money(200, 'ARS') },
     ])
     expect(missingRateCount).toBe(0)
+  })
+
+  // Regression: same reasoning as getMonthSummary's own test — a
+  // kind: 'investment' transaction is excluded by construction, since
+  // this only ever scans transaction.kind === 'expense'.
+  it('never includes an investment purchase\'s category, even though it posts a category leg just like an expense', async () => {
+    const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
+    const food = await createCategory({ name: 'Comida', kind: 'expense' })
+    const investmentCat = await createCategory({ name: 'Compra de inversiones', kind: 'expense' })
+
+    await saveTransaction(buildExpense({ date: '2026-08-01', description: 'a', accountId: account.id, categoryId: food.id, amount: money(1000, 'ARS') }))
+    await saveTransaction(
+      buildInvestmentPurchase({
+        date: '2026-08-02',
+        description: 'Compra SPY',
+        accountId: account.id,
+        categoryId: investmentCat.id,
+        amount: money(50_000, 'ARS'),
+      }),
+    )
+
+    const { items } = await getExpenseByCategory('2026-08')
+    expect(items).toEqual([{ categoryId: food.id, categoryName: 'Comida', amount: money(1000, 'ARS') }])
   })
 
   it('counts a missing rate and falls back to a placeholder name for a deleted category', async () => {

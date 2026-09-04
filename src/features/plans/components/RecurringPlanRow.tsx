@@ -58,10 +58,11 @@ export function RecurringPlanRow({ item, onEdit, onTogglePaused, onDelete }: Rec
         <MoneyText value={item.amount} />
       </p>
 
-      {/* 'adjustment' is only reachable via a hand-edited backup — never
-          produced by the form — and RecurringPlanFormDialog's edit mode
-          can't represent it (recurringPlanKindSchema has no such kind). */}
-      {item.kind !== 'adjustment' && (
+      {/* 'adjustment'/'investment' are only reachable via a hand-edited
+          backup — never produced by the form — and
+          RecurringPlanFormDialog's edit mode can't represent either
+          (recurringPlanKindSchema has neither kind). */}
+      {item.kind !== 'adjustment' && item.kind !== 'investment' && (
         <Button variant="ghost" size="icon" className="shrink-0" onClick={onEdit}>
           <Pencil className="size-3.5" />
         </Button>

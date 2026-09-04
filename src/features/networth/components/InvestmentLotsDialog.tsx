@@ -12,7 +12,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import { MoneyText } from '@/components/MoneyText'
 import { formatQuantity, quantity } from '@/domain/decimal'
 import { money } from '@/domain/money'
@@ -38,6 +41,8 @@ export function InvestmentLotsDialog({ asset, assets, onOpenChange }: Investment
   const [lotDialogOpen, setLotDialogOpen] = useState(false)
   const [editingLot, setEditingLot] = useState<InvestmentLot | undefined>(undefined)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [deleteLinkedTransaction, setDeleteLinkedTransaction] = useState(false)
+  const pendingDeleteLot = lots?.find((l) => l.id === pendingDeleteId)
 
   function openCreateLot() {
     setEditingLot(undefined)
@@ -49,10 +54,15 @@ export function InvestmentLotsDialog({ asset, assets, onOpenChange }: Investment
     setLotDialogOpen(true)
   }
 
+  function openDeleteDialog(id: string) {
+    setDeleteLinkedTransaction(false)
+    setPendingDeleteId(id)
+  }
+
   async function handleDelete() {
     if (!pendingDeleteId) return
     try {
-      await deleteInvestmentLot(pendingDeleteId)
+      await deleteInvestmentLot(pendingDeleteId, { deleteLinkedTransaction })
       toast.success('Compra eliminada')
     } catch {
       toast.error('No se pudo eliminar')
@@ -81,7 +91,14 @@ export function InvestmentLotsDialog({ asset, assets, onOpenChange }: Investment
               lots.map((lot) => (
                 <div key={lot.id} className="flex items-center justify-between gap-2 rounded-lg border border-border p-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">{formatQuantity(quantity(lot.quantity))} unidades</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{formatQuantity(quantity(lot.quantity))} unidades</p>
+                      {lot.transactionId !== undefined && (
+                        <Badge variant="secondary" className="shrink-0">
+                          Vinculada a un movimiento
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {formatFullDate(lot.date)}
                       {lot.costPerUnit !== undefined && (
@@ -100,7 +117,7 @@ export function InvestmentLotsDialog({ asset, assets, onOpenChange }: Investment
                       variant="ghost"
                       size="icon"
                       aria-label="Eliminar compra"
-                      onClick={() => setPendingDeleteId(lot.id)}
+                      onClick={() => openDeleteDialog(lot.id)}
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -136,6 +153,18 @@ export function InvestmentLotsDialog({ asset, assets, onOpenChange }: Investment
               La cantidad y el costo promedio de la posición se recalculan sin ella. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {pendingDeleteLot?.transactionId !== undefined && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="delete-linked-transaction"
+                checked={deleteLinkedTransaction}
+                onCheckedChange={(checked) => setDeleteLinkedTransaction(checked === true)}
+              />
+              <Label htmlFor="delete-linked-transaction" className="text-sm font-normal">
+                Borrar también el movimiento vinculado
+              </Label>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => void handleDelete()}>Eliminar</AlertDialogAction>
