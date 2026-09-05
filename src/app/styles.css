@@ -159,19 +159,25 @@
    where there's no hover to reveal it) but on a hover-capable device
    it's redundant with the per-slice Tooltip, so it collapses to zero
    height — not just invisible — until the pointer is over the donut.
-   A plain descendant selector, not stacked Tailwind variants: the
-   compound specificity (.pie-legend-wrap:hover .pie-legend) reliably
-   wins over the plain utility classes on the same element regardless
-   of Tailwind's generated stylesheet order. */
+   margin-top goes to 0 too, not just max-height: a flex `gap`/margin
+   above a zero-height element still reserves its own space, which was
+   enough on its own to leave this card a few pixels taller than its
+   "Evolución de gastos" neighbor on the Dashboard. A plain descendant
+   selector, not stacked Tailwind variants: the compound specificity
+   (.pie-legend-wrap:hover .pie-legend) reliably wins over the plain
+   utility classes on the same element regardless of Tailwind's
+   generated stylesheet order. */
 @media (hover: hover) {
   .pie-legend {
+    margin-top: 0;
     max-height: 0;
     overflow: hidden;
     opacity: 0;
     pointer-events: none;
-    transition: max-height 200ms ease, opacity 150ms ease;
+    transition: margin-top 200ms ease, max-height 200ms ease, opacity 150ms ease;
   }
   .pie-legend-wrap:hover .pie-legend {
+    margin-top: 0.75rem;
     max-height: 12rem;
     overflow-y: auto;
     opacity: 1;

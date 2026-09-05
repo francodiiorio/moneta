@@ -104,8 +104,13 @@ export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
   const total = sumMoney(items[0]!.amount.currency, items.map((i) => i.amount))
 
   return (
-    <div className="pie-legend-wrap flex flex-col gap-3">
-      <ResponsiveContainer width="100%" height={240} initialDimension={{ width: 400, height: 240 }}>
+    <div className="pie-legend-wrap flex flex-col">
+      {/* height=220 matches MoneyTrendChart's default (see
+          DashboardPage's "Evolución de gastos" card) so the two cards
+          come out the same height without relying on CSS Grid stretch —
+          stretch would also re-propagate the pie legend's on-hover
+          expansion onto its neighbor. */}
+      <ResponsiveContainer width="100%" height={220} initialDimension={{ width: 400, height: 220 }}>
         <PieChart>
           <Pie
             data={data}
@@ -149,7 +154,7 @@ export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
           label text stays in a text token, never the series hue. Capped
           height + scroll either way, so a month with many categories
           can't grow this list without bound. */}
-      <ul className="pie-legend flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1">
+      <ul className="pie-legend mt-3 flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1">
         {data.map((row, index) => (
           <li key={row.categoryId} className="flex items-center gap-2 text-sm">
             <span
