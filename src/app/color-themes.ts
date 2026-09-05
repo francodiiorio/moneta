@@ -15,6 +15,7 @@ export interface ColorThemeOption {
 export const COLOR_THEMES: ColorThemeOption[] = [
   { id: 'indigo', label: 'Índigo' },
   { id: 'dani', label: 'Dani' },
+  { id: 'oceano', label: 'Océano' },
 ]
 
 export const DEFAULT_COLOR_THEME = 'indigo'

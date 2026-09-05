@@ -207,6 +207,70 @@
   --ring: #8eb69b;
 }
 
+/* Tema "Océano" — src/app/color-themes.ts. Paleta de 5 tonos azules
+   provista por el usuario (021024 · 052659 · 5483B3 · 7DA0CA · C1E8FF),
+   de más oscuro a más claro — mismo criterio que "Dani": hex literal, sin
+   convertir a oklch; tonos intermedios derivados con color-mix() sobre
+   esos mismos 5 hex, nunca un color inventado. Contraste texto/fondo
+   verificado ≥4.5:1 en todos los pares antes de fijar estos valores (el
+   único par que no salía holgado de entrada — muted-foreground claro
+   contra fondo/card — se resolvió oscureciendo ese tono con color-mix en
+   vez de aflojar el mínimo). --positive/--negative/--destructive y
+   --chart-1..6 NO se redefinen acá — ver la nota en color-themes.ts. */
+[data-theme='oceano'] {
+  --background: #c1e8ff;
+  --foreground: #021024;
+
+  --card: #ffffff;
+  --card-foreground: #021024;
+
+  --popover: #ffffff;
+  --popover-foreground: #021024;
+
+  --primary: #052659;
+  --primary-foreground: #ffffff;
+
+  --secondary: color-mix(in oklab, #c1e8ff 60%, white);
+  --secondary-foreground: #052659;
+
+  --muted: color-mix(in oklab, #c1e8ff 60%, white);
+  --muted-foreground: color-mix(in oklab, #052659 50%, #5483b3 50%);
+
+  --accent: color-mix(in oklab, #7da0ca 35%, white);
+  --accent-foreground: #052659;
+
+  --border: color-mix(in oklab, #7da0ca 40%, white);
+  --input: color-mix(in oklab, #7da0ca 40%, white);
+  --ring: #052659;
+}
+
+.dark[data-theme='oceano'] {
+  --background: #021024;
+  --foreground: #c1e8ff;
+
+  --card: #052659;
+  --card-foreground: #c1e8ff;
+
+  --popover: #052659;
+  --popover-foreground: #c1e8ff;
+
+  --primary: #7da0ca;
+  --primary-foreground: #021024;
+
+  --secondary: color-mix(in oklab, #052659 75%, #5483b3 25%);
+  --secondary-foreground: #c1e8ff;
+
+  --muted: color-mix(in oklab, #052659 75%, #5483b3 25%);
+  --muted-foreground: #7da0ca;
+
+  --accent: color-mix(in oklab, #052659 60%, #5483b3 40%);
+  --accent-foreground: #c1e8ff;
+
+  --border: color-mix(in oklab, #052659 65%, #5483b3 35%);
+  --input: color-mix(in oklab, #052659 65%, #5483b3 35%);
+  --ring: #7da0ca;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
