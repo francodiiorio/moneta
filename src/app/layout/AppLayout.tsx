@@ -43,7 +43,7 @@ export function AppLayout() {
                 cn(
                   'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-accent text-accent-foreground'
+                    ? 'bg-primary/15 text-primary'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )
               }
@@ -53,6 +53,18 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
+
+        {/* Puramente decorativo — la app no tiene cuentas ni autenticación
+            (ver CLAUDE.md), así que esto es marca fija, no un perfil real. */}
+        <div className="mt-auto flex items-center gap-2 px-2.5 pt-4">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <span className="text-xs font-bold">M</span>
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">Moneta</p>
+            <p className="truncate text-xs text-muted-foreground">Tu vida financiera más simple</p>
+          </div>
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -112,7 +124,7 @@ export function AppLayout() {
                     cn(
                       'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-accent text-accent-foreground'
+                        ? 'bg-primary/15 text-primary'
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                     )
                   }

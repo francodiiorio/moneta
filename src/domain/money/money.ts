@@ -158,3 +158,17 @@ export function formatMoney(value: Money): string {
     return `${info.symbol} ${decimalValue.toFixed(info.decimals)}`
   }
 }
+
+/** Formats a raw amount in `currency`'s minor units for a chart axis tick
+ *  — grouped thousands, no currency symbol/decimals. Deliberately separate
+ *  from formatMoney: a charting library computes its own "nice" tick
+ *  values by interpolating across the data's domain, so the input here
+ *  isn't guaranteed to be a whole minor unit the way a real stored Money
+ *  amount is — this skips the strict integer `Minor` invariant on purpose.
+ *  Display only, same rule as formatMoney otherwise: never feed the
+ *  result back into storage or arithmetic. */
+export function formatAxisAmount(rawMinorValue: number, currency: CurrencyCode): string {
+  const info = getCurrency(currency)
+  const decimalValue = rawMinorValue / 10 ** info.decimals
+  return new Intl.NumberFormat(info.locale, { maximumFractionDigits: 0 }).format(decimalValue)
+}

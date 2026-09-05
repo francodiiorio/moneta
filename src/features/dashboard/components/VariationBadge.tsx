@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { roundHalfUp } from '@/domain/money'
 import { cn } from '@/lib/cn'
 
@@ -21,10 +22,13 @@ export function VariationBadge({ percent, invert = false, compareLabel }: Variat
 
   if (rounded === 0) {
     return (
-      <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-        <Minus className="size-3" />
-        {compareLabel ? `Igual que ${compareLabel}` : 'Igual que el mes pasado'}
-      </p>
+      <div className="mt-1 flex flex-col items-start gap-1">
+        <Badge variant="secondary" className="gap-1 border-transparent">
+          <Minus className="size-3" />
+          0%
+        </Badge>
+        <p className="text-xs text-muted-foreground">Igual que {compareLabel ?? 'el mes pasado'}</p>
+      </div>
     )
   }
 
@@ -33,9 +37,12 @@ export function VariationBadge({ percent, invert = false, compareLabel }: Variat
   const Icon = isIncrease ? ArrowUp : ArrowDown
 
   return (
-    <p className={cn('mt-1 flex items-center gap-1 text-xs', isGood ? 'text-positive' : 'text-negative')}>
-      <Icon className="size-3" />
-      {Math.abs(rounded)}% vs. {compareLabel ?? 'mes anterior'}
-    </p>
+    <div className="mt-1 flex flex-col items-start gap-1">
+      <Badge className={cn('gap-1 border-transparent', isGood ? 'bg-positive/15 text-positive' : 'bg-negative/15 text-negative')}>
+        <Icon className="size-3" />
+        {Math.abs(rounded)}%
+      </Badge>
+      <p className="text-xs text-muted-foreground">vs. {compareLabel ?? 'mes anterior'}</p>
+    </div>
   )
 }
