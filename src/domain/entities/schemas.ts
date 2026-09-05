@@ -144,6 +144,11 @@ export const settingsSchema = z.object({
   lastBackupExportedAt: isoInstant.optional(),
   lastBackupImportedAt: isoInstant.optional(),
   hideSavingsAndInvestmentsAmount: z.boolean().optional(),
+  // Free string, not an enum: matched against the registry in
+  // src/app/color-themes.ts, which falls back to the default theme for
+  // any unknown id (including one from an old backup for a theme since
+  // removed) instead of failing validation.
+  colorTheme: z.string().optional(),
 })
 export type Settings = z.infer<typeof settingsSchema>
 

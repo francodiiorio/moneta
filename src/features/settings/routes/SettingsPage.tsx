@@ -16,6 +16,7 @@ import { BackupCard } from '@/features/backups/components/BackupCard'
 import { useSettings } from '../hooks/useSettings'
 import { settingsRepo } from '@/database/repositories'
 import { CURRENCIES } from '@/domain/money'
+import { COLOR_THEMES, DEFAULT_COLOR_THEME } from '@/app/color-themes'
 
 const CURRENCY_OPTIONS = Object.keys(CURRENCIES)
 
@@ -76,6 +77,29 @@ export function SettingsPage() {
                   <SelectItem value="system">Sistema</SelectItem>
                   <SelectItem value="light">Claro</SelectItem>
                   <SelectItem value="dark">Oscuro</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="h-9 animate-pulse rounded-md bg-muted" />
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <Label>Paleta de color</Label>
+            {settings ? (
+              <Select
+                value={settings.colorTheme ?? DEFAULT_COLOR_THEME}
+                onValueChange={(value) => void settingsRepo.updateSettings({ colorTheme: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COLOR_THEMES.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             ) : (

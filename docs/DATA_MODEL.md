@@ -186,6 +186,15 @@ card "Ahorro e inversiones" del Dashboard — puramente de UI (no oculta nada en
 `/patrimonio`), pero vive en Settings en vez de un store de Zustand efímero porque tiene
 sentido que persista entre sesiones (el punto de ocultar un monto es que siga oculto la
 próxima vez que abrís la app).
+`colorTheme` (string libre, opcional) selecciona una paleta decorativa entre las
+registradas en `src/app/color-themes.ts` (ids como `'indigo'`, el default, o `'dani'`),
+aplicada como atributo `data-theme` en `<html>` — eje independiente del claro/oscuro de
+`next-themes`, que sigue usando su propia `class`. No es un enum de Zod a propósito: un id
+desconocido (una paleta vieja que se sacó del registro) cae al default en vez de fallar la
+validación. Cada paleta define sólo tokens decorativos/estructurales (fondo, texto,
+`primary`, etc.) — `--positive`/`--negative`/`--destructive` y la paleta categórica de
+gráficos (`--chart-1..6`) son constantes entre todas las paletas, porque están validadas
+para contraste y daltonismo independientemente de la estética elegida.
 
 Los siete son opcionales — agregados sobre un documento que ya existía, así que una fila
 persistida antes de que existieran no los tiene.

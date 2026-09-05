@@ -45,6 +45,10 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* Tema "Índigo" (default) — src/app/color-themes.ts. Vive en el :root/.dark
+   bare, sin [data-theme], porque es el que se aplica cuando no hay ningún
+   otro elegido. Otros temas van más abajo, cada uno en su propio bloque
+   [data-theme="id"] / .dark[data-theme="id"]. */
 :root {
   /* Denser, sharper corners than the previous 0.75rem — part of the
      "fintech densa" direction (see docs/DECISIONS.md). */
@@ -135,6 +139,72 @@
   --chart-4: #c98500;
   --chart-5: #d55181;
   --chart-6: #008300;
+}
+
+/* Tema "Dani" — src/app/color-themes.ts. Paleta de 6 tonos verdes provista
+   por el usuario (051F20 · 0B2B26 · 163832 · 235347 · 8EB69B · DAF1DE), de
+   más oscuro a más claro. Se dejan como hex literal (no oklch) para no
+   introducir una conversión propia sobre valores que el usuario eligió a
+   mano — mismo criterio que --chart-1..6 arriba. Los tonos intermedios que
+   la paleta no cubre (ej. una superficie "secondary" más clara que
+   DAF1DE) se derivan con color-mix() sobre los 6 hex dados, nunca
+   inventando un color nuevo. Contraste texto/fondo verificado ≥6.7:1 en
+   todos los pares (WCAG AA cómodo) antes de fijar estos valores.
+   --positive/--negative/--destructive y --chart-1..6 NO se redefinen acá
+   — ver la nota en color-themes.ts sobre por qué esos son constantes
+   entre temas. */
+[data-theme='dani'] {
+  --background: #daf1de;
+  --foreground: #051f20;
+
+  --card: #ffffff;
+  --card-foreground: #051f20;
+
+  --popover: #ffffff;
+  --popover-foreground: #051f20;
+
+  --primary: #235347;
+  --primary-foreground: #ffffff;
+
+  --secondary: color-mix(in oklab, #daf1de 60%, white);
+  --secondary-foreground: #163832;
+
+  --muted: color-mix(in oklab, #daf1de 60%, white);
+  --muted-foreground: #235347;
+
+  --accent: color-mix(in oklab, #8eb69b 35%, white);
+  --accent-foreground: #163832;
+
+  --border: color-mix(in oklab, #8eb69b 40%, white);
+  --input: color-mix(in oklab, #8eb69b 40%, white);
+  --ring: #235347;
+}
+
+.dark[data-theme='dani'] {
+  --background: #051f20;
+  --foreground: #daf1de;
+
+  --card: #0b2b26;
+  --card-foreground: #daf1de;
+
+  --popover: #0b2b26;
+  --popover-foreground: #daf1de;
+
+  --primary: #8eb69b;
+  --primary-foreground: #051f20;
+
+  --secondary: #163832;
+  --secondary-foreground: #daf1de;
+
+  --muted: #163832;
+  --muted-foreground: #8eb69b;
+
+  --accent: #235347;
+  --accent-foreground: #daf1de;
+
+  --border: #235347;
+  --input: #235347;
+  --ring: #8eb69b;
 }
 
 @layer base {
