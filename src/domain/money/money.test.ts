@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   add,
   applyRate,
+  formatAxisAmount,
   formatMoney,
   isNegative,
   isPositive,
@@ -147,6 +148,24 @@ describe('formatMoney', () => {
     // 'AR' isn't a well-formed 3-letter ISO 4217 code, so Intl throws.
     const formatted = formatMoney(money(1050, 'AR'))
     expect(formatted).toBe('AR 10.50')
+  })
+})
+
+describe('formatAxisAmount', () => {
+  it('formats ARS with grouped thousands, no symbol and no decimals', () => {
+    expect(formatAxisAmount(105000, 'ARS')).toBe('1.050')
+  })
+
+  it('formats USD with its own locale grouping, no symbol and no decimals', () => {
+    expect(formatAxisAmount(747100, 'USD')).toBe('7,471')
+  })
+
+  it('rounds a non-integer input instead of throwing — a chart library-interpolated tick is not a real Minor amount', () => {
+    expect(formatAxisAmount(105050.7, 'ARS')).toBe('1.051')
+  })
+
+  it('handles zero', () => {
+    expect(formatAxisAmount(0, 'ARS')).toBe('0')
   })
 })
 

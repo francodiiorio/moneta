@@ -236,20 +236,20 @@ export interface ExpenseHistory {
   missingRateCount: number
 }
 
-/** One point per month for the last `monthsBack` months (current month
- *  included, partial) — same shape/monthsBack default as getNetWorthHistory,
- *  for a "Gastos" trend chart. Reuses getMonthSummary per month rather than
- *  re-deriving its scan+conversion logic; same accepted-cost tradeoff as
- *  getMonthlyReport (a few redundant settings/rates reads for one local
- *  user, in exchange for reusing already-tested code). */
-export async function getExpenseHistory(monthsBack = 6): Promise<ExpenseHistory> {
-  const currentMonth = currentMonthStamp()
-
+/** One point per month for the `monthsBack` months ending at `anchorMonth`
+ *  (defaults to the current month) — same shape/monthsBack default as
+ *  getNetWorthHistory, for a "Gastos" trend chart. `anchorMonth` lets the
+ *  Dashboard re-run this ending at whatever month its own month selector
+ *  is set to, instead of always "now". Reuses getMonthSummary per month
+ *  rather than re-deriving its scan+conversion logic; same accepted-cost
+ *  tradeoff as getMonthlyReport (a few redundant settings/rates reads for
+ *  one local user, in exchange for reusing already-tested code). */
+export async function getExpenseHistory(monthsBack = 6, anchorMonth: MonthStamp = currentMonthStamp()): Promise<ExpenseHistory> {
   const points: ExpenseHistoryPoint[] = []
   let missingRateCount = 0
 
   for (let i = monthsBack - 1; i >= 0; i--) {
-    const month = shiftMonth(currentMonth, -i)
+    const month = shiftMonth(anchorMonth, -i)
     const summary = await getMonthSummary(month)
     missingRateCount += summary.missingRateCount
     points.push({ month, expense: summary.expense })

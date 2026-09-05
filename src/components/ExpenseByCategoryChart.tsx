@@ -19,8 +19,11 @@ interface ChartRow extends CategoryAmount {
 
 // Fixed hue order, never cycled — validated for CVD-safety (see
 // src/app/styles.css). A pie caps at MAX_PIE_SLICES real categories,
-// folding the rest into "Otras categorías" (rendered in a neutral
-// muted tone, never a 7th generated hue) — see PIE_COLORS' own length.
+// folding the rest into "Otras categorías" (rendered in a neutral muted
+// tone, never a generated hue). Deliberately its own constant, not derived
+// from PIE_COLORS.length: it's a layout limit (how many rows comfortably
+// fit beside a 220px-tall donut), independent of how many validated hues
+// happen to be defined.
 const PIE_COLORS = [
   'var(--chart-1)',
   'var(--chart-2)',
@@ -29,7 +32,7 @@ const PIE_COLORS = [
   'var(--chart-5)',
   'var(--chart-6)',
 ]
-const MAX_PIE_SLICES = PIE_COLORS.length
+const MAX_PIE_SLICES = 6
 const OTHER_SLICE_ID = '__other__'
 
 function PieTooltip({ active, payload }: { active?: boolean; payload?: { payload: ChartRow }[] }) {
@@ -58,7 +61,9 @@ function buildPieData(items: CategoryAmount[]): ChartRow[] {
     const otherAmount = sumMoney(items[0]!.amount.currency, rest.map((r) => r.amount))
     rows.push({
       categoryId: OTHER_SLICE_ID,
-      categoryName: 'Otras categorías',
+      // The count makes the fold explicit instead of a bare "Otras
+      // categorías" that could read as its own single category.
+      categoryName: `Otras categorías (+${rest.length})`,
       amount: otherAmount,
       amountValue: otherAmount.amount,
       amountLabel: formatMoney(otherAmount),
@@ -104,59 +109,54 @@ export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
   const total = sumMoney(items[0]!.amount.currency, items.map((i) => i.amount))
 
   return (
-    <div className="pie-legend-wrap flex flex-col">
-      {/* height=220 matches MoneyTrendChart's default (see
-          DashboardPage's "Evolución de gastos" card) so the two cards
-          come out the same height without relying on CSS Grid stretch —
-          stretch would also re-propagate the pie legend's on-hover
-          expansion onto its neighbor. */}
-      <ResponsiveContainer width="100%" height={220} initialDimension={{ width: 400, height: 220 }}>
-        <PieChart>
-          <Pie
-            data={data}
-            dataKey="amountValue"
-            nameKey="categoryName"
-            innerRadius={55}
-            outerRadius={85}
-            paddingAngle={2}
-            stroke="var(--card)"
-            strokeWidth={2}
-            label={renderPieSliceLabel}
-            labelLine={false}
-            // The default sweep-in animation can get caught mid-transition
-            // by a re-render right after mount (e.g. a sibling card's height
-            // settling), showing a broken-looking partial slice — not worth
-            // it for a static financial figure anyway.
-            isAnimationActive={false}
-          >
-            {data.map((row, index) => (
-              <Cell
-                key={row.categoryId}
-                fill={row.categoryId === OTHER_SLICE_ID ? 'var(--muted-foreground)' : PIE_COLORS[index] ?? 'var(--muted-foreground)'}
-              />
-            ))}
-          </Pie>
-          <Tooltip content={<PieTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
+    // Legend beside the donut, not below: at most MAX_PIE_SLICES + 1 rows
+    // (~180px) comfortably fit next to a 220px-tall donut, so the legend
+    // is always visible — no hover-to-reveal, no scroll needed. Stacks
+    // vertically on narrow viewports instead of squeezing both side by
+    // side.
+    <div className="flex flex-col items-center gap-4 sm:flex-row">
+      {/* height=220 matches MoneyTrendChart's default (see DashboardPage's
+          "Evolución de gastos" card) so the two cards come out the same
+          height without relying on CSS Grid stretch. Fixed width, not
+          100%, so the donut doesn't grow into the legend's space. */}
+      <div className="w-full shrink-0 sm:w-[180px]">
+        <ResponsiveContainer width="100%" height={220} initialDimension={{ width: 180, height: 220 }}>
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="amountValue"
+              nameKey="categoryName"
+              innerRadius={55}
+              outerRadius={85}
+              paddingAngle={2}
+              stroke="var(--card)"
+              strokeWidth={2}
+              label={renderPieSliceLabel}
+              labelLine={false}
+              // The default sweep-in animation can get caught mid-transition
+              // by a re-render right after mount (e.g. a sibling card's height
+              // settling), showing a broken-looking partial slice — not worth
+              // it for a static financial figure anyway.
+              isAnimationActive={false}
+            >
+              {data.map((row, index) => (
+                <Cell
+                  key={row.categoryId}
+                  fill={row.categoryId === OTHER_SLICE_ID ? 'var(--muted-foreground)' : PIE_COLORS[index] ?? 'var(--muted-foreground)'}
+                />
+              ))}
+            </Pie>
+            <Tooltip content={<PieTooltip />} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
 
-      {/* The dependable identity channel for 2+ series is never
-          color-matching alone — but on a device with a mouse, the
-          per-slice Tooltip above already gives that on hover, so the
-          static list is redundant chrome there: the `.pie-legend`/
-          `.pie-legend-wrap` rules in styles.css collapse it to zero
-          height (not just invisible — a reserved-but-invisible legend
-          would still leave this card taller than its "Evolución de
-          gastos" neighbor on the Dashboard) until the pointer is over
-          the donut. Touch devices have no hover at all, so this rule is
-          itself gated on `(hover: hover)` and they keep the list always
-          visible. Built in plain HTML (not Recharts' own Legend) so the
-          label text stays in a text token, never the series hue. Capped
-          height + scroll either way, so a month with many categories
-          can't grow this list without bound. */}
-      <ul className="pie-legend mt-3 flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1">
+      {/* Built in plain HTML (not Recharts' own Legend) so the label text
+          stays in a text token, never the series hue — the dependable
+          identity channel for 2+ series is never color-matching alone. */}
+      <ul className="flex w-full min-w-0 flex-1 flex-col gap-1.5">
         {data.map((row, index) => (
-          <li key={row.categoryId} className="flex items-center gap-2 text-sm">
+          <li key={row.categoryId} className="flex items-center gap-1.5 text-sm">
             <span
               className="size-2.5 shrink-0 rounded-full"
               style={{
@@ -165,8 +165,8 @@ export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
               }}
             />
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{row.categoryName}</span>
-            <MoneyText value={row.amount} className="shrink-0" />
-            <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
+            <MoneyText value={row.amount} className="shrink-0 text-xs" />
+            <span className="w-8 shrink-0 text-right text-xs text-muted-foreground">
               {Math.round((row.amount.amount / total.amount) * 100)}%
             </span>
           </li>

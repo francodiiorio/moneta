@@ -10,7 +10,7 @@ import { updateSettings } from '@/database/repositories/settings.repo'
 import { QUANTITY_SCALE } from '@/domain/decimal'
 import { money } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
-import { getExpenseByCategory, getMonthlyReport, getMonthSummary, getNetWorthHistory } from './service'
+import { getExpenseByCategory, getExpenseHistory, getMonthlyReport, getMonthSummary, getNetWorthHistory } from './service'
 
 afterEach(async () => {
   await Promise.all([
@@ -80,6 +80,21 @@ describe('getMonthSummary', () => {
 
     const summary = await getMonthSummary('2026-08')
     expect(summary.expense).toEqual(money(300, 'ARS')) // the projected 9999 must not appear
+  })
+})
+
+describe('getExpenseHistory', () => {
+  it('anchors the trailing window to anchorMonth instead of always the current month', async () => {
+    const foodCat = await createCategory({ name: 'Comida' })
+    await saveExpense({ date: '2025-01-10', description: 'Super', categoryId: foodCat.id, amount: 1000, currency: 'ARS', status: 'confirmed' })
+    // Outside the 3-month window ending at the anchor (2024-11..2025-01) —
+    // must not leak in just because it's a real expense elsewhere.
+    await saveExpense({ date: '2026-08-05', description: 'Otro mes', categoryId: foodCat.id, amount: 9999, currency: 'ARS', status: 'confirmed' })
+
+    const history = await getExpenseHistory(3, '2025-01')
+
+    expect(history.points.map((p) => p.month)).toEqual(['2024-11', '2024-12', '2025-01'])
+    expect(history.points[history.points.length - 1]!.expense).toEqual(money(1000, 'ARS'))
   })
 })
 

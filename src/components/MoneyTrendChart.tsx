@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { formatMoney, type Money } from '@/domain/money'
+import { formatAxisAmount, formatMoney, type Money } from '@/domain/money'
 import { formatMonthShort, type MonthStamp } from '@/lib/dates'
 
 export interface MoneyTrendPoint {
@@ -12,6 +12,11 @@ interface MoneyTrendChartProps {
   points: MoneyTrendPoint[]
   height?: number
   emptyMessage?: string
+  /** Shows a labeled Y axis (grouped thousands, no currency symbol) and
+   *  switches the grid to a dashed line — the Dashboard's two trend charts
+   *  opt into this "detailed axis" look; Ahorro e Inversiones keeps the
+   *  original minimal one (default false) unchanged. */
+  showYAxis?: boolean
 }
 
 interface ChartRow extends MoneyTrendPoint {
@@ -36,7 +41,12 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: { paylo
  *  Inversiones can plot their own `Money` series without a feature
  *  reaching into another feature's components/ (see CLAUDE.md's layering
  *  table — components/ is the shared, cross-feature layer). */
-export function MoneyTrendChart({ points, height = 220, emptyMessage = 'Sin datos suficientes todavía.' }: MoneyTrendChartProps) {
+export function MoneyTrendChart({
+  points,
+  height = 220,
+  emptyMessage = 'Sin datos suficientes todavía.',
+  showYAxis = false,
+}: MoneyTrendChartProps) {
   const gradientId = useId()
 
   if (points.every((p) => p.value.amount === 0)) {
@@ -50,17 +60,18 @@ export function MoneyTrendChart({ points, height = 220, emptyMessage = 'Sin dato
     amountValue: p.value.amount,
     monthLabel: formatMonthShort(p.month),
   }))
+  const currency = points[0]!.value.currency
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: showYAxis ? 0 : 8 }}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.18} />
             <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid vertical={false} stroke="var(--border)" />
+        <CartesianGrid vertical={false} stroke="var(--border)" {...(showYAxis && { strokeDasharray: '3 3' })} />
         <XAxis
           dataKey="monthLabel"
           tickLine={false}
@@ -70,7 +81,17 @@ export function MoneyTrendChart({ points, height = 220, emptyMessage = 'Sin dato
         {/* Always include zero in the visible range — an axis that starts at
             dataMin exaggerates small changes into what looks like a swing
             from empty to full. */}
-        <YAxis hide domain={[(dataMin: number) => Math.min(0, dataMin), 'dataMax']} />
+        {showYAxis ? (
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
+            tickFormatter={(value: number) => formatAxisAmount(value, currency)}
+            domain={[(dataMin: number) => Math.min(0, dataMin), 'dataMax']}
+          />
+        ) : (
+          <YAxis hide domain={[(dataMin: number) => Math.min(0, dataMin), 'dataMax']} />
+        )}
         <Tooltip cursor={{ stroke: 'var(--border)' }} content={<ChartTooltip />} />
         <Area
           type="monotone"

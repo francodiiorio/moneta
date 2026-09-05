@@ -1100,3 +1100,32 @@ siguen intactas para lo que queda — enteros en unidades menores, `roundHalfUp`
 `allocate()` para cuotas — sólo se simplificó qué se registra, no cómo se calcula.
 Ahorros e Inversiones (`SavingsHolding`, `InvestmentAsset`/`Holding`/`Lot`/`AssetPrice`)
 y Presupuestos no cambiaron de forma en absoluto.
+
+## Reestructuración estética del Dashboard: selector de mes con alcance parcial
+
+El Dashboard sumó un selector de mes (`useDashboardUiStore`, `MonthSelector.tsx`) y
+selectores de período funcionales en los dos gráficos de tendencia ("Últimos N
+meses", `PeriodSelect.tsx`), además de un rediseño visual (ícono-badge por KPI, badges
+de variación en pastilla, footer de marca en el sidebar, y `ExpenseByCategoryChart`
+con la leyenda al costado del donut en vez de abajo, acotada a `MAX_PIE_SLICES` filas
+con un "Otras categorías (+N)" al final en vez de scroll u ocultarla).
+
+**Decisión no obvia:** el selector de mes nuevo sólo alcanza a las tarjetas de
+gasto ("Gastos del mes", "Gasto por categoría", "Evolución de gastos",
+"Presupuestos a revisar"). "Ahorro e inversiones" y "Progreso de tus inversiones"
+siguen mostrando siempre el valor de HOY, sin importar qué mes esté elegido — mismo
+criterio que ya regía en `/patrimonio` (el patrimonio es "cantidades de hoy, precios
+de cada mes", nunca algo que tenga sentido mirar retroactivamente para un mes
+puntual). Si una sesión futura ve el selector de mes "sin efecto" sobre esas dos
+tarjetas, no es un bug — es la decisión de alcance de esta entrada.
+
+`getExpenseHistory` (`features/reports/service.ts`) ganó un parámetro `anchorMonth`
+(default: mes actual) para que "Evolución de gastos" pueda terminar en el mes elegido
+en vez de siempre en hoy; `getSavingsAndInvestmentsHistory` no lo necesitó — su
+`monthsBack` sigue anclado a hoy a propósito, coherente con la decisión de arriba.
+
+Ningún color nuevo: todo el rediseño usa los tokens que ya existían
+(`--primary`, `--accent`, `--positive`, etc.), así que se ve correcto en los cuatro
+temas de `src/app/color-themes.ts` sin tocar `styles.css` por este cambio (más allá de
+borrar el hack de "leyenda oculta hasta hover" que el nuevo layout de la torta volvió
+innecesario).
