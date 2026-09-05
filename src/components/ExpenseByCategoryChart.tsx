@@ -1,19 +1,4 @@
-import { useState } from 'react'
-import { BarChart3, PieChart as PieChartIcon } from 'lucide-react'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  LabelList,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
-import { Button } from '@/components/ui/button'
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { MoneyText } from '@/components/MoneyText'
 import { formatMoney, sumMoney, type Money } from '@/domain/money'
 
@@ -47,7 +32,7 @@ const PIE_COLORS = [
 const MAX_PIE_SLICES = PIE_COLORS.length
 const OTHER_SLICE_ID = '__other__'
 
-function BarTooltip({ active, payload }: { active?: boolean; payload?: { payload: ChartRow }[] }) {
+function PieTooltip({ active, payload }: { active?: boolean; payload?: { payload: ChartRow }[] }) {
   const item = payload?.[0]?.payload
   if (!active || !item) return null
   return (
@@ -55,36 +40,6 @@ function BarTooltip({ active, payload }: { active?: boolean; payload?: { payload
       <p className="font-semibold text-popover-foreground">{formatMoney(item.amount)}</p>
       <p className="text-xs text-muted-foreground">{item.categoryName}</p>
     </div>
-  )
-}
-
-function BarView({ items }: { items: CategoryAmount[] }) {
-  // The chart should read top-to-bottom as highest spend first; Recharts
-  // renders vertical-layout categories bottom-to-top, so the data is reversed.
-  const data: ChartRow[] = [...items]
-    .reverse()
-    .map((item) => ({ ...item, amountValue: item.amount.amount, amountLabel: formatMoney(item.amount) }))
-  const height = Math.max(120, data.length * 44)
-
-  return (
-    <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 56, bottom: 4, left: 4 }}>
-        <CartesianGrid horizontal={false} stroke="var(--border)" />
-        <XAxis type="number" hide />
-        <YAxis
-          type="category"
-          dataKey="categoryName"
-          width={110}
-          tickLine={false}
-          axisLine={false}
-          tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
-        />
-        <Tooltip cursor={{ fill: 'var(--muted)' }} content={<BarTooltip />} />
-        <Bar dataKey="amountValue" fill="var(--primary)" radius={[0, 4, 4, 0]} maxBarSize={22}>
-          <LabelList dataKey="amountLabel" position="right" fill="var(--foreground)" fontSize={12} />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
   )
 }
 
@@ -136,12 +91,20 @@ function renderPieSliceLabel({ cx, cy, midAngle, outerRadius, percent }: PieSlic
   )
 }
 
-function PieView({ items }: { items: CategoryAmount[] }) {
+export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
+  if (items.length === 0) {
+    return (
+      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+        Sin gastos este mes.
+      </div>
+    )
+  }
+
   const data = buildPieData(items)
   const total = sumMoney(items[0]!.amount.currency, items.map((i) => i.amount))
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="group/pie flex flex-col gap-3">
       <ResponsiveContainer width="100%" height={240} initialDimension={{ width: 400, height: 240 }}>
         <PieChart>
           <Pie
@@ -168,19 +131,29 @@ function PieView({ items }: { items: CategoryAmount[] }) {
               />
             ))}
           </Pie>
-          <Tooltip content={<BarTooltip />} />
+          <Tooltip content={<PieTooltip />} />
         </PieChart>
       </ResponsiveContainer>
 
-      {/* Legend is always present for 2+ series — the dependable identity
-          channel, never color-matching alone. Built in plain HTML (not
-          Recharts' own Legend) so the label text stays in a text token
-          instead of Recharts' default of coloring it with the series hue.
-          Capped height + scroll (not unbounded growth): otherwise a month
-          with many categories grows this card past the neighboring
-          "Evolución de gastos" card, which then stretches to match it
-          (CSS grid's default row-stretch) and looks broken next to it. */}
-      <ul className="flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1">
+      {/* The dependable identity channel for 2+ series is never
+          color-matching alone — but on a device with a mouse, the
+          per-slice Tooltip above already gives that on hover, so the
+          static list is redundant chrome; it only fades in over the chart
+          on hover there (`group-hover`, gated to `hover: hover` so it
+          never engages on touch). Touch devices have no hover at all, so
+          they keep the list always visible — same reasoning as the
+          `(hover: hover)` gate on this same rule elsewhere in the app. Built
+          in plain HTML (not Recharts' own Legend) so the label text stays
+          in a text token, never the series hue. Capped height + scroll
+          (not unbounded growth): otherwise a month with many categories
+          grows this card past the neighboring "Evolución de gastos" card,
+          which then stretches to match it (CSS grid's default
+          row-stretch) and looks broken next to it. */}
+      <ul
+        className="flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1
+          [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity
+          [@media(hover:hover)]:group-hover/pie:pointer-events-auto [@media(hover:hover)]:group-hover/pie:opacity-100"
+      >
         {data.map((row, index) => (
           <li key={row.categoryId} className="flex items-center gap-2 text-sm">
             <span
@@ -198,46 +171,6 @@ function PieView({ items }: { items: CategoryAmount[] }) {
           </li>
         ))}
       </ul>
-    </div>
-  )
-}
-
-export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
-  const [view, setView] = useState<'bar' | 'pie'>('bar')
-
-  if (items.length === 0) {
-    return (
-      <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        Sin gastos este mes.
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex justify-end gap-1">
-        <Button
-          type="button"
-          variant={view === 'bar' ? 'secondary' : 'ghost'}
-          size="icon-xs"
-          aria-label="Ver como barras"
-          aria-pressed={view === 'bar'}
-          onClick={() => setView('bar')}
-        >
-          <BarChart3 />
-        </Button>
-        <Button
-          type="button"
-          variant={view === 'pie' ? 'secondary' : 'ghost'}
-          size="icon-xs"
-          aria-label="Ver como torta"
-          aria-pressed={view === 'pie'}
-          onClick={() => setView('pie')}
-        >
-          <PieChartIcon />
-        </Button>
-      </div>
-      {view === 'bar' ? <BarView items={items} /> : <PieView items={items} />}
     </div>
   )
 }
