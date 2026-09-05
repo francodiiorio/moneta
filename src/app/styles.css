@@ -81,6 +81,18 @@
   /* Financial semantics: muted, not neon — legible without shouting. */
   --positive: oklch(0.46 0.11 155);
   --negative: oklch(0.52 0.13 25);
+
+  /* Categorical palette for multi-series charts (ej. "Gasto por categoría"
+     en torta) — orden fijo de hues, nunca cíclico; validado para
+     distinción bajo daltonismo (dataviz skill, palette.md). Se dejan como
+     el hex literal validado, no convertidos a oklch, para no alterar los
+     valores que pasaron la validación. */
+  --chart-1: #2a78d6; /* blue */
+  --chart-2: #eb6834; /* orange */
+  --chart-3: #1baf7a; /* aqua */
+  --chart-4: #eda100; /* yellow */
+  --chart-5: #e87ba4; /* magenta */
+  --chart-6: #008300; /* green */
 }
 
 .dark {
@@ -114,6 +126,15 @@
 
   --positive: oklch(0.74 0.15 155);
   --negative: oklch(0.72 0.16 25);
+
+  /* Mismos hues, escalonados para la superficie oscura — ver la nota en
+     :root. */
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-6: #008300;
 }
 
 @layer base {
