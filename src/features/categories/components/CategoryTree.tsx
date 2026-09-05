@@ -8,7 +8,6 @@ import { useCategoriesUiStore } from '../store'
 import { groupCategoriesByParent } from '../tree'
 
 interface CategoryTreeProps {
-  kind: Category['kind']
   categories: Category[]
   onEdit: (categoryId: string) => void
 }
@@ -62,13 +61,12 @@ function CategoryRow({ category, indent, onEdit }: RowProps) {
   )
 }
 
-export function CategoryTree({ kind, categories, onEdit }: CategoryTreeProps) {
+export function CategoryTree({ categories, onEdit }: CategoryTreeProps) {
   const showArchived = useCategoriesUiStore((s) => s.showArchived)
   const toggleShowArchived = useCategoriesUiStore((s) => s.toggleShowArchived)
 
-  const ofKind = categories.filter((c) => c.kind === kind)
-  const tree = groupCategoriesByParent(ofKind.filter((c) => !c.isArchived))
-  const archived = ofKind.filter((c) => c.isArchived).sort((a, b) => a.name.localeCompare(b.name))
+  const tree = groupCategoriesByParent(categories.filter((c) => !c.isArchived))
+  const archived = categories.filter((c) => c.isArchived).sort((a, b) => a.name.localeCompare(b.name))
 
   return (
     <div className="flex flex-col gap-4">

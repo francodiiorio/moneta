@@ -1,18 +1,10 @@
 import { expect, test } from '@playwright/test'
 
 test('exporta un informe del mes y lo muestra sin chrome de la app', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Banco Prueba')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   await page.goto('/movimientos')
-  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByRole('button', { name: 'Nuevo gasto' }).first().click()
   await page.getByLabel('Descripción').fill('Supermercado')
   await page.getByLabel('Monto').fill('1500')
-  await page.getByRole('combobox', { name: 'Cuenta' }).click()
-  await page.getByRole('option', { name: 'Banco Prueba' }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Comida' }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
@@ -23,7 +15,7 @@ test('exporta un informe del mes y lo muestra sin chrome de la app', async ({ pa
   await expect(page).toHaveURL(/\/reportes\/informe\/\d{4}-\d{2}$/)
 
   await expect(page.getByRole('heading', { level: 1 })).toContainText(/\d{4}/)
-  await expect(page.getByText('Ingresos', { exact: true })).toBeVisible()
+  await expect(page.getByText('Gastos', { exact: true })).toBeVisible()
   await expect(page.getByText(/1[.,]500,00/).first()).toBeVisible()
   // .getByText('Comida') would also match Recharts' aria-hidden text-
   // measurement span, which the ReportsPage chart left behind in the

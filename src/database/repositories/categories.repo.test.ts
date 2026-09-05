@@ -2,9 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '../db'
 import {
   createCategory,
-  getOrCreateInvestmentCategory,
-  INVESTMENT_CATEGORY_ID,
-  INVESTMENT_CATEGORY_NAME,
   listCategories,
   moveCategory,
   seedDefaultsIfEmpty,
@@ -18,33 +15,33 @@ afterEach(async () => {
 
 describe('createCategory', () => {
   it('assigns an incrementing order and defaults', async () => {
-    const a = await createCategory({ name: 'Comida', kind: 'expense' })
-    const b = await createCategory({ name: 'Sueldo', kind: 'income' })
+    const a = await createCategory({ name: 'Comida' })
+    const b = await createCategory({ name: 'Transporte' })
     expect(a.order).toBe(0)
     expect(b.order).toBe(1)
     expect(a.isArchived).toBe(false)
   })
 
   it('accepts a top-level category as a parent', async () => {
-    const parent = await createCategory({ name: 'Comida', kind: 'expense' })
-    const child = await createCategory({ name: 'Restaurantes', kind: 'expense', parentId: parent.id })
+    const parent = await createCategory({ name: 'Comida' })
+    const child = await createCategory({ name: 'Restaurantes', parentId: parent.id })
     expect(child.parentId).toBe(parent.id)
   })
 
   it('rejects more than one level of hierarchy', async () => {
-    const parent = await createCategory({ name: 'Comida', kind: 'expense' })
-    const child = await createCategory({ name: 'Restaurantes', kind: 'expense', parentId: parent.id })
+    const parent = await createCategory({ name: 'Comida' })
+    const child = await createCategory({ name: 'Restaurantes', parentId: parent.id })
     await expect(
-      createCategory({ name: 'Delivery', kind: 'expense', parentId: child.id }),
+      createCategory({ name: 'Delivery', parentId: child.id }),
     ).rejects.toThrow(/sólo se admite un nivel/)
   })
 
   it('sets color/icon when given, omits them when not', async () => {
-    const withIdentity = await createCategory({ name: 'Comida', kind: 'expense', color: '#ef4444', icon: 'utensils' })
+    const withIdentity = await createCategory({ name: 'Comida', color: '#ef4444', icon: 'utensils' })
     expect(withIdentity.color).toBe('#ef4444')
     expect(withIdentity.icon).toBe('utensils')
 
-    const withoutIdentity = await createCategory({ name: 'Otros', kind: 'expense' })
+    const withoutIdentity = await createCategory({ name: 'Otros' })
     expect(withoutIdentity.color).toBeUndefined()
     expect(withoutIdentity.icon).toBeUndefined()
   })
@@ -52,24 +49,24 @@ describe('createCategory', () => {
 
 describe('listCategories', () => {
   it('orders categories by their order field', async () => {
-    await createCategory({ name: 'Segunda', kind: 'expense' })
-    await createCategory({ name: 'Primera', kind: 'expense' })
+    await createCategory({ name: 'Segunda' })
+    await createCategory({ name: 'Primera' })
     const categories = await listCategories()
     expect(categories.map((c) => c.name)).toEqual(['Segunda', 'Primera'])
   })
 })
 
 describe('updateCategory', () => {
-  it('updates the name without touching kind or parentId', async () => {
-    const category = await createCategory({ name: 'Comida', kind: 'expense' })
+  it('updates the name without touching parentId', async () => {
+    const category = await createCategory({ name: 'Comida' })
     await updateCategory(category.id, { name: 'Comida y bebida' })
     const updated = await db.categories.get(category.id)
     expect(updated?.name).toBe('Comida y bebida')
-    expect(updated?.kind).toBe('expense')
+    expect(updated?.parentId).toBeUndefined()
   })
 
   it('sets color/icon', async () => {
-    const category = await createCategory({ name: 'Comida', kind: 'expense' })
+    const category = await createCategory({ name: 'Comida' })
     await updateCategory(category.id, { color: '#3b82f6', icon: 'utensils' })
     const updated = await db.categories.get(category.id)
     expect(updated?.color).toBe('#3b82f6')
@@ -77,7 +74,7 @@ describe('updateCategory', () => {
   })
 
   it('clears a previously-set color/icon when given undefined', async () => {
-    const category = await createCategory({ name: 'Comida', kind: 'expense', color: '#3b82f6', icon: 'utensils' })
+    const category = await createCategory({ name: 'Comida', color: '#3b82f6', icon: 'utensils' })
     await updateCategory(category.id, { color: undefined, icon: undefined })
     const updated = await db.categories.get(category.id)
     expect(updated?.color).toBeUndefined()
@@ -85,7 +82,7 @@ describe('updateCategory', () => {
   })
 
   it('omitting color/icon from the patch leaves them untouched', async () => {
-    const category = await createCategory({ name: 'Comida', kind: 'expense', color: '#3b82f6', icon: 'utensils' })
+    const category = await createCategory({ name: 'Comida', color: '#3b82f6', icon: 'utensils' })
     await updateCategory(category.id, { name: 'Comida y bebida' })
     const updated = await db.categories.get(category.id)
     expect(updated?.color).toBe('#3b82f6')
@@ -95,7 +92,7 @@ describe('updateCategory', () => {
 
 describe('setCategoryArchived', () => {
   it('archives and restores a category', async () => {
-    const category = await createCategory({ name: 'Comida', kind: 'expense' })
+    const category = await createCategory({ name: 'Comida' })
     await setCategoryArchived(category.id, true)
     expect((await db.categories.get(category.id))?.isArchived).toBe(true)
     await setCategoryArchived(category.id, false)
@@ -103,16 +100,16 @@ describe('setCategoryArchived', () => {
   })
 
   it('refuses to archive a parent that still has an active child', async () => {
-    const parent = await createCategory({ name: 'Comida', kind: 'expense' })
-    await createCategory({ name: 'Restaurantes', kind: 'expense', parentId: parent.id })
+    const parent = await createCategory({ name: 'Comida' })
+    await createCategory({ name: 'Restaurantes', parentId: parent.id })
 
     await expect(setCategoryArchived(parent.id, true)).rejects.toThrow(/subcategorías activas/)
     expect((await db.categories.get(parent.id))?.isArchived).toBe(false)
   })
 
   it('allows archiving a parent once its children are archived', async () => {
-    const parent = await createCategory({ name: 'Comida', kind: 'expense' })
-    const child = await createCategory({ name: 'Restaurantes', kind: 'expense', parentId: parent.id })
+    const parent = await createCategory({ name: 'Comida' })
+    const child = await createCategory({ name: 'Restaurantes', parentId: parent.id })
 
     await setCategoryArchived(child.id, true)
     await setCategoryArchived(parent.id, true)
@@ -122,9 +119,9 @@ describe('setCategoryArchived', () => {
 
 describe('moveCategory', () => {
   it('swaps order with the adjacent sibling', async () => {
-    await createCategory({ name: 'A', kind: 'expense' })
-    const b = await createCategory({ name: 'B', kind: 'expense' })
-    await createCategory({ name: 'C', kind: 'expense' })
+    await createCategory({ name: 'A' })
+    const b = await createCategory({ name: 'B' })
+    await createCategory({ name: 'C' })
 
     await moveCategory(b.id, 'up')
     const afterUp = await listCategories()
@@ -137,8 +134,8 @@ describe('moveCategory', () => {
   })
 
   it('is a no-op at either end of the sibling group', async () => {
-    const a = await createCategory({ name: 'A', kind: 'expense' })
-    const b = await createCategory({ name: 'B', kind: 'expense' })
+    const a = await createCategory({ name: 'A' })
+    const b = await createCategory({ name: 'B' })
 
     await moveCategory(a.id, 'up')
     expect((await listCategories()).map((c) => c.name)).toEqual(['A', 'B'])
@@ -147,23 +144,16 @@ describe('moveCategory', () => {
     expect((await listCategories()).map((c) => c.name)).toEqual(['A', 'B'])
   })
 
-  it('never swaps across different kinds or parents', async () => {
-    const expenseA = await createCategory({ name: 'Comida', kind: 'expense' })
-    const income = await createCategory({ name: 'Sueldo', kind: 'income' })
-    const parent = await createCategory({ name: 'Transporte', kind: 'expense' })
-    const child = await createCategory({ name: 'Nafta', kind: 'expense', parentId: parent.id })
+  it('never swaps across different parents', async () => {
+    const parent = await createCategory({ name: 'Transporte' })
+    const child = await createCategory({ name: 'Nafta', parentId: parent.id })
+    await createCategory({ name: 'Comida' })
 
-    // Moving the only income category "up" must not touch expense siblings —
-    // it's a no-op since income has no sibling in its own (kind) group.
-    await moveCategory(income.id, 'up')
-    expect((await db.categories.get(income.id))?.order).toBe(1)
-    expect((await db.categories.get(expenseA.id))?.order).toBe(0)
-
-    // A child category's sibling group is scoped by parentId too, so this
-    // is also a no-op even though other expense categories exist.
+    // A child category's sibling group is scoped by parentId, so this
+    // is a no-op even though other top-level categories exist.
     await moveCategory(child.id, 'up')
-    expect((await db.categories.get(child.id))?.order).toBe(3)
-    expect((await db.categories.get(parent.id))?.order).toBe(2)
+    expect((await db.categories.get(child.id))?.order).toBe(1)
+    expect((await db.categories.get(parent.id))?.order).toBe(0)
   })
 })
 
@@ -172,48 +162,13 @@ describe('seedDefaultsIfEmpty', () => {
     await seedDefaultsIfEmpty()
     const seeded = await listCategories()
     expect(seeded.length).toBeGreaterThan(0)
-    expect(seeded.some((c) => c.name === 'Comida' && c.kind === 'expense')).toBe(true)
-    expect(seeded.some((c) => c.name === 'Sueldo' && c.kind === 'income')).toBe(true)
+    expect(seeded.some((c) => c.name === 'Comida')).toBe(true)
   })
 
   it('does not duplicate if a category already exists', async () => {
-    await createCategory({ name: 'Mi categoría', kind: 'expense' })
+    await createCategory({ name: 'Mi categoría' })
     await seedDefaultsIfEmpty()
     const categories = await listCategories()
     expect(categories).toEqual([expect.objectContaining({ name: 'Mi categoría' })])
-  })
-})
-
-describe('getOrCreateInvestmentCategory', () => {
-  it('creates it archived, at the fixed id, with the fixed name', async () => {
-    const category = await getOrCreateInvestmentCategory()
-    expect(category).toMatchObject({
-      id: INVESTMENT_CATEGORY_ID,
-      name: INVESTMENT_CATEGORY_NAME,
-      kind: 'expense',
-      isArchived: true,
-    })
-  })
-
-  it('is idempotent — a second call returns the same row instead of creating another', async () => {
-    const first = await getOrCreateInvestmentCategory()
-    const second = await getOrCreateInvestmentCategory()
-    expect(second.id).toBe(first.id)
-    expect(await db.categories.count()).toBe(1)
-  })
-
-  // Regression: DEFAULT_CATEGORIES already seeds an income category also
-  // named "Inversiones" — a name-based lookup would collide with it (or
-  // create a second, ambiguous "Inversiones"). The fixed id sidesteps
-  // that entirely; this confirms both coexist without interference.
-  it('coexists with the seeded income "Inversiones" category without colliding', async () => {
-    await seedDefaultsIfEmpty()
-    const investmentCategory = await getOrCreateInvestmentCategory()
-
-    const all = await listCategories()
-    const seededIncome = all.find((c) => c.name === 'Inversiones' && c.kind === 'income')
-    expect(seededIncome).toBeDefined()
-    expect(seededIncome?.id).not.toBe(investmentCategory.id)
-    expect(investmentCategory).toMatchObject({ id: INVESTMENT_CATEGORY_ID, name: INVESTMENT_CATEGORY_NAME })
   })
 })

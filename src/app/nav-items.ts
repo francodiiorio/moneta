@@ -1,6 +1,5 @@
 import {
   LayoutDashboard,
-  Wallet,
   ArrowLeftRight,
   PiggyBank,
   CalendarSync,
@@ -18,7 +17,6 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/cuentas', label: 'Cuentas', icon: Wallet },
   { to: '/movimientos', label: 'Movimientos', icon: ArrowLeftRight },
   { to: '/presupuestos', label: 'Presupuestos', icon: PiggyBank },
   { to: '/planes', label: 'Planes', icon: CalendarSync },

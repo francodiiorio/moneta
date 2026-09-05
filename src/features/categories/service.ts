@@ -7,7 +7,6 @@ export { listCategories, setCategoryArchived, moveCategory } from '@/database/re
 export async function createCategoryFromForm(values: CategoryFormValues): Promise<Category> {
   return categoriesRepo.createCategory({
     name: values.name,
-    kind: values.kind,
     ...(values.parentId && { parentId: values.parentId }),
     ...(values.color && { color: values.color }),
     ...(values.icon && { icon: values.icon }),

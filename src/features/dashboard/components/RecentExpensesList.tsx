@@ -22,10 +22,7 @@ export function RecentExpensesList({ items }: RecentExpensesListProps) {
             <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} size="sm" />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{item.description}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {item.categoryLabel ? `${item.categoryLabel} · ` : ''}
-                {item.accountLabel}
-              </p>
+              <p className="truncate text-xs text-muted-foreground">{item.categoryLabel ?? '—'}</p>
             </div>
           </div>
           <div className="shrink-0 text-right">

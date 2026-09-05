@@ -14,7 +14,7 @@ import { AUTO_PRICE_ASSET_TYPES } from '@/domain/entities'
 import type { AssetPrice, ExchangeRate, InvestmentAsset, InvestmentHolding, SavingsHolding } from '@/domain/entities'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
-import { NO_ACCOUNT, NO_PROFILE, rateValueToNumber, type ExchangeRateFormValues } from './schema'
+import { NO_PROFILE, rateValueToNumber, type ExchangeRateFormValues } from './schema'
 import type {
   InvestmentAssetFormValues,
   InvestmentLotFormValues,
@@ -26,8 +26,6 @@ export { listSavingsHoldings, deleteSavingsHolding } from '@/database/repositori
 export { listInvestmentAssets, deleteInvestmentAsset, deleteInvestmentHolding } from '@/database/repositories/investments.repo'
 export { listInvestmentLots, deleteInvestmentLot } from '@/database/repositories/investmentLots.repo'
 export { listExchangeRates, deleteExchangeRate } from '@/database/repositories/exchangeRates.repo'
-export { listAccountsWithBalances } from '@/database/repositories/accounts.repo'
-export type { AccountWithBalance } from '@/database/repositories/accounts.repo'
 // Cotizaciones automáticas (Etapa 6C) is a headless orchestration layer
 // with no UI of its own — the Cotizaciones tab here is its only consumer.
 // Re-exporting a service (not a component) across features is the
@@ -75,16 +73,11 @@ export interface NetWorthSummary extends ValuationResult {
   displayCurrency: CurrencyCode
 }
 
-/** Valúa Ahorros + Inversiones (nunca Cuentas — `accounts: []`, ver ADR
- *  "Ahorro e Inversiones deja de incluir Cuentas" en docs/DECISIONS.md)
- *  a una fecha puntual: pide el último precio de cada activo vigente a
- *  esa fecha y llama a `domain/networth:valuateNetWorth`. Compartido por
- *  `getNetWorthSummary` (una sola fecha, hoy) y
- *  `getSavingsAndInvestmentsHistory` (una fecha por mes) — la única
- *  diferencia entre ambas es la fecha que se le pasa. Un consolidado que
- *  también incluye Cuentas sigue existiendo, pero sólo en Reportes
- *  (`features/reports/service.ts`, que llama a `valuateNetWorth` de
- *  forma independiente con su propia lista de cuentas). */
+/** Valúa Ahorros + Inversiones a una fecha puntual: pide el último precio
+ *  de cada activo vigente a esa fecha y llama a
+ *  `domain/networth:valuateNetWorth`. Compartido por `getNetWorthSummary`
+ *  (una sola fecha, hoy) y `getSavingsAndInvestmentsHistory` (una fecha
+ *  por mes) — la única diferencia entre ambas es la fecha que se le pasa. */
 async function valueSavingsAndInvestmentsAt(
   asOfDate: DateStamp,
   displayCurrency: CurrencyCode,
@@ -108,7 +101,6 @@ async function valueSavingsAndInvestmentsAt(
   })
 
   return valuateNetWorth({
-    accounts: [],
     savings,
     positions,
     rates,
@@ -283,14 +275,12 @@ function parseLotFields(quantityInput: string, costPerUnitInput: string | undefi
 export async function createInvestmentLotFromForm(values: InvestmentLotFormValues) {
   const asset = await requireAsset(values.assetId)
   const { quantity, costPerUnit } = parseLotFields(values.quantity, values.costPerUnit, asset.currency)
-  const accountId = values.accountId && values.accountId !== NO_ACCOUNT ? values.accountId : undefined
   return investmentLotsRepo.createInvestmentLot({
     assetId: values.assetId,
     currency: asset.currency,
     date: values.date,
     quantity,
     ...(costPerUnit !== undefined && { costPerUnit }),
-    ...(accountId !== undefined && { accountId }),
   })
 }
 

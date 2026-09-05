@@ -20,13 +20,6 @@ export const router = createBrowserRouter([
         },
       },
       {
-        path: 'cuentas',
-        lazy: async () => {
-          const { AccountsPage } = await import('@/features/accounts/routes/AccountsPage')
-          return { Component: AccountsPage }
-        },
-      },
-      {
         path: 'movimientos',
         lazy: async () => {
           const { TransactionsPage } = await import('@/features/transactions/routes/TransactionsPage')

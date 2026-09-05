@@ -15,7 +15,6 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { InstallmentPlan } from '@/domain/entities'
-import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
 import { updateInstallmentPlanFromForm } from '../service'
 import { installmentPlanEditFormSchema, type InstallmentPlanEditFormValues } from '../schema'
@@ -27,27 +26,22 @@ interface InstallmentPlanEditDialogProps {
 }
 
 function planToFormValues(plan: InstallmentPlan): InstallmentPlanEditFormValues {
-  return { description: plan.description, accountId: plan.accountId, categoryId: plan.categoryId }
+  return { description: plan.description, categoryId: plan.categoryId }
 }
 
 /**
- * Deliberately narrower than InstallmentPlanFormDialog: only description,
- * cuenta y categoría son editables — ver
- * installmentPlans.repo.ts:updateInstallmentPlan para por qué el monto
- * total, la cantidad de cuotas y las fechas quedan fijas después de crear
- * la compra (para eso hay que borrarla y cargarla de nuevo).
+ * Deliberately narrower than InstallmentPlanFormDialog: only descripción y
+ * categoría son editables — ver installmentPlans.repo.ts:
+ * updateInstallmentPlan para por qué el monto total, la cantidad de
+ * cuotas, la moneda y las fechas quedan fijas después de crear la compra
+ * (para eso hay que borrarla y cargarla de nuevo).
  */
 export function InstallmentPlanEditDialog({ plan, onOpenChange }: InstallmentPlanEditDialogProps) {
-  const accounts = useAccounts()
   const categories = useExpenseCategories()
-  // The plan's own scheduleCache amounts are frozen in its original
-  // currency — offering a different-currency account would silently make
-  // updateInstallmentPlan reject the edit, so it never shows up as an option.
-  const accountOptions = accounts?.filter((a) => a.currency === plan?.currency)
 
   const form = useForm<InstallmentPlanEditFormValues>({
     resolver: zodResolver(installmentPlanEditFormSchema),
-    defaultValues: { description: '', accountId: '', categoryId: '' },
+    defaultValues: { description: '', categoryId: '' },
   })
 
   useEffect(() => {
@@ -73,7 +67,7 @@ export function InstallmentPlanEditDialog({ plan, onOpenChange }: InstallmentPla
           <DialogTitle>Editar compra en cuotas</DialogTitle>
           <DialogDescription>
             Las cuotas ya confirmadas quedan igual — el cambio rige para las que todavía no se
-            confirmaron. El monto total y la cantidad de cuotas no se pueden editar.
+            confirmaron. El monto total, la cantidad de cuotas y la moneda no se pueden editar.
           </DialogDescription>
         </DialogHeader>
 
@@ -88,31 +82,6 @@ export function InstallmentPlanEditDialog({ plan, onOpenChange }: InstallmentPla
                   <FormControl>
                     <Input placeholder="Ej: Notebook" {...field} />
                   </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="accountId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Cuenta</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Elegí una cuenta" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {accountOptions?.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

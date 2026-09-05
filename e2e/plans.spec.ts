@@ -3,8 +3,6 @@ import { expect, test, type Page } from '@playwright/test'
 async function createRecurringPlan(page: Page) {
   await page.getByRole('button', { name: 'Nuevo recurrente' }).first().click()
   await page.getByLabel('Descripción').fill('Alquiler')
-  await page.getByRole('combobox', { name: 'Cuenta' }).click()
-  await page.getByRole('option', { name: 'Banco Prueba' }).click()
   await page.getByLabel('Monto').fill('100000')
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option').first().click()
@@ -19,14 +17,6 @@ async function createRecurringPlan(page: Page) {
   await expect(page.getByRole('dialog', { name: 'Nuevo recurrente' })).not.toBeVisible()
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Banco Prueba')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog', { name: 'Nueva cuenta' })).not.toBeVisible()
-})
-
 test('a recurring plan starting today materializes its first payment immediately, no reload needed', async ({
   page,
 }) => {
@@ -36,8 +26,6 @@ test('a recurring plan starting today materializes its first payment immediately
   await page.goto('/planes')
   await page.getByRole('button', { name: 'Nuevo recurrente' }).first().click()
   await page.getByLabel('Descripción').fill('gym')
-  await page.getByRole('combobox', { name: 'Cuenta' }).click()
-  await page.getByRole('option', { name: 'Banco Prueba' }).click()
   await page.getByLabel('Monto').fill('55990')
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option').first().click()
@@ -49,7 +37,7 @@ test('a recurring plan starting today materializes its first payment immediately
   await expect(page.getByText('gym').first()).toBeVisible()
 })
 
-test('deleting a recurring plan keeps its generated movements by default', async ({ page }) => {
+test('deleting a recurring plan keeps its generated gastos by default', async ({ page }) => {
   await page.goto('/planes')
   await createRecurringPlan(page)
 
@@ -59,7 +47,7 @@ test('deleting a recurring plan keeps its generated movements by default', async
   await page.goto('/planes')
   await page.locator('div.rounded-xl', { hasText: 'Alquiler' }).locator('button').last().click()
   // Regression: this used to be the only option — deleting a plan left no
-  // way to also remove the movements it already generated.
+  // way to also remove the gastos it already generated.
   await expect(page.getByLabel(/Borrar también/)).not.toBeChecked()
   await page.getByRole('button', { name: 'Eliminar' }).click()
   // Wait for the actual deletion to finish (not just the click event) before
@@ -72,7 +60,7 @@ test('deleting a recurring plan keeps its generated movements by default', async
   await expect(page.getByText('Alquiler').first()).toBeVisible()
 })
 
-test('checking "Borrar también" removes the plan\'s generated movements too', async ({ page }) => {
+test('checking "Borrar también" removes the plan\'s generated gastos too', async ({ page }) => {
   await page.goto('/planes')
   await createRecurringPlan(page)
 

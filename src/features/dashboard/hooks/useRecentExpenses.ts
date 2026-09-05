@@ -7,6 +7,6 @@ const RECENT_EXPENSES_LIMIT = 5
 export function useRecentExpenses(month: MonthStamp): TransactionListItem[] | undefined {
   return useLiveQuery(async () => {
     const items = await listTransactionsForMonth(month)
-    return items.filter((item) => item.kind === 'expense').slice(0, RECENT_EXPENSES_LIMIT)
+    return items.slice(0, RECENT_EXPENSES_LIMIT)
   }, [month])
 }

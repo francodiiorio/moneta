@@ -1,19 +1,21 @@
 import { z } from 'zod'
 import {
-  accountSchema,
   assetPriceSchema,
   budgetSchema,
-  categorySchema,
   exchangeRateSchema,
-  installmentPlanSchema,
   investmentAssetSchema,
   investmentHoldingSchema,
-  postingSchema,
-  recurringPlanSchema,
   savingsHoldingSchema,
   settingsSchema,
-  transactionSchema,
 } from '@/domain/entities'
+import {
+  legacyAccountSchema,
+  legacyCategorySchema,
+  legacyInstallmentPlanSchema,
+  legacyPostingSchema,
+  legacyRecurringPlanSchema,
+  legacyTransactionSchema,
+} from './legacy'
 import { BACKUP_FORMAT } from './v1'
 
 /**
@@ -29,12 +31,12 @@ export const backupV2Schema = z.object({
   app: z.object({ name: z.string(), version: z.string() }),
   checksum: z.string(),
   data: z.object({
-    accounts: z.array(accountSchema),
-    categories: z.array(categorySchema),
-    transactions: z.array(transactionSchema),
-    postings: z.array(postingSchema),
-    recurringPlans: z.array(recurringPlanSchema),
-    installmentPlans: z.array(installmentPlanSchema),
+    accounts: z.array(legacyAccountSchema),
+    categories: z.array(legacyCategorySchema),
+    transactions: z.array(legacyTransactionSchema),
+    postings: z.array(legacyPostingSchema),
+    recurringPlans: z.array(legacyRecurringPlanSchema),
+    installmentPlans: z.array(legacyInstallmentPlanSchema),
     budgets: z.array(budgetSchema),
     exchangeRates: z.array(exchangeRateSchema),
     settings: settingsSchema.optional(),

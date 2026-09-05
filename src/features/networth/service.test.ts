@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/database/db'
-import { createAccount } from '@/database/repositories/accounts.repo'
 import { createExchangeRate } from '@/database/repositories/exchangeRates.repo'
 import { createInvestmentAsset, createInvestmentHolding, listInvestmentHoldings } from '@/database/repositories/investments.repo'
 import { createAssetPrice } from '@/database/repositories/assetPrices.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
 import { QUANTITY_SCALE } from '@/domain/decimal'
-import { minor, money } from '@/domain/money'
+import { money } from '@/domain/money'
 import { generateId } from '@/lib/ids'
 import {
   createExchangeRateFromForm,
@@ -24,11 +23,10 @@ import {
   updateInvestmentLotFromForm,
   updateSavingsHoldingFromForm,
 } from './service'
-import { NO_ACCOUNT, NO_PROFILE } from './schema'
+import { NO_PROFILE } from './schema'
 
 afterEach(async () => {
   await Promise.all([
-    db.accounts.clear(),
     db.exchangeRates.clear(),
     db.settings.clear(),
     db.savingsHoldings.clear(),
@@ -36,8 +34,6 @@ afterEach(async () => {
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
     db.investmentLots.clear(),
-    db.transactions.clear(),
-    db.postings.clear(),
     db.categories.clear(),
   ])
 })
@@ -92,21 +88,6 @@ describe('getNetWorthSummary', () => {
     expect(summary.byBucket.investments).toEqual(money(0, 'ARS'))
     expect(summary.missingRateCount).toBe(0)
     expect(summary.missingPriceCount).toBe(0)
-  })
-
-  // Regression: this feature is scoped to Ahorro e Inversiones only — a
-  // cuenta's balance must never leak into its total, even though the
-  // domain-level valuateNetWorth() it calls into is fully capable of
-  // pricing accounts too (Reportes uses it that way). See
-  // docs/DECISIONS.md "Ahorro e Inversiones deja de incluir Cuentas".
-  it('never includes an account balance in the total, even with no savings/investments at all', async () => {
-    await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(1_000_000) })
-
-    const summary = await getNetWorthSummary('ARS')
-
-    expect(summary.total).toEqual(money(0, 'ARS'))
-    expect(summary.byBucket.accounts).toEqual(money(0, 'ARS'))
-    expect(summary.missingRateCount).toBe(0)
   })
 
   it('respects an explicit display currency override without touching stored amounts', async () => {
@@ -173,18 +154,6 @@ describe('getSavingsAndInvestmentsHistory', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  // Regression: this feature is scoped to Ahorro e Inversiones only —
-  // same guarantee as getNetWorthSummary, but across every historical
-  // point too, not just today's. See docs/DECISIONS.md "Ahorro e
-  // Inversiones deja de incluir Cuentas".
-  it('never includes an account balance in any point, even with no savings/investments at all', async () => {
-    await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(1_000_000) })
-
-    const { points, missingRateCount } = await getSavingsAndInvestmentsHistory(3)
-    expect(points.every((p) => p.total.amount === 0)).toBe(true)
-    expect(missingRateCount).toBe(0)
   })
 
   it('accumulates missingRateCount/missingPriceCount across every point', async () => {
@@ -262,35 +231,6 @@ describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
     expect('averageCost' in (holding ?? {})).toBe(false)
   })
 
-  it('links the lot to a generated movement when a funding account is chosen, debiting the account', async () => {
-    const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'USD', openingBalance: minor(100_000_00) })
-    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
-    const lot = await createInvestmentLotFromForm({
-      assetId: asset.id,
-      quantity: '5',
-      costPerUnit: '600',
-      date: '2026-01-01',
-      accountId: account.id,
-    })
-
-    expect(lot.transactionId).toBeDefined()
-    const transaction = await db.transactions.get(lot.transactionId!)
-    expect(transaction?.kind).toBe('investment')
-  })
-
-  it('the NO_ACCOUNT sentinel resolves to no funding account, same as leaving the field blank', async () => {
-    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
-    const lot = await createInvestmentLotFromForm({
-      assetId: asset.id,
-      quantity: '1',
-      costPerUnit: '600',
-      date: '2026-01-01',
-      accountId: NO_ACCOUNT,
-    })
-
-    expect(lot.transactionId).toBeUndefined()
-    expect(await db.transactions.count()).toBe(0)
-  })
 })
 
 describe('createManualPriceFromForm', () => {

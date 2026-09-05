@@ -1,5 +1,4 @@
 import {
-  Wallet,
   ArrowLeftRight,
   Tag,
   PiggyBank,
@@ -23,37 +22,25 @@ interface GuideSection {
 
 const SECTIONS: GuideSection[] = [
   {
-    icon: Wallet,
-    title: '1. Creá tus cuentas',
-    steps: [
-      'Andá a "Cuentas" y agregá cada cuenta real que quieras llevar: banco, efectivo, tarjeta, inversión.',
-      'Elegí la moneda al crearla — es fija, no se puede cambiar después. Un movimiento de esa cuenta siempre va a estar en esa moneda.',
-      'El saldo se calcula solo a partir de los movimientos que cargues; nunca se edita a mano.',
-    ],
-    link: { to: '/cuentas', label: 'Ir a Cuentas' },
-  },
-  {
     icon: ArrowLeftRight,
-    title: '2. Cargá movimientos',
+    title: '1. Cargá gastos',
     steps: [
-      'Desde "Movimientos" → "Nuevo movimiento", elegí ingreso, gasto o transferencia.',
-      'Un ingreso o un gasto piden cuenta, categoría, monto y fecha.',
-      'Una transferencia mueve dinero entre dos cuentas tuyas. Si son de distinta moneda, indicás el monto que sale de una y el que entra en la otra — la tasa de cambio se calcula sola.',
+      'Desde "Movimientos" → "Nuevo gasto", indicá la descripción, la categoría, el monto y la moneda.',
+      'Podés crear una categoría nueva al vuelo mientras estás cargando un gasto.',
     ],
     link: { to: '/movimientos', label: 'Ir a Movimientos' },
   },
   {
     icon: Tag,
-    title: '3. Organizá categorías',
+    title: '2. Organizá categorías',
     steps: [
-      'En Ajustes → Categorías podés crear, editar y archivar categorías de gasto e ingreso, con hasta un nivel de subcategorías.',
-      'También podés crear una categoría nueva al vuelo mientras estás cargando un movimiento.',
+      'En Ajustes → Categorías podés crear, editar y archivar categorías, con hasta un nivel de subcategorías.',
     ],
     link: { to: '/ajustes/categorias', label: 'Ir a Categorías' },
   },
   {
     icon: PiggyBank,
-    title: '4. Definí presupuestos',
+    title: '3. Definí presupuestos',
     steps: [
       'En "Presupuestos", asignale un monto mensual o anual a cada categoría que quieras controlar.',
       'La barra de progreso muestra cuánto llevás gastado del período: se pone amarilla cerca del 90% y roja si te pasaste.',
@@ -62,47 +49,47 @@ const SECTIONS: GuideSection[] = [
   },
   {
     icon: CalendarSync,
-    title: '5. Automatizá recurrentes y cuotas',
+    title: '4. Automatizá recurrentes y cuotas',
     steps: [
-      'En "Planes" → pestaña Recurrentes, cargá un gasto o ingreso que se repite (alquiler, sueldo, suscripción) y se va a generar solo cada vez que abras la app.',
-      'En la pestaña Cuotas, cargá una compra en cuotas una sola vez con el monto total y la cantidad — Moneta arma todo el cronograma. Las cuotas que todavía no vencieron aparecen como "Proyectado" en Movimientos y no afectan tu saldo actual hasta su fecha.',
+      'En "Planes" → pestaña Recurrentes, cargá un gasto que se repite (alquiler, suscripción) y se va a generar solo cada vez que abras la app.',
+      'En la pestaña Cuotas, cargá una compra en cuotas una sola vez con el monto total y la cantidad — Moneta arma todo el cronograma. Las cuotas que todavía no vencieron aparecen como "Proyectado" en Movimientos.',
     ],
     link: { to: '/planes', label: 'Ir a Planes' },
   },
   {
     icon: Landmark,
-    title: '6. Registrá tus ahorros e inversiones',
+    title: '5. Registrá tus ahorros e inversiones',
     steps: [
-      'En "Ahorro e Inversiones" → pestaña Ahorros, cargá plata que tenés guardada pero no pasa por movimientos — efectivo, una caja de ahorro que no conciliás.',
+      'En "Ahorro e Inversiones" → pestaña Ahorros, cargá plata que tenés guardada — efectivo, una caja de ahorro que no conciliás.',
       'En la pestaña Inversiones, primero creá el activo (ej. SPY, un CEDEAR, Bitcoin) y después una posición con la cantidad que tenés. Cargá el precio a mano con "Cargar precio" — cada carga queda en el historial, nunca pisa la anterior. Para cripto, podés activar "Actualizar precio automáticamente" con el id de CoinGecko.',
       'En la pestaña Cotizaciones elegís qué referencia de dólar usar para valuar (oficial, blue, MEP, CCL, etc.) y podés prender la actualización automática — trae el dólar y el euro solos cada tanto, o los actualizás vos con "Actualizar ahora". Apagada por defecto: sin activarla, la app no consulta nada por internet.',
-      'La pestaña Resumen consolida ahorros + inversiones en la moneda que elijas (ARS, USD o EUR) — sin incluir tus cuentas, que ya tienen su propia página — sin modificar los importes originales.',
+      'La pestaña Resumen consolida ahorros + inversiones en la moneda que elijas (ARS, USD o EUR), sin modificar los importes originales.',
       'Si falta una tasa de cambio o un precio para convertir algo, ese ítem queda afuera del total y aparece un aviso — nunca se inventa una conversión.',
     ],
     link: { to: '/patrimonio', label: 'Ir a Ahorro e Inversiones' },
   },
   {
     icon: BarChart3,
-    title: '7. Mirá tus reportes',
+    title: '6. Mirá tus reportes',
     steps: [
-      'El Dashboard resume el mes en curso: ingresos, gastos y balance neto, de un vistazo.',
-      '"Reportes" tiene el detalle: gasto por categoría y la evolución de tu patrimonio total (todas las cuentas, convertidas a tu moneda base) en los últimos 6 meses.',
+      'El Dashboard resume el mes en curso: gastos y ahorro e inversiones, de un vistazo.',
+      '"Reportes" tiene el detalle: gasto por categoría y la evolución de tu patrimonio (ahorros e inversiones, convertidos a tu moneda base) en los últimos 6 meses.',
     ],
     link: { to: '/reportes', label: 'Ir a Reportes' },
   },
   {
     icon: Upload,
-    title: '8. Importá un extracto bancario',
+    title: '7. Importá un extracto bancario',
     steps: [
-      'Desde "Movimientos" → "Importar CSV", subís el archivo y le indicás qué columna es cuál (fecha, descripción, monto) y una cuenta destino.',
-      'Elegís una categoría para todos los gastos del lote y otra para todos los ingresos.',
+      'Desde "Movimientos" → "Importar CSV", subís el archivo y le indicás qué columna es cuál (fecha, descripción, monto), la moneda y una categoría.',
+      'Sólo se importan gastos: si el extracto trae también ingresos (columna de crédito, o un monto positivo), esas filas quedan marcadas como "no se importa" y no se pueden seleccionar.',
       'Antes de confirmar, revisás una vista previa: los posibles duplicados y las filas que no se pudieron leer quedan destildados por defecto, así nunca se importa nada sin que lo veas primero.',
     ],
     link: { to: '/movimientos/importar', label: 'Ir a Importar CSV' },
   },
   {
     icon: Save,
-    title: '9. Hacé backup de tus datos',
+    title: '8. Hacé backup de tus datos',
     steps: [
       'Todo vive únicamente en tu navegador — no hay ningún servidor. En Ajustes, "Exportar backup" genera un archivo .finance con todos tus datos: es tu única copia de seguridad real.',
       '"Importar backup" te deja reemplazar todo o fusionar con lo que ya tenés (si hay un conflicto, tus datos locales siempre ganan).',

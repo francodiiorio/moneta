@@ -26,6 +26,12 @@ export const CURRENCIES: Record<string, CurrencyInfo> = {
   EUR: { code: 'EUR', decimals: 2, symbol: '€', locale: 'de-DE' },
 }
 
+/** Every currency a form's moneda picker can offer — shared so each
+ *  feature that lets the user pick a currency (a gasto, a plan, a CSV
+ *  import mapping, a saving/investment) doesn't redeclare its own
+ *  `Object.keys(CURRENCIES)`. */
+export const CURRENCY_CODES = Object.keys(CURRENCIES)
+
 const FALLBACK_LOCALE = 'es-AR'
 
 /** Falls back to a 2-decimal, symbol-less definition for unknown codes

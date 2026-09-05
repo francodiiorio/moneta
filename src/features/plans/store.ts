@@ -19,10 +19,10 @@ interface PlansUiState {
   openInstallmentDialog: () => void
   closeInstallmentDialog: () => void
 
-  // Editing a compra en cuotas only ever touches description/cuenta/
-  // categoría (see installmentPlans.repo.ts:updateInstallmentPlan) — small
-  // enough a field set that it gets its own dialog instead of overloading
-  // the create one.
+  // Editing a compra en cuotas only ever touches description/categoría
+  // (see installmentPlans.repo.ts:updateInstallmentPlan) — small enough a
+  // field set that it gets its own dialog instead of overloading the
+  // create one.
   installmentEditId: string | null
   openInstallmentEditDialog: (id: string) => void
   closeInstallmentEditDialog: () => void

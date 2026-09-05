@@ -27,7 +27,6 @@ describe('buildInstallmentSchedule', () => {
     const plan: InstallmentPlan = {
       id: 'p1',
       description: 'Notebook',
-      accountId: 'acc1',
       categoryId: 'cat1',
       totalAmount: 10_000,
       currency: 'ARS',

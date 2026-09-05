@@ -8,10 +8,8 @@ import { migrateToLatest } from './migrations'
 
 afterEach(async () => {
   await Promise.all([
-    db.accounts.clear(),
     db.categories.clear(),
-    db.transactions.clear(),
-    db.postings.clear(),
+    db.expenses.clear(),
     db.recurringPlans.clear(),
     db.installmentPlans.clear(),
     db.budgets.clear(),
@@ -28,23 +26,9 @@ afterEach(async () => {
 async function seedFullDatabase() {
   const now = new Date().toISOString()
 
-  const account = {
-    id: generateId(),
-    name: 'Banco',
-    type: 'bank' as const,
-    currency: 'ARS',
-    openingBalance: 100_000,
-    isArchived: false,
-    order: 0,
-    createdAt: now,
-    updatedAt: now,
-  }
-  await db.accounts.add(account)
-
   const category = {
     id: generateId(),
     name: 'Comida',
-    kind: 'expense' as const,
     order: 0,
     isArchived: false,
     createdAt: now,
@@ -52,37 +36,18 @@ async function seedFullDatabase() {
   }
   await db.categories.add(category)
 
-  const transaction = {
+  const expense = {
     id: generateId(),
     date: '2026-08-23',
-    kind: 'expense' as const,
+    amount: 1500,
+    currency: 'ARS',
+    categoryId: category.id,
     description: 'Supermercado',
     status: 'confirmed' as const,
     createdAt: now,
     updatedAt: now,
   }
-  await db.transactions.add(transaction)
-
-  await db.postings.bulkAdd([
-    {
-      id: generateId(),
-      transactionId: transaction.id,
-      target: 'account' as const,
-      accountId: account.id,
-      amount: -1500,
-      currency: 'ARS',
-      date: '2026-08-23',
-    },
-    {
-      id: generateId(),
-      transactionId: transaction.id,
-      target: 'category' as const,
-      categoryId: category.id,
-      amount: 1500,
-      currency: 'ARS',
-      date: '2026-08-23',
-    },
-  ])
+  await db.expenses.add(expense)
 
   await db.exchangeRates.add({
     id: generateId(),
@@ -107,8 +72,6 @@ async function seedFullDatabase() {
     id: generateId(),
     template: {
       description: 'Alquiler',
-      kind: 'expense' as const,
-      accountId: account.id,
       categoryId: category.id,
       amount: 200_000,
       currency: 'ARS',
@@ -122,7 +85,6 @@ async function seedFullDatabase() {
   await db.installmentPlans.add({
     id: generateId(),
     description: 'Heladera en 3 cuotas',
-    accountId: account.id,
     categoryId: category.id,
     totalAmount: 300_000,
     currency: 'ARS',
@@ -193,7 +155,7 @@ async function seedFullDatabase() {
     schemaVersion: 1,
   })
 
-  return { account, category, transaction }
+  return { category, expense }
 }
 
 function sortById<T extends { id: string }>(items: T[]): T[] {
@@ -202,10 +164,8 @@ function sortById<T extends { id: string }>(items: T[]): T[] {
 
 async function snapshotAllTables() {
   return {
-    accounts: sortById(await db.accounts.toArray()),
     categories: sortById(await db.categories.toArray()),
-    transactions: sortById(await db.transactions.toArray()),
-    postings: sortById(await db.postings.toArray()),
+    expenses: sortById(await db.expenses.toArray()),
     recurringPlans: sortById(await db.recurringPlans.toArray()),
     installmentPlans: sortById(await db.installmentPlans.toArray()),
     budgets: sortById(await db.budgets.toArray()),
@@ -221,10 +181,8 @@ async function snapshotAllTables() {
 
 async function clearAllTables() {
   await Promise.all([
-    db.accounts.clear(),
     db.categories.clear(),
-    db.transactions.clear(),
-    db.postings.clear(),
+    db.expenses.clear(),
     db.recurringPlans.clear(),
     db.installmentPlans.clear(),
     db.budgets.clear(),
@@ -248,7 +206,7 @@ describe('backup round-trip', () => {
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
 
     await clearAllTables()
-    expect(await db.accounts.count()).toBe(0)
+    expect(await db.categories.count()).toBe(0)
 
     const result = await importBackup(file)
     expect(result.checksumMatched).toBe(true)
@@ -286,18 +244,18 @@ describe('backup round-trip', () => {
     expect(settings?.lastBackupImportedAt).toEqual(expect.any(String))
   })
 
-  it('rejects a backup with unbalanced postings before writing anything', async () => {
+  it('rejects a backup with a non-positive expense amount', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
-    payload.data.postings[0]!.amount = -9999 // break the double-entry balance
+    payload.data.expenses[0]!.amount = -9999 // Zod's minorAmount.positive() rejects it at parse time
 
     const file = new File([JSON.stringify(payload)], 'broken.finance', {
       type: 'application/json',
     })
 
-    const countBefore = await db.transactions.count()
-    await expect(importBackup(file)).rejects.toThrow(/Transacción inválida/)
-    expect(await db.transactions.count()).toBe(countBefore) // nothing was written
+    const countBefore = await db.expenses.count()
+    await expect(importBackup(file)).rejects.toThrow(/El backup no es válido/)
+    expect(await db.expenses.count()).toBe(countBefore) // nothing was written
   })
 
   it('rejects a backup with an "auto" priceMode investment asset that is not crypto', async () => {
@@ -307,9 +265,9 @@ describe('backup round-trip', () => {
 
     const file = new File([JSON.stringify(payload)], 'broken.finance', { type: 'application/json' })
 
-    const countBefore = await db.accounts.count()
+    const countBefore = await db.categories.count()
     await expect(importBackup(file)).rejects.toThrow(/El backup no es válido/)
-    expect(await db.accounts.count()).toBe(countBefore) // nothing was written
+    expect(await db.categories.count()).toBe(countBefore) // nothing was written
   })
 
   it('rejects a backup from a future format version', () => {
@@ -334,7 +292,7 @@ describe('backup round-trip — encrypted', () => {
     // An encrypted export is not readable JSON of the underlying data —
     // the whole point of this feature.
     const rawText = await exported.blob.text()
-    expect(rawText).not.toContain('Banco')
+    expect(rawText).not.toContain('Comida')
     expect(rawText).not.toContain('Supermercado')
 
     expect(await peekIsEncrypted(file)).toBe(true)
@@ -363,9 +321,9 @@ describe('backup round-trip — encrypted', () => {
     const exported = await exportBackup('contraseña')
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
 
-    const countBefore = await db.transactions.count()
+    const countBefore = await db.expenses.count()
     await expect(importBackup(file)).rejects.toThrow(PassphraseRequiredError)
-    expect(await db.transactions.count()).toBe(countBefore)
+    expect(await db.expenses.count()).toBe(countBefore)
   })
 
   it('rejects the wrong passphrase, and does not write anything', async () => {
@@ -373,9 +331,9 @@ describe('backup round-trip — encrypted', () => {
     const exported = await exportBackup('contraseña-correcta')
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
 
-    const countBefore = await db.transactions.count()
+    const countBefore = await db.expenses.count()
     await expect(importBackup(file, { passphrase: 'contraseña-incorrecta' })).rejects.toThrow(/Contraseña incorrecta/)
-    expect(await db.transactions.count()).toBe(countBefore)
+    expect(await db.expenses.count()).toBe(countBefore)
   })
 
   it('peekIsEncrypted returns false for a plaintext backup', async () => {
@@ -405,9 +363,8 @@ describe('backup round-trip — merge', () => {
     const result = await importBackup(file, { mode: 'merge' })
     expect(result.checksumMatched).toBe(true)
     expect(result.merged).toEqual({
-      accounts: { added: 1, skipped: 0 },
       categories: { added: 1, skipped: 0 },
-      transactions: { added: 1, skipped: 0 },
+      expenses: { added: 1, skipped: 0 },
       recurringPlans: { added: 1, skipped: 0 },
       installmentPlans: { added: 1, skipped: 0 },
       budgets: { added: 1, skipped: 0 },
@@ -419,10 +376,10 @@ describe('backup round-trip — merge', () => {
       investmentLots: { added: 1, skipped: 0 },
     })
 
-    const accountIds = (await db.accounts.toArray()).map((a) => a.id).sort()
-    expect(accountIds).toEqual([deviceA.account.id, deviceB.account.id].sort())
-    const transactionIds = (await db.transactions.toArray()).map((t) => t.id).sort()
-    expect(transactionIds).toEqual([deviceA.transaction.id, deviceB.transaction.id].sort())
+    const categoryIds = (await db.categories.toArray()).map((c) => c.id).sort()
+    expect(categoryIds).toEqual([deviceA.category.id, deviceB.category.id].sort())
+    const expenseIds = (await db.expenses.toArray()).map((e) => e.id).sort()
+    expect(expenseIds).toEqual([deviceA.expense.id, deviceB.expense.id].sort())
     // Local settings (from deviceB's seed) were never touched by the merge.
     expect((await db.settings.get('singleton'))?.baseCurrency).toBe('ARS')
   })
@@ -433,14 +390,13 @@ describe('backup round-trip — merge', () => {
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
 
     const first = await importBackup(file, { mode: 'merge' })
-    expect(first.merged?.accounts).toEqual({ added: 0, skipped: 1 }) // same device, ids already exist
+    expect(first.merged?.categories).toEqual({ added: 0, skipped: 1 }) // same device, ids already exist
 
-    const countBefore = await db.transactions.count()
+    const countBefore = await db.expenses.count()
     const second = await importBackup(file, { mode: 'merge' })
     expect(second.merged).toEqual({
-      accounts: { added: 0, skipped: 1 },
       categories: { added: 0, skipped: 1 },
-      transactions: { added: 0, skipped: 1 },
+      expenses: { added: 0, skipped: 1 },
       recurringPlans: { added: 0, skipped: 1 },
       installmentPlans: { added: 0, skipped: 1 },
       budgets: { added: 0, skipped: 1 },
@@ -451,12 +407,12 @@ describe('backup round-trip — merge', () => {
       assetPrices: { added: 0, skipped: 1 },
       investmentLots: { added: 0, skipped: 1 },
     })
-    expect(await db.transactions.count()).toBe(countBefore)
+    expect(await db.expenses.count()).toBe(countBefore)
   })
 })
 
-describe('migration — v1 to v2', () => {
-  it('migrates a v1 backup (no patrimonio tables) to v2 with them empty', () => {
+describe('migration — v1 through v4', () => {
+  it('migrates a v1 backup (no patrimonio tables, no gastos) to v4 empty across the board', () => {
     const v1Payload = {
       format: 'moneta-backup' as const,
       version: 1 as const,
@@ -477,6 +433,8 @@ describe('migration — v1 to v2', () => {
 
     const migrated = migrateToLatest(v1Payload)
 
+    expect(migrated.categories).toEqual([])
+    expect(migrated.expenses).toEqual([])
     expect(migrated.savingsHoldings).toEqual([])
     expect(migrated.investmentAssets).toEqual([])
     expect(migrated.investmentHoldings).toEqual([])
@@ -484,7 +442,7 @@ describe('migration — v1 to v2', () => {
     expect(migrated.investmentLots).toEqual([])
   })
 
-  it('importing a v1 .finance file (via importBackup) lands with the patrimonio tables empty', async () => {
+  it('importing a v1 .finance file (via importBackup) lands with everything empty', async () => {
     const v1Payload = {
       format: 'moneta-backup' as const,
       version: 1 as const,
@@ -506,16 +464,44 @@ describe('migration — v1 to v2', () => {
 
     await importBackup(file)
 
+    expect(await db.expenses.count()).toBe(0)
     expect(await db.savingsHoldings.count()).toBe(0)
     expect(await db.investmentAssets.count()).toBe(0)
     expect(await db.investmentHoldings.count()).toBe(0)
     expect(await db.assetPrices.count()).toBe(0)
     expect(await db.investmentLots.count()).toBe(0)
   })
-})
 
-describe('migration — v2 to v3', () => {
-  function v2PayloadWithHolding(holding: { quantity: number; averageCost?: number }) {
+  function v2PayloadWithExpenseAndHolding(holding: { quantity: number; averageCost?: number }) {
+    const account = {
+      id: 'acc1',
+      name: 'Banco',
+      type: 'bank' as const,
+      currency: 'ARS',
+      openingBalance: 0,
+      isArchived: false,
+      order: 0,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const category = {
+      id: 'cat1',
+      name: 'Comida',
+      kind: 'expense' as const,
+      order: 0,
+      isArchived: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const transaction = {
+      id: 'tx1',
+      date: '2026-08-23',
+      kind: 'expense' as const,
+      description: 'Super',
+      status: 'confirmed' as const,
+      createdAt: '2026-08-23T00:00:00.000Z',
+      updatedAt: '2026-08-23T00:00:00.000Z',
+    }
     return {
       format: 'moneta-backup' as const,
       version: 2 as const,
@@ -523,10 +509,13 @@ describe('migration — v2 to v3', () => {
       app: { name: 'moneta', version: '0.0.0' },
       checksum: 'irrelevant-for-this-test',
       data: {
-        accounts: [],
-        categories: [],
-        transactions: [],
-        postings: [],
+        accounts: [account],
+        categories: [category],
+        transactions: [transaction],
+        postings: [
+          { id: 'p1', transactionId: 'tx1', target: 'account' as const, accountId: 'acc1', amount: -1500, currency: 'ARS', date: '2026-08-23' },
+          { id: 'p2', transactionId: 'tx1', target: 'category' as const, categoryId: 'cat1', amount: 1500, currency: 'ARS', date: '2026-08-23' },
+        ],
         recurringPlans: [],
         installmentPlans: [],
         budgets: [],
@@ -557,8 +546,8 @@ describe('migration — v2 to v3', () => {
     }
   }
 
-  it('grandfathers a pre-existing holding into one inherited lot', () => {
-    const migrated = migrateToLatest(v2PayloadWithHolding({ quantity: 500_000_000, averageCost: 60000 }))
+  it('grandfathers a pre-existing holding into one inherited lot, and turns the expense transaction into an Expense', () => {
+    const migrated = migrateToLatest(v2PayloadWithExpenseAndHolding({ quantity: 500_000_000, averageCost: 60000 }))
 
     expect(migrated.investmentLots).toHaveLength(1)
     expect(migrated.investmentLots[0]).toMatchObject({
@@ -568,23 +557,25 @@ describe('migration — v2 to v3', () => {
       currency: 'USD',
       date: '2026-02-15',
     })
+    expect(migrated.expenses).toHaveLength(1)
+    expect(migrated.expenses[0]).toMatchObject({ id: 'tx1', amount: 1500, currency: 'ARS', categoryId: 'cat1' })
   })
 
   it('inherits a lot with no cost when the holding never had one', () => {
-    const migrated = migrateToLatest(v2PayloadWithHolding({ quantity: 500_000_000 }))
+    const migrated = migrateToLatest(v2PayloadWithExpenseAndHolding({ quantity: 500_000_000 }))
 
     expect(migrated.investmentLots).toHaveLength(1)
     expect(migrated.investmentLots[0]?.costPerUnit).toBeUndefined()
   })
 
   it('creates no lot for a zero-quantity holding', () => {
-    const migrated = migrateToLatest(v2PayloadWithHolding({ quantity: 0 }))
+    const migrated = migrateToLatest(v2PayloadWithExpenseAndHolding({ quantity: 0 }))
 
     expect(migrated.investmentLots).toEqual([])
   })
 
-  it('importing a v2 .finance file with a holding lands with its inherited lot in Dexie', async () => {
-    const payload = v2PayloadWithHolding({ quantity: 500_000_000, averageCost: 60000 })
+  it('importing a v2 .finance file with a holding lands with its inherited lot and expense in Dexie', async () => {
+    const payload = v2PayloadWithExpenseAndHolding({ quantity: 500_000_000, averageCost: 60000 })
     const file = new File([JSON.stringify(payload)], 'old-v2.finance', { type: 'application/json' })
 
     await importBackup(file)
@@ -592,5 +583,9 @@ describe('migration — v2 to v3', () => {
     const lots = await db.investmentLots.toArray()
     expect(lots).toHaveLength(1)
     expect(lots[0]).toMatchObject({ assetId: 'asset1', quantity: 500_000_000, costPerUnit: 60000 })
+
+    const expenses = await db.expenses.toArray()
+    expect(expenses).toHaveLength(1)
+    expect(expenses[0]).toMatchObject({ amount: 1500, currency: 'ARS' })
   })
 })

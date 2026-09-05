@@ -4,7 +4,6 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CategoryIcon } from '@/components/CategoryIcon'
-import type { Category } from '@/domain/entities'
 import { useCategories } from '../hooks/useCategories'
 import { createCategoryQuick } from '../service'
 import { groupByParent } from '../tree'
@@ -12,7 +11,6 @@ import { groupByParent } from '../tree'
 const NEW_CATEGORY_VALUE = '__new__'
 
 interface CategoryFieldProps {
-  kind: Category['kind']
   value: string
   onChange: (categoryId: string) => void
 }
@@ -20,8 +18,8 @@ interface CategoryFieldProps {
 /** Category select with an inline "+ Nueva categoría" option — full
  *  category management (edit, archive, jerarquía) vive en /ajustes/categorias;
  *  esto es sólo para no bloquear la carga de una transacción nueva. */
-export function CategoryField({ kind, value, onChange }: CategoryFieldProps) {
-  const categories = useCategories(kind)
+export function CategoryField({ value, onChange }: CategoryFieldProps) {
+  const categories = useCategories()
   const [isCreating, setIsCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -31,7 +29,7 @@ export function CategoryField({ kind, value, onChange }: CategoryFieldProps) {
     if (!name) return
     setIsSaving(true)
     try {
-      const category = await createCategoryQuick(name, kind)
+      const category = await createCategoryQuick(name)
       onChange(category.id)
       setIsCreating(false)
       setNewName('')

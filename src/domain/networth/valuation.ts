@@ -2,14 +2,9 @@ import type { Quantity } from '@/domain/decimal'
 import { valuePosition } from '@/domain/decimal'
 import type { ExchangeRate, SavingsHolding } from '@/domain/entities'
 import { convert, MissingRateError } from '@/domain/currency'
-import type { CurrencyCode, Minor, Money } from '@/domain/money'
+import type { CurrencyCode, Money } from '@/domain/money'
 import { money, sumMoney } from '@/domain/money'
 import type { DateStamp } from '@/lib/dates'
-
-export interface ValuationAccount {
-  balance: Minor
-  currency: CurrencyCode
-}
 
 export interface ValuationPosition {
   quantity: Quantity
@@ -20,7 +15,6 @@ export interface ValuationPosition {
 }
 
 export interface ValuationInput {
-  accounts: readonly ValuationAccount[]
   savings: readonly SavingsHolding[]
   positions: readonly ValuationPosition[]
   rates: readonly ExchangeRate[]
@@ -31,7 +25,7 @@ export interface ValuationInput {
 
 export interface ValuationResult {
   total: Money
-  byBucket: { accounts: Money; savings: Money; investments: Money }
+  byBucket: { savings: Money; investments: Money }
   /** Items excluded from the total for lack of a usable exchange rate —
    *  same fail-safe pattern as features/reports/service.ts: never assume
    *  1:1, never let one missing rate blank the whole total. */
@@ -71,16 +65,16 @@ function tryConvertAll(
 }
 
 /**
- * Values Cuentas + Ahorros + Inversiones in `displayCurrency`, without
- * ever touching a stored amount. The order for a position is always
+ * Values Ahorros + Inversiones in `displayCurrency`, without ever
+ * touching a stored amount. The order for a position is always
  * quantity -> valuePosition (native currency) -> convert (display
  * currency), never a precomputed shortcut — see CLAUDE.md "Reglas
- * financieras" and docs/DECISIONS.md.
+ * financieras" and docs/DECISIONS.md. No Cuentas bucket — ver ADR
+ * "Simplificación: se elimina Cuentas, Ingresos y Transferencias".
  */
 export function valuateNetWorth(input: ValuationInput): ValuationResult {
-  const { accounts, savings, positions, rates, displayCurrency, date, profile } = input
+  const { savings, positions, rates, displayCurrency, date, profile } = input
 
-  const accountAmounts = accounts.map((a) => money(a.balance, a.currency))
   const savingsAmounts = savings.map((s) => money(s.amount, s.currency))
 
   let missingPriceCount = 0
@@ -93,20 +87,18 @@ export function valuateNetWorth(input: ValuationInput): ValuationResult {
     investmentAmounts.push(valuePosition(position.quantity, position.price))
   }
 
-  const accountsResult = tryConvertAll(accountAmounts, displayCurrency, rates, date, profile)
   const savingsResult = tryConvertAll(savingsAmounts, displayCurrency, rates, date, profile)
   const investmentsResult = tryConvertAll(investmentAmounts, displayCurrency, rates, date, profile)
 
   const byBucket = {
-    accounts: sumMoney(displayCurrency, accountsResult.converted),
     savings: sumMoney(displayCurrency, savingsResult.converted),
     investments: sumMoney(displayCurrency, investmentsResult.converted),
   }
 
   return {
-    total: sumMoney(displayCurrency, [byBucket.accounts, byBucket.savings, byBucket.investments]),
+    total: sumMoney(displayCurrency, [byBucket.savings, byBucket.investments]),
     byBucket,
-    missingRateCount: accountsResult.missing + savingsResult.missing + investmentsResult.missing,
+    missingRateCount: savingsResult.missing + investmentsResult.missing,
     missingPriceCount,
   }
 }

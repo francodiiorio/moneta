@@ -6,31 +6,26 @@ import { PageHeader } from '@/components/PageHeader'
 import { csvMappingSchema, type CsvMapping } from '../schema'
 import { parseCsvFile, type CsvEncoding } from '../parse'
 import { importSelectedRows, prepareImport, type PreviewRow } from '../service'
-import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
-import { useIncomeCategories } from '../hooks/useIncomeCategories'
 import { UploadStep } from '../components/UploadStep'
 import { PreviewTable } from '../components/PreviewTable'
 
 function defaultMapping(): CsvMapping {
   return {
-    accountId: '',
-    expenseCategoryId: '',
-    incomeCategoryId: '',
+    categoryId: '',
+    currency: 'ARS',
     hasHeaderRow: true,
     encoding: 'utf-8',
     dateFormat: 'dd/MM/yyyy',
     dateColumn: 0,
     descriptionColumn: 1,
-    amount: { mode: 'single', amountColumn: 2, signConvention: 'positive-is-income' },
+    amount: { mode: 'single', amountColumn: 2, signConvention: 'positive-is-expense' },
   }
 }
 
 export function ImportCsvPage() {
   const navigate = useNavigate()
-  const accounts = useAccounts()
   const expenseCategories = useExpenseCategories()
-  const incomeCategories = useIncomeCategories()
 
   const [step, setStep] = useState<'upload' | 'preview'>('upload')
   const [file, setFile] = useState<File | null>(null)
@@ -110,7 +105,7 @@ export function ImportCsvPage() {
     try {
       const rowsToImport = preview.filter((r) => selected.has(r.index))
       const result = await importSelectedRows(rowsToImport, mapping)
-      toast.success(`Se importaron ${result.imported} movimiento${result.imported === 1 ? '' : 's'}`)
+      toast.success(`Se importaron ${result.imported} gasto${result.imported === 1 ? '' : 's'}`)
       void navigate('/movimientos')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo importar')
@@ -122,6 +117,7 @@ export function ImportCsvPage() {
   const selectedCount = preview.filter((r) => selected.has(r.index)).length
   const duplicateCount = preview.filter((r) => r.status === 'duplicate').length
   const invalidCount = preview.filter((r) => r.status === 'invalid').length
+  const excludedCount = preview.filter((r) => r.status === 'excluded').length
 
   return (
     <div className="flex flex-col gap-4">
@@ -135,7 +131,7 @@ export function ImportCsvPage() {
 
       <PageHeader
         title="Importar CSV"
-        description="Cargá un extracto bancario y creá los movimientos en bloque."
+        description="Cargá un extracto bancario y creá los gastos en bloque."
       />
 
       {step === 'upload' ? (
@@ -143,9 +139,7 @@ export function ImportCsvPage() {
           mapping={mapping}
           setMapping={setMapping}
           columns={columns}
-          accounts={accounts}
           expenseCategories={expenseCategories}
-          incomeCategories={incomeCategories}
           hasFile={!!file}
           rowCount={rowCount}
           onFileChange={(e) => void handleFileChange(e)}
@@ -161,6 +155,7 @@ export function ImportCsvPage() {
           selectedCount={selectedCount}
           duplicateCount={duplicateCount}
           invalidCount={invalidCount}
+          excludedCount={excludedCount}
           onBack={() => setStep('upload')}
           onImport={() => void handleImport()}
           isBusy={isBusy}

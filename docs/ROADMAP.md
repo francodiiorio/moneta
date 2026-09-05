@@ -176,6 +176,29 @@ desactualizado. Borrar la compra ofrece la opción explícita de borrar también
 movimiento (destildada por default, mismo patrón que borrar un recurrente). Ver ADR "Una
 compra de inversión no es un gasto" en `docs/DECISIONS.md`.
 
+## Etapa 7 — Simplificación: sólo Gastos, Ahorro/Inversión y Presupuestos (hecho)
+
+Pedido directo del usuario: trackear ingresos y cuentas no le resultaba útil. Moneta deja
+de ser una app de partida doble multi-cuenta y pasa a trackear únicamente **Gastos,
+Ahorros/Inversiones y Presupuestos** — sin modo dual, sin flag, una simplificación
+permanente del modelo de datos existente. Ver ADR "Simplificación: se elimina Cuentas,
+Ingresos y Transferencias" en `docs/DECISIONS.md` para el detalle completo (qué se borró,
+por qué, y qué se evaluó y se descartó).
+
+- `Account`, `Transaction` y `Posting` (el ledger de partida doble de la Etapa 0) se
+  eliminan del dominio, la base de datos (`db.version(4)`, la primera migración
+  destructiva del proyecto) y el formato de backup (`schemas/v4.ts`). Se reemplazan por
+  `Expense`, un registro plano sin cuenta ni partida doble.
+- Ingresos y transferencias ya cargados se borran (decisión explícita e irreversible del
+  usuario, confirmada dos veces). Ahorros, Inversiones, Presupuestos y sus categorías
+  sobreviven intactos.
+- Se revierte "Cuenta de origen" en compras de inversión (Etapa 6, cerrado después) — sin
+  cuentas, no hay saldo que descontar.
+- UI: `features/accounts/` se borra por completo; Movimientos, Planes, Categorías,
+  Reportes, Dashboard y CSV import pierden todo lo relativo a cuenta/ingreso/transferencia
+  (ver el ADR para el detalle feature por feature).
+- Ver `docs/DATA_MODEL.md` para el shape de `Expense` y el detalle de la migración v4.
+
 ## Backlog / no priorizado
 
 - ~~Code-splitting por ruta~~ (hecho) — `src/app/router.tsx` usa `lazy` de React Router
@@ -229,11 +252,9 @@ compra de inversión no es un gasto" en `docs/DECISIONS.md`.
   reporte de ganancia realizada es una feature bastante más grande que sólo se justifica
   si hace falta esa precisión fiscal/contable — alcance explícitamente confirmado con el
   usuario al encarar el tracking por lote (ver mismo ADR arriba).
-- Compra de inversión pagada desde una cuenta en otra moneda — hoy la "Cuenta de origen"
-  al cargar una compra sólo ofrece cuentas en la misma moneda que el activo (sin FX). Si
-  hace falta pagar un activo en ARS desde una cuenta en USD (o viceversa), habría que
-  extender `buildInvestmentPurchase` con una pata `fx` igual que `buildFxTransfer` — ver
-  ADR "Una compra de inversión no es un gasto" en `docs/DECISIONS.md`.
+- ~~Compra de inversión pagada desde una cuenta en otra moneda~~ (obsoleto — la "Cuenta
+  de origen" que este ítem extendía se revirtió por completo en la Etapa 7, junto con el
+  resto de Cuentas).
 - ~~Informe mensual exportable~~ (hecho) — `/reportes/informe/:month`, una "foto" de un
   mes (cerrado o en curso): ingresos/gastos/balance, gasto por categoría, y patrimonio de
   ese mes si hay algo registrado. Exporta a PDF vía el diálogo de impresión nativo del

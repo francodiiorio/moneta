@@ -1,24 +1,21 @@
 import {
-  accountsRepo,
   assetPricesRepo,
   categoriesRepo,
   exchangeRatesRepo,
+  expensesRepo,
   investmentsRepo,
   savingsHoldingsRepo,
   settingsRepo,
-  transactionsRepo,
 } from '@/database/repositories'
 import { quantity } from '@/domain/decimal'
 import { convert, MissingRateError } from '@/domain/currency'
 import type { ExchangeRate, InvestmentAsset, SavingsHolding } from '@/domain/entities'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
-import { add, money, sub, zero, type CurrencyCode, type Money } from '@/domain/money'
+import { add, money, type CurrencyCode, type Money, zero } from '@/domain/money'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 
 export interface MonthSummary {
-  income: Money
   expense: Money
-  net: Money
   missingRateCount: number
 }
 
@@ -42,43 +39,30 @@ function tryConvert(
 
 export async function getMonthSummary(month: MonthStamp): Promise<MonthSummary> {
   const { start, end } = monthRange(month)
-  const [settings, items, rates] = await Promise.all([
+  const [settings, expenses, rates] = await Promise.all([
     settingsRepo.getSettings(),
-    transactionsRepo.listTransactionsInRange(start, end),
+    expensesRepo.listExpensesInRange(start, end),
     exchangeRatesRepo.listExchangeRates(),
   ])
   const baseCurrency = settings.baseCurrency
   const profile = settings.rateProfile
 
-  let income = zero(baseCurrency)
   let expense = zero(baseCurrency)
   let missingRateCount = 0
 
-  for (const { transaction, postings } of items) {
-    if (transaction.status !== 'confirmed') continue
-    if (transaction.kind !== 'expense' && transaction.kind !== 'income') continue
+  for (const item of expenses) {
+    if (item.status !== 'confirmed') continue
 
-    const categoryPosting = postings.find((p) => p.target === 'category')
-    if (!categoryPosting) continue
-
-    // Expense category postings are positive, income ones negative (see
-    // domain/ledger/builders.ts) — flip income back to a positive amount.
-    const rawAmount =
-      transaction.kind === 'expense'
-        ? money(categoryPosting.amount, categoryPosting.currency)
-        : money(-categoryPosting.amount, categoryPosting.currency)
-
-    const converted = tryConvert(rawAmount, baseCurrency, rates, transaction.date, profile)
+    const converted = tryConvert(money(item.amount, item.currency), baseCurrency, rates, item.date, profile)
     if (!converted) {
       missingRateCount += 1
       continue
     }
 
-    if (transaction.kind === 'expense') expense = add(expense, converted)
-    else income = add(income, converted)
+    expense = add(expense, converted)
   }
 
-  return { income, expense, net: sub(income, expense), missingRateCount }
+  return { expense, missingRateCount }
 }
 
 export interface CategoryExpense {
@@ -99,11 +83,11 @@ export async function getExpenseByCategory(month: MonthStamp): Promise<ExpenseBy
 
 /** Same as getExpenseByCategory, but over an arbitrary date range — lets
  *  features/budgets reuse this for a yearly budget's spend-to-date
- *  without duplicating the transaction scan + currency conversion. */
+ *  without duplicating the expense scan + currency conversion. */
 export async function getExpenseByCategoryInRange(start: DateStamp, end: DateStamp): Promise<ExpenseByCategory> {
-  const [settings, items, rates, categories] = await Promise.all([
+  const [settings, expenses, rates, categories] = await Promise.all([
     settingsRepo.getSettings(),
-    transactionsRepo.listTransactionsInRange(start, end),
+    expensesRepo.listExpensesInRange(start, end),
     exchangeRatesRepo.listExchangeRates(),
     categoriesRepo.listCategories(),
   ])
@@ -114,24 +98,16 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
   const totals = new Map<string, number>()
   let missingRateCount = 0
 
-  for (const { transaction, postings } of items) {
-    if (transaction.status !== 'confirmed' || transaction.kind !== 'expense') continue
-    const categoryPosting = postings.find((p) => p.target === 'category')
-    if (!categoryPosting?.categoryId) continue
+  for (const item of expenses) {
+    if (item.status !== 'confirmed') continue
 
-    const converted = tryConvert(
-      money(categoryPosting.amount, categoryPosting.currency),
-      baseCurrency,
-      rates,
-      transaction.date,
-      profile,
-    )
+    const converted = tryConvert(money(item.amount, item.currency), baseCurrency, rates, item.date, profile)
     if (!converted) {
       missingRateCount += 1
       continue
     }
 
-    totals.set(categoryPosting.categoryId, (totals.get(categoryPosting.categoryId) ?? 0) + converted.amount)
+    totals.set(item.categoryId, (totals.get(item.categoryId) ?? 0) + converted.amount)
   }
 
   const result: CategoryExpense[] = [...totals.entries()]
@@ -146,14 +122,14 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
 }
 
 /**
- * Values Cuentas (real historical balance from the ledger, as of
- * `asOfDate`) + Ahorros + Inversiones (current amount/quantity — neither
- * has any historical record of its own, see docs/DECISIONS.md "Evolución
- * del patrimonio: cantidades de hoy, precios de cada mes") revalued at
+ * Values Ahorros + Inversiones (current amount/quantity — neither has any
+ * historical record of its own, see docs/DECISIONS.md "Evolución del
+ * patrimonio: cantidades de hoy, precios de cada mes") revalued at
  * `asOfDate`'s own exchange rates and asset prices, which DO have real
  * history. `savings`/`holdings`/`assetById`/`rates` are fetched once by
  * the caller (they don't vary per point) — only the asset price lookup
- * is genuinely date-dependent.
+ * is genuinely date-dependent. No Cuentas bucket — ver ADR
+ * "Simplificación: se elimina Cuentas, Ingresos y Transferencias".
  */
 async function netWorthAsOf(
   asOfDate: DateStamp,
@@ -166,11 +142,9 @@ async function netWorthAsOf(
 ): Promise<{
   netWorth: Money
   byBucket: ValuationResult['byBucket']
-  accountCount: number
   missingRateCount: number
   missingPriceCount: number
 }> {
-  const accounts = await accountsRepo.listAccountsWithBalances(asOfDate)
   const latestPrices = await assetPricesRepo.latestAssetPrices(
     holdings.map((h) => h.assetId),
     asOfDate,
@@ -186,7 +160,6 @@ async function netWorthAsOf(
   })
 
   const result = valuateNetWorth({
-    accounts: accounts.map((a) => ({ balance: a.balance, currency: a.currency })),
     savings,
     positions,
     rates,
@@ -198,7 +171,6 @@ async function netWorthAsOf(
   return {
     netWorth: result.total,
     byBucket: result.byBucket,
-    accountCount: accounts.length,
     missingRateCount: result.missingRateCount,
     missingPriceCount: result.missingPriceCount,
   }
@@ -267,7 +239,7 @@ export interface ReportCategoryRow {
 export interface ReportNetWorth {
   asOfDate: DateStamp
   total: Money
-  byBucket: { accounts: Money; savings: Money; investments: Money }
+  byBucket: { savings: Money; investments: Money }
   missingPriceCount: number
 }
 
@@ -281,20 +253,20 @@ export interface MonthlyReport {
   generatedOn: DateStamp
   summary: MonthSummary
   categories: ReportCategoryRow[]
-  /** Absent when nothing is tracked at all (no accounts, savings, or
-   *  investment positions) — the report then has no net worth section. */
+  /** Absent when nothing is tracked at all (no savings or investment
+   *  positions) — the report then has no net worth section. */
   netWorth?: ReportNetWorth
   missingRateCount: number
 }
 
-/** Composes a "photo" of a single month — income/expense, expense by
- *  category, and (when there's anything to value) a net worth snapshot —
- *  for the printable monthly report. Pure composition over already-tested
- *  functions; no new domain logic. Accepted cost: getMonthSummary and
- *  getExpenseByCategory each independently re-read settings/rates/the
- *  month's transactions, so this does a few redundant local IndexedDB
- *  reads — reusing already-tested functions beats micro-optimizing reads
- *  that cost nothing noticeable for one local user. */
+/** Composes a "photo" of a single month — gastos, gasto por categoría, y
+ *  (cuando hay algo que valuar) una foto del patrimonio — para el informe
+ *  mensual imprimible. Pure composition over already-tested functions; no
+ *  new domain logic. Accepted cost: getMonthSummary and getExpenseByCategory
+ *  each independently re-read settings/rates/the month's expenses, so this
+ *  does a few redundant local IndexedDB reads — reusing already-tested
+ *  functions beats micro-optimizing reads that cost nothing noticeable for
+ *  one local user. */
 export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport> {
   const today = todayStamp()
   const monthEnd = monthRange(month).end
@@ -314,7 +286,7 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   const { baseCurrency, rateProfile } = settings
 
   const valuation = await netWorthAsOf(coverageEnd, baseCurrency, rates, rateProfile, savings, holdings, assetById)
-  const tracksNetWorth = valuation.accountCount > 0 || savings.length > 0 || holdings.length > 0
+  const tracksNetWorth = savings.length > 0 || holdings.length > 0
 
   const totalExpense = summary.expense.amount
   const categories: ReportCategoryRow[] = expenses.items.map((item) => ({
@@ -341,7 +313,7 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
     categories,
     // Same reasoning as ReportsPage: expenses' misses are a subset of
     // summary's (same scan, same conversion) — adding both would
-    // double-count the same transaction.
+    // double-count the same expense.
     missingRateCount: summary.missingRateCount + valuation.missingRateCount,
     ...(netWorth && { netWorth }),
   }

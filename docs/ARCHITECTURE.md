@@ -10,12 +10,11 @@ UI (React)  →  service.ts (feature)  →  domain/  (cálculo puro)
 
 - **`domain/`** no sabe que existe una base de datos ni un navegador. Recibe datos,
   devuelve datos o tira una excepción. Es donde vive toda la lógica financiera:
-  aritmética de dinero, invariantes del ledger, cálculo de balances, resolución de tasas
-  de cambio.
+  aritmética de dinero, valuación de patrimonio, resolución de tasas de cambio.
 - **`database/`** es el único código que importa `dexie` o toca `IndexedDB` directamente.
-  Expone repositories (`accounts.repo.ts`, etc.) con funciones async que devuelven
+  Expone repositories (`expenses.repo.ts`, etc.) con funciones async que devuelven
   entidades tipadas. Un repository puede llamar a `domain/` (por ejemplo, para calcular un
-  balance) pero nunca al revés.
+  reparto de cuotas) pero nunca al revés.
 - **`features/`** conecta las dos capas de arriba con React. `service.ts` orquesta
   (parsea un formulario, llama al dominio para calcular, llama al repository para
   persistir); `hooks/` usa `useLiveQuery` para suscribirse a los datos; `store.ts` (si
@@ -28,7 +27,7 @@ UI (React)  →  service.ts (feature)  →  domain/  (cálculo puro)
 
 Zustand gestiona *estado de sesión de UI*: qué diálogo está abierto, qué mes está
 seleccionado en un filtro, si un dropdown está abierto. **Nunca** guarda una copia de
-cuentas, transacciones ni ninguna entidad persistida — esa responsabilidad es
+gastos ni ninguna entidad persistida — esa responsabilidad es
 exclusivamente de `useLiveQuery` (dexie-react-hooks), que se re-ejecuta automáticamente
 cuando algo cambia en IndexedDB. Si Zustand empezara a cachear datos persistidos, se
 abriría la puerta a que la UI muestre algo distinto de lo que realmente hay en la base —
@@ -36,16 +35,17 @@ exactamente el tipo de bug que este proyecto no se puede permitir.
 
 ## Flujo de una escritura (ej. crear un gasto)
 
-1. El formulario (`features/transactions/components/...`) valida con Zod y llama a
-   `service.ts`.
-2. `service.ts` construye un `LedgerEntryDraft` usando un builder de `domain/ledger`
-   (`buildExpense`, etc.) — dos postings con signo, en la moneda de la cuenta.
-3. `service.ts` llama al repository, que corre `validateLedgerEntry()` (invariantes del
-   ledger) **antes** de escribir. Si falla, no se escribe nada.
-4. El repository persiste la transacción + sus postings en una única transacción Dexie
-   (`db.transaction('rw', ...)`), asignando id y timestamps.
-5. Cualquier componente con un `useLiveQuery` sobre cuentas/transacciones se re-renderiza
-   solo, sin que nadie tenga que invalidar nada manualmente.
+1. El formulario (`features/transactions/components/TransactionFormDialog.tsx`) valida
+   con Zod y llama a `service.ts`.
+2. `service.ts:saveExpense` parsea el monto (`domain/money:parseAmount`) y arma el input
+   del repository directo — no hay builder ni partida doble que construir, un gasto es
+   un registro plano (fecha, monto, moneda, categoría, descripción).
+3. `service.ts` llama al repository (`expenses.repo.ts:saveExpense`), que valida
+   `amount > 0` **antes** de escribir. Si falla, no se escribe nada.
+4. El repository persiste el gasto con un `put()` (asignando id y timestamps en creación;
+   conservándolos en edición) dentro de una transacción Dexie.
+5. Cualquier componente con un `useLiveQuery` sobre gastos se re-renderiza solo, sin que
+   nadie tenga que invalidar nada manualmente.
 
 ## Estrategia de backup
 
@@ -58,9 +58,10 @@ mantenga actualizado.
   objeto versionado (`features/backups/schemas/v1.ts`), calcula un checksum SHA-256 y lo
   descarga como `moneta-YYYY-MM-DD.finance` (JSON).
 - **Importar**: parsea el JSON, migra a la versión de schema más reciente si hace falta
-  (`features/backups/migrations/`), valida con Zod, corre los invariantes del ledger sobre
-  **todas** las transacciones del archivo, y sólo si todo pasa reemplaza el contenido de
-  IndexedDB en una única transacción atómica. Antes de reemplazar, la UI descarga
+  (`features/backups/migrations/`), valida con Zod, corre `validateLedgerIntegrity()`
+  (monto positivo + categoría no vacía) sobre **todos** los gastos del archivo, y sólo si
+  todo pasa reemplaza el contenido de IndexedDB en una única transacción atómica. Antes
+  de reemplazar, la UI descarga
   automáticamente un backup de seguridad del estado actual — ver
   `features/backups/components/BackupCard.tsx`.
 - El checksum se verifica pero no bloquea el import si no coincide (podría ser un archivo

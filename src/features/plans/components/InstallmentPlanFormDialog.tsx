@@ -15,12 +15,12 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DateField } from '@/components/DateField'
+import { CURRENCIES } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
-import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
 import { getInstallmentPreview } from '../installmentPreview'
 import { createInstallmentPlanFromForm } from '../service'
-import { installmentPlanFormSchema, type InstallmentPlanFormValues } from '../schema'
+import { installmentPlanFormSchema, PLAN_CURRENCIES, type InstallmentPlanFormValues } from '../schema'
 
 interface InstallmentPlanFormDialogProps {
   open: boolean
@@ -31,8 +31,8 @@ function defaultValues(): InstallmentPlanFormValues {
   const today = todayStamp()
   return {
     description: '',
-    accountId: '',
     categoryId: '',
+    currency: 'ARS',
     totalAmount: '',
     count: '',
     firstDueDate: today,
@@ -41,7 +41,6 @@ function defaultValues(): InstallmentPlanFormValues {
 }
 
 export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPlanFormDialogProps) {
-  const accounts = useAccounts()
   const categories = useExpenseCategories()
 
   const form = useForm<InstallmentPlanFormValues>({
@@ -55,9 +54,8 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
 
   const totalAmountInput = form.watch('totalAmount')
   const countInput = form.watch('count')
-  const accountId = form.watch('accountId')
-  const account = accounts?.find((a) => a.id === accountId)
-  const installmentPreview = getInstallmentPreview(totalAmountInput, countInput, account?.currency)
+  const currency = form.watch('currency')
+  const installmentPreview = getInstallmentPreview(totalAmountInput, countInput, currency)
 
   async function onSubmit(values: InstallmentPlanFormValues) {
     try {
@@ -127,55 +125,57 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
 
             {installmentPreview && <p className="-mt-2 text-xs text-muted-foreground">{installmentPreview}</p>}
 
-            <FormField
-              control={form.control}
-              name="accountId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Cuenta</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Elegí una cuenta" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {accounts?.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="currency"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Moneda</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {PLAN_CURRENCIES.map((code) => (
+                          <SelectItem key={code} value={code}>
+                            {code} · {CURRENCIES[code]?.symbol}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="categoryId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Categoría</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Elegí una categoría" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {categories?.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="categoryId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Categoría</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Elegí una categoría" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {categories?.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <FormField

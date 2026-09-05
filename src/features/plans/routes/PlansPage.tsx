@@ -75,7 +75,7 @@ export function PlansPage() {
     if (!pendingDelete) return
     try {
       if (pendingDelete.kind === 'recurring') {
-        await removeRecurringPlan(pendingDelete.id, { deleteGeneratedTransactions: deleteGenerated })
+        await removeRecurringPlan(pendingDelete.id, { deleteGeneratedExpenses: deleteGenerated })
       } else {
         await removeInstallmentPlan(pendingDelete.id)
       }

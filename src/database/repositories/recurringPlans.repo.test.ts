@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '../db'
-import { createAccount } from './accounts.repo'
 import { createCategory } from './categories.repo'
 import {
   createRecurringPlan,
@@ -10,34 +9,34 @@ import {
   setRecurringPlanPaused,
   updateRecurringPlan,
 } from './recurringPlans.repo'
-import { buildExpense } from '@/domain/ledger'
-import { minor, money } from '@/domain/money'
-import type { RecurrenceRule, TransactionTemplate } from '@/domain/entities'
+import type { ExpenseInput } from './expenses.repo'
+import type { RecurrenceRule, ExpenseTemplate } from '@/domain/entities'
 
 afterEach(async () => {
-  await Promise.all([
-    db.accounts.clear(),
-    db.categories.clear(),
-    db.transactions.clear(),
-    db.postings.clear(),
-    db.recurringPlans.clear(),
-  ])
+  await Promise.all([db.categories.clear(), db.expenses.clear(), db.recurringPlans.clear()])
 })
 
 const rule: RecurrenceRule = { freq: 'monthly', interval: 1, startDate: '2026-01-01' }
 
 async function setup() {
-  const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: minor(0) })
-  const category = await createCategory({ name: 'Alquiler', kind: 'expense' })
-  const template: TransactionTemplate = {
+  const category = await createCategory({ name: 'Alquiler' })
+  const template: ExpenseTemplate = {
     description: 'Alquiler',
-    kind: 'expense',
-    accountId: account.id,
     categoryId: category.id,
     amount: 100_000,
     currency: 'ARS',
   }
-  return { account, category, template }
+  return { category, template }
+}
+
+function expenseInput(overrides: Partial<ExpenseInput> & Pick<ExpenseInput, 'date' | 'categoryId'>): ExpenseInput {
+  return {
+    description: 'Alquiler',
+    amount: 100_000,
+    currency: 'ARS',
+    status: 'confirmed',
+    ...overrides,
+  }
 }
 
 describe('createRecurringPlan / listRecurringPlans', () => {
@@ -64,15 +63,12 @@ describe('setRecurringPlanPaused / deleteRecurringPlan', () => {
     expect((await listRecurringPlans())[0]?.isPaused).toBe(true)
   })
 
-  it('deletes the plan but leaves already-materialized transactions untouched', async () => {
-    const { template, account, category } = await setup()
+  it('deletes the plan but leaves already-materialized expenses untouched', async () => {
+    const { template, category } = await setup()
     const plan = await createRecurringPlan({ template, rule })
-    const entry = buildExpense({
+    const entry = expenseInput({
       date: '2026-01-01',
-      description: 'Alquiler',
-      accountId: account.id,
       categoryId: category.id,
-      amount: money(100_000, 'ARS'),
       sourcePlanId: plan.id,
       occurrenceIndex: 0,
     })
@@ -81,52 +77,38 @@ describe('setRecurringPlanPaused / deleteRecurringPlan', () => {
     await deleteRecurringPlan(plan.id)
 
     expect(await listRecurringPlans()).toEqual([])
-    const kept = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
+    const kept = await db.expenses.where('sourcePlanId').equals(plan.id).toArray()
     expect(kept).toHaveLength(1)
     expect(kept[0]?.status).toBe('confirmed')
   })
 
-  it('deletes generated transactions and their postings when deleteGeneratedTransactions is true', async () => {
-    const { template, account, category } = await setup()
+  it('deletes generated expenses when deleteGeneratedExpenses is true', async () => {
+    const { template, category } = await setup()
     const plan = await createRecurringPlan({ template, rule })
-    const entry = buildExpense({
+    const entry = expenseInput({
       date: '2026-01-01',
-      description: 'Alquiler',
-      accountId: account.id,
       categoryId: category.id,
-      amount: money(100_000, 'ARS'),
       sourcePlanId: plan.id,
       occurrenceIndex: 0,
     })
     await materializePlan(plan.id, [entry], '2026-01-01')
-    const [transaction] = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
-    expect(transaction).toBeDefined()
+    const [expense] = await db.expenses.where('sourcePlanId').equals(plan.id).toArray()
+    expect(expense).toBeDefined()
 
-    await deleteRecurringPlan(plan.id, { deleteGeneratedTransactions: true })
+    await deleteRecurringPlan(plan.id, { deleteGeneratedExpenses: true })
 
     expect(await listRecurringPlans()).toEqual([])
-    expect(await db.transactions.where('sourcePlanId').equals(plan.id).toArray()).toEqual([])
-    expect(await db.postings.where('transactionId').equals(transaction!.id).toArray()).toEqual([])
+    expect(await db.expenses.where('sourcePlanId').equals(plan.id).toArray()).toEqual([])
   })
 })
 
 describe('updateRecurringPlan', () => {
   it('overwrites template/rule and preserves lastMaterializedDate and isPaused', async () => {
-    const { template, account, category } = await setup()
+    const { template, category } = await setup()
     const plan = await createRecurringPlan({ template, rule })
     await materializePlan(
       plan.id,
-      [
-        buildExpense({
-          date: '2026-01-01',
-          description: 'Alquiler',
-          accountId: account.id,
-          categoryId: category.id,
-          amount: money(100_000, 'ARS'),
-          sourcePlanId: plan.id,
-          occurrenceIndex: 0,
-        }),
-      ],
+      [expenseInput({ date: '2026-01-01', categoryId: category.id, sourcePlanId: plan.id, occurrenceIndex: 0 })],
       '2026-01-01',
     )
     await setRecurringPlanPaused(plan.id, true)
@@ -171,27 +153,19 @@ describe('updateRecurringPlan', () => {
 
 describe('materializePlan', () => {
   it('writes every entry and advances lastMaterializedDate atomically', async () => {
-    const { template, account, category } = await setup()
+    const { template, category } = await setup()
     const plan = await createRecurringPlan({ template, rule })
 
     const entries = ['2026-01-01', '2026-02-01'].map((date, index) =>
-      buildExpense({
-        date,
-        description: 'Alquiler',
-        accountId: account.id,
-        categoryId: category.id,
-        amount: money(100_000, 'ARS'),
-        sourcePlanId: plan.id,
-        occurrenceIndex: index,
-      }),
+      expenseInput({ date, categoryId: category.id, sourcePlanId: plan.id, occurrenceIndex: index }),
     )
     await materializePlan(plan.id, entries, '2026-02-01')
 
     const [updated] = await listRecurringPlans()
     expect(updated?.lastMaterializedDate).toBe('2026-02-01')
-    const written = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
+    const written = await db.expenses.where('sourcePlanId').equals(plan.id).toArray()
     expect(written).toHaveLength(2)
-    expect(written.every((t) => t.status === 'confirmed')).toBe(true)
+    expect(written.every((e) => e.status === 'confirmed')).toBe(true)
   })
 
   it('is a no-op given an empty entries list', async () => {

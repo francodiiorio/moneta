@@ -1,15 +1,14 @@
-import { accountsRepo, transactionsRepo } from '@/database/repositories'
-import { buildExpense, buildIncome, type LedgerEntryDraft } from '@/domain/ledger'
+import { expensesRepo } from '@/database/repositories'
+import type { ExpenseInput } from '@/database/repositories/expenses.repo'
 import { money, parseAmount, type CurrencyCode, type Money } from '@/domain/money'
-import type { Transaction } from '@/domain/entities'
 import type { DateStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 import { parseDateColumn } from './dateFormats'
 import type { CsvMapping } from './schema'
 
-/** A marker on every transaction this feature creates, so they stay
+/** A marker on every expense this feature creates, so they stay
  *  identifiable later (a backup export, a future "undo last import") —
- *  Transaction.tags already exists for exactly this kind of free-form
+ *  Expense.tags already exists for exactly this kind of free-form
  *  labeling, no schema change needed. */
 export const CSV_IMPORT_TAG = 'csv-import'
 
@@ -20,45 +19,41 @@ export interface PreviewRow {
   raw: string[]
   date?: DateStamp
   description?: string
-  /** Magnitude only — always positive; `kind` carries the sign. */
+  /** Magnitude only — always positive. */
   amount?: Money
-  kind?: Transaction['kind']
-  status: 'new' | 'duplicate' | 'invalid'
+  status: 'new' | 'duplicate' | 'invalid' | 'excluded'
   invalidReason?: string
   /** What the UI should check by default: true for genuinely new rows,
-   *  false for likely duplicates or unparseable rows (the user opts
-   *  those back in explicitly rather than opting bad rows out). */
+   *  false for likely duplicates, unparseable rows, or excluded
+   *  (income/credit) rows — the user opts a duplicate back in explicitly
+   *  rather than opting bad/excluded rows in at all (their checkbox is
+   *  disabled, see PreviewTable.tsx). */
   defaultSelected: boolean
 }
 
-function duplicateKey(date: DateStamp, signedAmount: number, description: string): string {
-  return `${date}|${signedAmount}|${description.trim().toLowerCase()}`
+function duplicateKey(date: DateStamp, amount: number, description: string): string {
+  return `${date}|${amount}|${description.trim().toLowerCase()}`
 }
 
-/** Existing local transactions for `accountId` in `[from, to]`, as the
- *  same `date|signedAmount|description` keys a CSV row is checked
- *  against — so a re-imported/overlapping bank export doesn't create
- *  duplicates of movements already in the ledger. */
-export async function loadExistingDuplicateKeys(
-  accountId: string,
-  from: DateStamp,
-  to: DateStamp,
-): Promise<Set<string>> {
-  const items = await transactionsRepo.listTransactionsInRange(from, to)
-  const keys = new Set<string>()
-  for (const { transaction, postings } of items) {
-    const accountPosting = postings.find((p) => p.target === 'account' && p.accountId === accountId)
-    if (!accountPosting) continue
-    keys.add(duplicateKey(transaction.date, accountPosting.amount, transaction.description))
-  }
-  return keys
+/** Existing local expenses in `[from, to]`, as the same
+ *  `date|amount|description` keys a CSV row is checked against — so a
+ *  re-imported/overlapping bank export doesn't create duplicates of
+ *  expenses already tracked. */
+export async function loadExistingDuplicateKeys(from: DateStamp, to: DateStamp): Promise<Set<string>> {
+  const expenses = await expensesRepo.listExpensesInRange(from, to)
+  return new Set(expenses.map((e) => duplicateKey(e.date, e.amount, e.description)))
 }
 
+/** Sólo se trackean gastos — ver ADR "Simplificación: se elimina Cuentas,
+ *  Ingresos y Transferencias" en docs/DECISIONS.md. `excluded: true`
+ *  marca una fila cuyo monto representa un ingreso/crédito: se muestra en
+ *  la vista previa (para que el usuario entienda por qué no se importa)
+ *  pero nunca se puede seleccionar. */
 function parseRowAmount(
   raw: string[],
   mapping: CsvMapping,
   currency: CurrencyCode,
-): { amount: Money; kind: 'expense' | 'income' } | undefined {
+): { amount: Money; excluded: boolean } | undefined {
   function tryParse(cell: string): Money | undefined {
     try {
       const parsed = parseAmount(cell, currency)
@@ -73,10 +68,10 @@ function parseRowAmount(
     if (cell === undefined) return undefined
     const parsed = tryParse(cell)
     if (!parsed) return undefined
-    const positiveMeansIncome = mapping.amount.signConvention === 'positive-is-income'
+    const positiveMeansExpense = mapping.amount.signConvention === 'positive-is-expense'
     const isPositive = parsed.amount > 0
-    const kind = isPositive === positiveMeansIncome ? 'income' : 'expense'
-    return { amount: money(Math.abs(parsed.amount), currency), kind }
+    const isExpense = isPositive === positiveMeansExpense
+    return { amount: money(Math.abs(parsed.amount), currency), excluded: !isExpense }
   }
 
   // "Has a value" means "parses to a non-zero amount", not "cell isn't an
@@ -91,12 +86,12 @@ function parseRowAmount(
 
   const parsed = debitParsed ?? creditParsed
   invariant(parsed, 'unreachable: exactly one of debitParsed/creditParsed is defined here')
-  return { amount: money(Math.abs(parsed.amount), currency), kind: debitParsed !== undefined ? 'expense' : 'income' }
+  return { amount: money(Math.abs(parsed.amount), currency), excluded: debitParsed === undefined }
 }
 
-/** Pure: given already-parsed rows, a confirmed mapping, the target
- *  account's currency, and an already-fetched set of duplicate keys,
- *  computes what each row would become. Never touches the database. */
+/** Pure: given already-parsed rows, a confirmed mapping, the mapping's
+ *  currency, and an already-fetched set of duplicate keys, computes what
+ *  each row would become. Never touches the database. */
 export function buildPreview(
   rows: readonly string[][],
   mapping: CsvMapping,
@@ -127,12 +122,26 @@ export function buildPreview(
         defaultSelected: false,
         ...(date !== undefined && { date }),
         ...(description !== undefined && { description }),
-        ...(amountResult !== undefined && { amount: amountResult.amount, kind: amountResult.kind }),
+        ...(amountResult !== undefined && { amount: amountResult.amount }),
       }
     }
 
-    const signedAmount = amountResult.kind === 'expense' ? amountResult.amount.amount * -1 : amountResult.amount.amount
-    const status: PreviewRow['status'] = existingKeys.has(duplicateKey(date, signedAmount, description))
+    if (amountResult.excluded) {
+      return {
+        index,
+        raw,
+        date,
+        description,
+        amount: amountResult.amount,
+        status: 'excluded',
+        invalidReason: 'no se importa — sólo se trackean gastos',
+        defaultSelected: false,
+      }
+    }
+
+    const status: PreviewRow['status'] = existingKeys.has(
+      duplicateKey(date, amountResult.amount.amount, description),
+    )
       ? 'duplicate'
       : 'new'
 
@@ -142,20 +151,15 @@ export function buildPreview(
       date,
       description,
       amount: amountResult.amount,
-      kind: amountResult.kind,
       status,
       defaultSelected: status === 'new',
     }
   })
 }
 
-/** Orchestrates the DB reads `buildPreview` needs (account currency,
- *  existing transactions to dedupe against) and calls it. */
+/** Orchestrates the DB reads `buildPreview` needs (existing expenses to
+ *  dedupe against) and calls it. */
 export async function prepareImport(rows: readonly string[][], mapping: CsvMapping): Promise<PreviewRow[]> {
-  const accounts = await accountsRepo.listAccountsWithBalances()
-  const account = accounts.find((a) => a.id === mapping.accountId)
-  invariant(account, `Cuenta no encontrada: ${mapping.accountId}`)
-
   const dataRows = mapping.hasHeaderRow ? rows.slice(1) : rows
   const parsedDates = dataRows
     .map((raw) => raw[mapping.dateColumn])
@@ -166,32 +170,37 @@ export async function prepareImport(rows: readonly string[][], mapping: CsvMappi
   const existingKeys =
     parsedDates.length > 0
       ? await loadExistingDuplicateKeys(
-          mapping.accountId,
           parsedDates.reduce((min, d) => (d < min ? d : min)),
           parsedDates.reduce((max, d) => (d > max ? d : max)),
         )
       : new Set<string>()
 
-  return buildPreview(rows, mapping, account.currency, existingKeys)
+  return buildPreview(rows, mapping, mapping.currency, existingKeys)
 }
 
-/** Persists every row in `rows` as a real, confirmed transaction — all or
- *  nothing (see `transactions.repo.ts:bulkSaveTransactions`). Callers
- *  must only pass rows that are not `'invalid'`; this throws instead of
- *  silently skipping if one slips through, since the UI should never
- *  make that possible (an invalid row's checkbox is disabled). */
+/** Persists every row in `rows` as a real, confirmed gasto — all or
+ *  nothing (see `expenses.repo.ts:bulkSaveExpenses`). Callers must only
+ *  pass rows that are `'new'` or `'duplicate'`; this throws instead of
+ *  silently skipping if an `'invalid'`/`'excluded'` row slips through,
+ *  since the UI should never make that possible (their checkbox is
+ *  disabled). */
 export async function importSelectedRows(rows: readonly PreviewRow[], mapping: CsvMapping): Promise<{ imported: number }> {
-  const entries: LedgerEntryDraft[] = rows.map((row) => {
+  const inputs: ExpenseInput[] = rows.map((row) => {
     invariant(
-      row.status !== 'invalid' && row.date && row.description && row.amount && row.kind,
+      row.status !== 'invalid' && row.status !== 'excluded' && row.date && row.description && row.amount,
       `Fila inválida no debería llegar a importSelectedRows (índice ${row.index})`,
     )
-    const base = { date: row.date, description: row.description, tags: [CSV_IMPORT_TAG] }
-    return row.kind === 'expense'
-      ? buildExpense({ ...base, accountId: mapping.accountId, categoryId: mapping.expenseCategoryId, amount: row.amount })
-      : buildIncome({ ...base, accountId: mapping.accountId, categoryId: mapping.incomeCategoryId, amount: row.amount })
+    return {
+      date: row.date,
+      description: row.description,
+      categoryId: mapping.categoryId,
+      amount: row.amount.amount,
+      currency: row.amount.currency,
+      status: 'confirmed',
+      tags: [CSV_IMPORT_TAG],
+    }
   })
 
-  await transactionsRepo.bulkSaveTransactions(entries)
-  return { imported: entries.length }
+  await expensesRepo.bulkSaveExpenses(inputs)
+  return { imported: inputs.length }
 }

@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { CURRENCIES } from '@/domain/money'
+import { CURRENCY_CODES } from '@/domain/money'
 import { investmentAssetTypeSchema } from '@/domain/entities'
 
-export const NETWORTH_CURRENCIES = Object.keys(CURRENCIES)
+export const NETWORTH_CURRENCIES = CURRENCY_CODES
 
 export const savingsFormSchema = z.object({
   name: z.string().min(1, 'El nombre es obligatorio').max(60),
@@ -31,33 +31,20 @@ export const investmentAssetFormSchema = z.object({
 
 export type InvestmentAssetFormValues = z.infer<typeof investmentAssetFormSchema>
 
-/** Sentinel for "no funding account" in the "Cuenta de origen" Select —
- *  same reasoning as NO_PROFILE below: Radix Select disallows an
- *  empty-string item value. */
-export const NO_ACCOUNT = 'none'
-
-export const investmentLotFormSchema = z
-  .object({
-    assetId: z.string().min(1, 'Elegí un activo'),
-    quantity: z
-      .string()
-      .min(1, 'Ingresá una cantidad')
-      .refine((v) => !v.trim().startsWith('-'), { message: 'La cantidad no puede ser negativa' })
-      .refine((v) => /[1-9]/.test(v), { message: 'La cantidad debe ser mayor a cero' }),
-    costPerUnit: z
-      .string()
-      .optional()
-      .refine((v) => !v || !v.trim().startsWith('-'), { message: 'El costo no puede ser negativo' })
-      .refine((v) => !v || /\d/.test(v), { message: 'Ingresá un costo válido' }),
-    date: z.string().min(1, 'Ingresá una fecha'),
-    accountId: z.string().optional(),
-  })
-  // Sin costPerUnit no hay monto que descontar de la cuenta — ver
-  // investmentLotsRepo.createInvestmentLot's mismo invariant.
-  .refine((v) => !v.accountId || v.accountId === NO_ACCOUNT || !!v.costPerUnit?.trim(), {
-    message: 'Para descontar la compra de una cuenta, cargá el costo por unidad',
-    path: ['costPerUnit'],
-  })
+export const investmentLotFormSchema = z.object({
+  assetId: z.string().min(1, 'Elegí un activo'),
+  quantity: z
+    .string()
+    .min(1, 'Ingresá una cantidad')
+    .refine((v) => !v.trim().startsWith('-'), { message: 'La cantidad no puede ser negativa' })
+    .refine((v) => /[1-9]/.test(v), { message: 'La cantidad debe ser mayor a cero' }),
+  costPerUnit: z
+    .string()
+    .optional()
+    .refine((v) => !v || !v.trim().startsWith('-'), { message: 'El costo no puede ser negativo' })
+    .refine((v) => !v || /\d/.test(v), { message: 'Ingresá un costo válido' }),
+  date: z.string().min(1, 'Ingresá una fecha'),
+})
 
 export type InvestmentLotFormValues = z.infer<typeof investmentLotFormSchema>
 

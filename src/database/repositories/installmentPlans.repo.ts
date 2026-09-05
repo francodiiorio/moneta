@@ -2,15 +2,13 @@ import { db } from '../db'
 import type { InstallmentPlan } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
-import { buildExpense } from '@/domain/ledger'
-import { minor, money, type CurrencyCode } from '@/domain/money'
+import { minor, type CurrencyCode } from '@/domain/money'
 import { buildInstallmentSchedule, installmentAmounts } from '@/domain/installments'
 import { todayStamp, type DateStamp } from '@/lib/dates'
-import { deleteProjectedBySourcePlanId, writeLedgerEntry } from './transactions.repo'
+import { deleteProjectedBySourcePlanId, saveExpense } from './expenses.repo'
 
 export interface CreateInstallmentPlanInput {
   description: string
-  accountId: string
   categoryId: string
   currency: CurrencyCode
   totalAmount: number
@@ -39,7 +37,6 @@ export async function createInstallmentPlan(
   const plan: InstallmentPlan = {
     id: generateId(),
     description: input.description,
-    accountId: input.accountId,
     categoryId: input.categoryId,
     currency: input.currency,
     totalAmount: input.totalAmount,
@@ -52,21 +49,19 @@ export async function createInstallmentPlan(
   }
   const schedule = buildInstallmentSchedule(plan)
 
-  await db.transaction('rw', db.installmentPlans, db.transactions, db.postings, db.accounts, async () => {
+  await db.transaction('rw', db.installmentPlans, db.expenses, async () => {
     await db.installmentPlans.add(plan)
     for (const occurrence of schedule) {
-      await writeLedgerEntry(
-        buildExpense({
-          date: occurrence.dueDate,
-          description: `${plan.description} (cuota ${occurrence.index + 1}/${plan.count})`,
-          accountId: plan.accountId,
-          categoryId: plan.categoryId,
-          amount: money(occurrence.amount, plan.currency),
-          status: occurrence.dueDate <= today ? 'confirmed' : 'projected',
-          sourcePlanId: plan.id,
-          occurrenceIndex: occurrence.index,
-        }),
-      )
+      await saveExpense({
+        date: occurrence.dueDate,
+        description: `${plan.description} (cuota ${occurrence.index + 1}/${plan.count})`,
+        categoryId: plan.categoryId,
+        amount: occurrence.amount,
+        currency: plan.currency,
+        status: occurrence.dueDate <= today ? 'confirmed' : 'projected',
+        sourcePlanId: plan.id,
+        occurrenceIndex: occurrence.index,
+      })
     }
   })
 
@@ -76,7 +71,7 @@ export async function createInstallmentPlan(
 /** Deletes the plan and its still-`projected` cuotas; `confirmed` ones —
  *  cuotas that already happened — are historical fact and stay put. */
 export async function deleteInstallmentPlan(id: string): Promise<void> {
-  await db.transaction('rw', db.installmentPlans, db.transactions, db.postings, async () => {
+  await db.transaction('rw', db.installmentPlans, db.expenses, async () => {
     await deleteProjectedBySourcePlanId(id)
     await db.installmentPlans.delete(id)
   })
@@ -84,40 +79,31 @@ export async function deleteInstallmentPlan(id: string): Promise<void> {
 
 export interface UpdateInstallmentPlanInput {
   description: string
-  accountId: string
   categoryId: string
 }
 
 /**
- * Editing an installment plan is deliberately narrow: description,
- * account and category only — never totalAmount/count/dates. Those feed
+ * Editing an installment plan is deliberately narrow: description and
+ * category only — never totalAmount/count/dates/currency. Those feed
  * `scheduleCache` (frozen at creation via `allocate`) and every cuota's
- * `Transaction` is written upfront, `confirmed` ones included; recomputing
+ * `Expense` is written upfront, `confirmed` ones included; recomputing
  * the split after the fact would leave `listInstallmentPlansWithProgress`
  * reading confirmed amounts off a `scheduleCache` that no longer matches
- * what those transactions actually record (see docs/DECISIONS.md). To
- * change the amount or number of cuotas, delete and recreate the plan.
+ * what those expenses actually record (see docs/DECISIONS.md). To change
+ * the amount, number of cuotas or currency, delete and recreate the plan.
  *
- * Only still-`projected` cuotas are rewritten in place (same account,
- * category and description as the plan) — `confirmed` ones are untouched,
- * same historical-immutability rule as `deleteInstallmentPlan`.
+ * Only still-`projected` cuotas are rewritten in place (same category and
+ * description as the plan) — `confirmed` ones are untouched, same
+ * historical-immutability rule as `deleteInstallmentPlan`.
  */
 export async function updateInstallmentPlan(id: string, input: UpdateInstallmentPlanInput): Promise<InstallmentPlan> {
-  return db.transaction('rw', db.installmentPlans, db.transactions, db.postings, db.accounts, async () => {
+  return db.transaction('rw', db.installmentPlans, db.expenses, async () => {
     const existing = await db.installmentPlans.get(id)
     invariant(existing, `No se encontró la compra en cuotas: ${id}`)
-
-    const account = await db.accounts.get(input.accountId)
-    invariant(account, `Cuenta no encontrada: ${input.accountId}`)
-    invariant(
-      account.currency === existing.currency,
-      'No se puede mover una compra en cuotas a una cuenta de otra moneda',
-    )
 
     const plan: InstallmentPlan = {
       ...existing,
       description: input.description,
-      accountId: input.accountId,
       categoryId: input.categoryId,
       updatedAt: new Date().toISOString(),
     }
@@ -126,27 +112,27 @@ export async function updateInstallmentPlan(id: string, input: UpdateInstallment
     const schedule = buildInstallmentSchedule(plan)
     const scheduleByIndex = new Map(schedule.map((occurrence) => [occurrence.index, occurrence]))
 
-    const projected = await db.transactions
+    const projected = await db.expenses
       .where('sourcePlanId')
       .equals(id)
-      .filter((t) => t.status === 'projected')
+      .filter((e) => e.status === 'projected')
       .toArray()
 
-    for (const transaction of projected) {
-      const occurrence = scheduleByIndex.get(transaction.occurrenceIndex ?? -1)
-      invariant(occurrence, `No se encontró la cuota ${String(transaction.occurrenceIndex)} en el cronograma`)
-      await writeLedgerEntry(
-        buildExpense({
+    for (const expense of projected) {
+      const occurrence = scheduleByIndex.get(expense.occurrenceIndex ?? -1)
+      invariant(occurrence, `No se encontró la cuota ${String(expense.occurrenceIndex)} en el cronograma`)
+      await saveExpense(
+        {
           date: occurrence.dueDate,
           description: `${plan.description} (cuota ${occurrence.index + 1}/${plan.count})`,
-          accountId: plan.accountId,
           categoryId: plan.categoryId,
-          amount: money(occurrence.amount, plan.currency),
+          amount: occurrence.amount,
+          currency: plan.currency,
           status: 'projected',
           sourcePlanId: plan.id,
           occurrenceIndex: occurrence.index,
-        }),
-        transaction.id,
+        },
+        expense.id,
       )
     }
 

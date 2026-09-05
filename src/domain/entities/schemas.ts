@@ -8,29 +8,9 @@ const minorAmount = z.number().int()
 const quantityScaled = z.number().int().nonnegative()
 const id = z.string().min(1)
 
-export const accountTypeSchema = z.enum(['cash', 'bank', 'card', 'investment', 'loan', 'other'])
-
-export const accountSchema = z.object({
-  id,
-  name: z.string().min(1),
-  type: accountTypeSchema,
-  currency: currencyCode,
-  openingBalance: minorAmount,
-  isArchived: z.boolean(),
-  color: z.string().optional(),
-  icon: z.string().optional(),
-  order: z.number(),
-  createdAt: isoInstant,
-  updatedAt: isoInstant,
-})
-export type Account = z.infer<typeof accountSchema>
-
-export const categoryKindSchema = z.enum(['income', 'expense'])
-
 export const categorySchema = z.object({
   id,
   name: z.string().min(1),
-  kind: categoryKindSchema,
   parentId: id.optional(),
   color: z.string().optional(),
   icon: z.string().optional(),
@@ -41,58 +21,29 @@ export const categorySchema = z.object({
 })
 export type Category = z.infer<typeof categorySchema>
 
-// 'investment': una compra de inversión pagada desde una cuenta — misma
-// forma de postings que 'expense' (cuenta - / categoría +), pero un kind
-// distinto la deja afuera de "Gasto por categoría" y Presupuestos sin
-// ningún caso especial de filtrado (ambos filtran por Transaction.kind,
-// nunca por el kind de la categoría). Ver domain/ledger/builders.ts:
-// buildInvestmentPurchase y el ADR "Una compra de inversión no es un
-// gasto" en docs/DECISIONS.md.
-export const transactionKindSchema = z.enum(['income', 'expense', 'transfer', 'adjustment', 'investment'])
-export const transactionStatusSchema = z.enum(['confirmed', 'projected'])
+export const expenseStatusSchema = z.enum(['confirmed', 'projected'])
 
-export const transactionFxSchema = z.object({
-  rate: z.number().positive(),
-  from: currencyCode,
-  to: currencyCode,
-})
-
-export const transactionSchema = z.object({
+// Un gasto es un registro simple — fecha, monto, moneda, categoría — sin
+// partida doble ni cuenta: ver ADR "Simplificación: se elimina Cuentas,
+// Ingresos y Transferencias" en docs/DECISIONS.md. `status` sigue
+// haciendo falta para un recurrente/cuota que todavía no venció
+// (`'projected'`) — sólo los `'confirmed'` cuentan en reportes/presupuestos.
+export const expenseSchema = z.object({
   id,
   date: dateStamp,
-  kind: transactionKindSchema,
+  amount: minorAmount.positive(),
+  currency: currencyCode,
+  categoryId: id,
   description: z.string().min(1),
   notes: z.string().optional(),
   tags: z.array(z.string()).optional(),
-  status: transactionStatusSchema,
-  fx: transactionFxSchema.optional(),
+  status: expenseStatusSchema,
   sourcePlanId: id.optional(),
   occurrenceIndex: z.number().int().nonnegative().optional(),
   createdAt: isoInstant,
   updatedAt: isoInstant,
 })
-export type Transaction = z.infer<typeof transactionSchema>
-
-export const postingTargetSchema = z.enum(['account', 'category'])
-
-export const postingSchema = z
-  .object({
-    id,
-    transactionId: id,
-    target: postingTargetSchema,
-    accountId: id.optional(),
-    categoryId: id.optional(),
-    amount: minorAmount,
-    currency: currencyCode,
-    date: dateStamp,
-  })
-  .refine((p) => (p.target === 'account' ? !!p.accountId && !p.categoryId : true), {
-    message: 'Account postings must set accountId and not categoryId',
-  })
-  .refine((p) => (p.target === 'category' ? !!p.categoryId && !p.accountId : true), {
-    message: 'Category postings must set categoryId and not accountId',
-  })
-export type Posting = z.infer<typeof postingSchema>
+export type Expense = z.infer<typeof expenseSchema>
 
 export const recurrenceFrequencySchema = z.enum(['daily', 'weekly', 'monthly', 'yearly'])
 
@@ -107,20 +58,17 @@ export const recurrenceRuleSchema = z.object({
 })
 export type RecurrenceRule = z.infer<typeof recurrenceRuleSchema>
 
-export const transactionTemplateSchema = z.object({
+export const expenseTemplateSchema = z.object({
   description: z.string().min(1),
-  kind: transactionKindSchema,
-  accountId: id,
-  categoryId: id.optional(),
-  toAccountId: id.optional(),
-  amount: minorAmount,
+  categoryId: id,
+  amount: minorAmount.positive(),
   currency: currencyCode,
 })
-export type TransactionTemplate = z.infer<typeof transactionTemplateSchema>
+export type ExpenseTemplate = z.infer<typeof expenseTemplateSchema>
 
 export const recurringPlanSchema = z.object({
   id,
-  template: transactionTemplateSchema,
+  template: expenseTemplateSchema,
   rule: recurrenceRuleSchema,
   lastMaterializedDate: dateStamp.optional(),
   isPaused: z.boolean(),
@@ -132,7 +80,6 @@ export type RecurringPlan = z.infer<typeof recurringPlanSchema>
 export const installmentPlanSchema = z.object({
   id,
   description: z.string().min(1),
-  accountId: id,
   categoryId: id,
   totalAmount: minorAmount,
   currency: currencyCode,
@@ -288,12 +235,6 @@ export const investmentLotSchema = z.object({
   currency: currencyCode,
   date: dateStamp,
   notes: z.string().optional(),
-  // Movimiento del ledger que descontó esta compra de una cuenta — sólo
-  // si se eligió "Cuenta de origen" al crearla. Se resincroniza (monto y
-  // fecha) si se edita cantidad/costo/fecha de la compra; nunca se
-  // crea/cambia/borra al editar. Ver ADR "Una compra de inversión no es
-  // un gasto" en docs/DECISIONS.md.
-  transactionId: id.optional(),
   createdAt: isoInstant,
   updatedAt: isoInstant,
 })

@@ -5,7 +5,6 @@ import { invariant } from '@/lib/invariant'
 
 export interface CreateCategoryInput {
   name: string
-  kind: Category['kind']
   parentId?: string
   color?: string
   icon?: string
@@ -22,62 +21,29 @@ export interface UpdateCategoryInput {
   icon?: string | undefined
 }
 
-const DEFAULT_CATEGORIES: Array<{ name: string; kind: Category['kind'] }> = [
-  { name: 'Comida', kind: 'expense' },
-  { name: 'Transporte', kind: 'expense' },
-  { name: 'Vivienda', kind: 'expense' },
-  { name: 'Salud', kind: 'expense' },
-  { name: 'Entretenimiento', kind: 'expense' },
-  { name: 'Ropa', kind: 'expense' },
-  { name: 'Educación', kind: 'expense' },
-  { name: 'Otros', kind: 'expense' },
-  { name: 'Sueldo', kind: 'income' },
-  { name: 'Freelance', kind: 'income' },
-  { name: 'Inversiones', kind: 'income' },
-  { name: 'Otros', kind: 'income' },
+const DEFAULT_CATEGORIES: readonly string[] = [
+  'Comida',
+  'Transporte',
+  'Vivienda',
+  'Salud',
+  'Entretenimiento',
+  'Ropa',
+  'Educación',
+  'Otros',
 ]
 
 export async function listCategories(): Promise<Category[]> {
   return db.categories.orderBy('order').toArray()
 }
 
-/** Id literal, no generateId() — es la única forma de reencontrar esta
- *  categoría que sobrevive a que el usuario la renombre (buscar por
- *  nombre no: DEFAULT_CATEGORIES ya siembra una "Inversiones" propia,
- *  de kind 'income', con la que un lookup por nombre chocaría). */
-export const INVESTMENT_CATEGORY_ID = 'category-investment-purchases'
-export const INVESTMENT_CATEGORY_NAME = 'Compra de inversiones'
-
-/** Contrapartida fija de toda compra de inversión pagada desde una
- *  cuenta (domain/ledger:buildInvestmentPurchase). Nace archivada para
- *  no aparecer en el selector de categorías de un Gasto manual ni en el
- *  de Presupuestos (los dos filtran `!isArchived`) — sí en el filtro de
- *  Movimientos, que no filtra archivadas, justo donde conviene poder
- *  encontrar estas compras. No pasa por createCategory() porque esa
- *  fuerza `isArchived: false`. Ver ADR "Una compra de inversión no es un
- *  gasto" en docs/DECISIONS.md. */
-export async function getOrCreateInvestmentCategory(): Promise<Category> {
-  return db.transaction('rw', db.categories, async () => {
-    const existing = await db.categories.get(INVESTMENT_CATEGORY_ID)
-    if (existing) return existing
-
-    const now = new Date().toISOString()
-    const maxOrder = await db.categories.orderBy('order').last()
-    const category: Category = {
-      id: INVESTMENT_CATEGORY_ID,
-      name: INVESTMENT_CATEGORY_NAME,
-      kind: 'expense',
-      order: (maxOrder?.order ?? -1) + 1,
-      isArchived: true,
-      createdAt: now,
-      updatedAt: now,
-    }
-    await db.categories.add(category)
-    return category
-  })
+/** Active categories only — an archived one can't be picked for a new
+ *  gasto, presupuesto, plan or import mapping (a past record that already
+ *  used one still shows its name via `listCategories`, unfiltered). */
+export async function listActiveCategories(): Promise<Category[]> {
+  return (await listCategories()).filter((c) => !c.isArchived)
 }
 
-async function assertValidParent(parentId: string | undefined, kind: Category['kind']): Promise<void> {
+async function assertValidParent(parentId: string | undefined): Promise<void> {
   if (!parentId) return
   const parent = await db.categories.get(parentId)
   invariant(parent, `Categoría padre no encontrada: ${parentId}`)
@@ -85,21 +51,16 @@ async function assertValidParent(parentId: string | undefined, kind: Category['k
     !parent.parentId,
     `"${parent.name}" ya es una subcategoría — sólo se admite un nivel de jerarquía`,
   )
-  invariant(
-    parent.kind === kind,
-    `"${parent.name}" es de otro tipo — una subcategoría debe ser del mismo tipo que su padre`,
-  )
 }
 
 export async function createCategory(input: CreateCategoryInput): Promise<Category> {
   const now = new Date().toISOString()
   return db.transaction('rw', db.categories, async () => {
-    await assertValidParent(input.parentId, input.kind)
+    await assertValidParent(input.parentId)
     const maxOrder = await db.categories.orderBy('order').last()
     const category: Category = {
       id: generateId(),
       name: input.name,
-      kind: input.kind,
       order: (maxOrder?.order ?? -1) + 1,
       isArchived: false,
       createdAt: now,
@@ -122,7 +83,7 @@ export async function setCategoryArchived(id: string, isArchived: boolean): Prom
     if (isArchived) {
       // Archiving a parent would strand its active children: they'd vanish
       // from both the management tree (never rendered as top-level, never
-      // shown as archived) and the transaction category picker, with no UI
+      // shown as archived) and the expense category picker, with no UI
       // path back. Archive the children first, or reassign them.
       const activeChildren = await db.categories.where('parentId').equals(id).toArray()
       invariant(
@@ -134,7 +95,7 @@ export async function setCategoryArchived(id: string, isArchived: boolean): Prom
   })
 }
 
-/** Swaps `order` with the adjacent sibling (same `kind` + `parentId`, active only).
+/** Swaps `order` with the adjacent sibling (same `parentId`, active only).
  *  No-op if `id` is already at that end of its sibling group. */
 export async function moveCategory(id: string, direction: 'up' | 'down'): Promise<void> {
   await db.transaction('rw', db.categories, async () => {
@@ -142,7 +103,7 @@ export async function moveCategory(id: string, direction: 'up' | 'down'): Promis
     invariant(category, `Categoría no encontrada: ${id}`)
 
     const siblings = (await db.categories.toArray())
-      .filter((c) => c.kind === category.kind && c.parentId === category.parentId && !c.isArchived)
+      .filter((c) => c.parentId === category.parentId && !c.isArchived)
       .sort((a, b) => a.order - b.order)
 
     const index = siblings.findIndex((c) => c.id === id)
@@ -165,10 +126,9 @@ export async function seedDefaultsIfEmpty(): Promise<void> {
     if (count > 0) return
 
     const now = new Date().toISOString()
-    const categories: Category[] = DEFAULT_CATEGORIES.map((def, index) => ({
+    const categories: Category[] = DEFAULT_CATEGORIES.map((name, index) => ({
       id: generateId(),
-      name: def.name,
-      kind: def.kind,
+      name,
       order: index,
       isArchived: false,
       createdAt: now,

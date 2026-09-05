@@ -1,27 +1,23 @@
 import type { EntityTable } from 'dexie'
 import { db } from '../db'
 import type {
-  Account,
   AssetPrice,
   Budget,
   Category,
   ExchangeRate,
+  Expense,
   InstallmentPlan,
   InvestmentAsset,
   InvestmentHolding,
   InvestmentLot,
-  Posting,
   RecurringPlan,
   SavingsHolding,
   Settings,
-  Transaction,
 } from '@/domain/entities'
 
 export interface AllTablesData {
-  accounts: Account[]
   categories: Category[]
-  transactions: Transaction[]
-  postings: Posting[]
+  expenses: Expense[]
   recurringPlans: RecurringPlan[]
   installmentPlans: InstallmentPlan[]
   budgets: Budget[]
@@ -39,10 +35,8 @@ export interface AllTablesData {
  *  the other's transaction scope. */
 function allTables() {
   return [
-    db.accounts,
     db.categories,
-    db.transactions,
-    db.postings,
+    db.expenses,
     db.recurringPlans,
     db.installmentPlans,
     db.budgets,
@@ -58,10 +52,8 @@ function allTables() {
 
 export async function readAllTables(): Promise<AllTablesData> {
   const [
-    accounts,
     categories,
-    transactions,
-    postings,
+    expenses,
     recurringPlans,
     installmentPlans,
     budgets,
@@ -73,10 +65,8 @@ export async function readAllTables(): Promise<AllTablesData> {
     assetPrices,
     investmentLots,
   ] = await Promise.all([
-    db.accounts.toArray(),
     db.categories.toArray(),
-    db.transactions.toArray(),
-    db.postings.toArray(),
+    db.expenses.toArray(),
     db.recurringPlans.toArray(),
     db.installmentPlans.toArray(),
     db.budgets.toArray(),
@@ -89,10 +79,8 @@ export async function readAllTables(): Promise<AllTablesData> {
     db.investmentLots.toArray(),
   ])
   return {
-    accounts,
     categories,
-    transactions,
-    postings,
+    expenses,
     recurringPlans,
     installmentPlans,
     budgets,
@@ -112,10 +100,8 @@ export async function readAllTables(): Promise<AllTablesData> {
 export async function replaceAllTables(data: AllTablesData): Promise<void> {
   await db.transaction('rw', allTables(), async () => {
     await Promise.all([
-      db.accounts.clear(),
       db.categories.clear(),
-      db.transactions.clear(),
-      db.postings.clear(),
+      db.expenses.clear(),
       db.recurringPlans.clear(),
       db.installmentPlans.clear(),
       db.budgets.clear(),
@@ -128,10 +114,8 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.investmentLots.clear(),
     ])
     await Promise.all([
-      db.accounts.bulkAdd(data.accounts),
       db.categories.bulkAdd(data.categories),
-      db.transactions.bulkAdd(data.transactions),
-      db.postings.bulkAdd(data.postings),
+      db.expenses.bulkAdd(data.expenses),
       db.recurringPlans.bulkAdd(data.recurringPlans),
       db.installmentPlans.bulkAdd(data.installmentPlans),
       db.budgets.bulkAdd(data.budgets),
@@ -150,17 +134,16 @@ export interface MergeCounts {
   /** Rows that were new and got written. */
   added: number
   /** Rows the file had for this table that were already present locally
-   *  (by id, or — for transactions — by the occurrence they represent)
-   *  and were left untouched. Lets the UI say "you already had N of
-   *  these" instead of guessing from a zero `added` count, which could
-   *  also just mean the file had none of that kind at all. */
+   *  (by id, or — for expenses — by the occurrence they represent) and
+   *  were left untouched. Lets the UI say "you already had N of these"
+   *  instead of guessing from a zero `added` count, which could also just
+   *  mean the file had none of that kind at all. */
   skipped: number
 }
 
 export interface MergeSummary {
-  accounts: MergeCounts
   categories: MergeCounts
-  transactions: MergeCounts
+  expenses: MergeCounts
   recurringPlans: MergeCounts
   installmentPlans: MergeCounts
   budgets: MergeCounts
@@ -174,9 +157,7 @@ export interface MergeSummary {
 
 /** Adds only the rows of `incoming` whose id isn't already present in
  *  `table` — existing rows are never overwritten. Returns the rows that
- *  were actually added (so callers needing that subset, like postings
- *  gated by their transaction, don't have to re-derive it) alongside how
- *  many were skipped as already-present. */
+ *  were actually added alongside how many were skipped as already-present. */
 async function addMissing<T extends { id: string }>(
   table: EntityTable<T, 'id'>,
   incoming: readonly T[],
@@ -194,15 +175,15 @@ async function addMissing<T extends { id: string }>(
  * local siempre gana" for why this is the only direction that's safe
  * without a full conflict-resolution UI.
  *
- * `transactions` are deduplicated by id AND, when `sourcePlanId` is set,
- * by `sourcePlanId + date` too. A `RecurringPlan` that already existed on
+ * `expenses` are deduplicated by id AND, when `sourcePlanId` is set, by
+ * `sourcePlanId + date` too. A `RecurringPlan` that already existed on
  * both devices before they diverged gets its occurrences materialized
  * independently by each device's own `materializeDue()` — same calendar
  * occurrence, but `generateId()` (lib/ids.ts) is random, so the two
- * devices produce different transaction ids for it. Deduplicating by id
+ * devices produce different expense ids for it. Deduplicating by id
  * alone would treat them as unrelated and add both, silently
- * double-counting that expense in the account's balance — exactly the
- * scenario this feature exists to consolidate safely.
+ * double-counting that expense in reports/budgets — exactly the scenario
+ * this feature exists to consolidate safely.
  *
  * The second key is `date`, not `occurrenceIndex`, deliberately: editing a
  * RecurringPlan's rule (`recurringPlans.repo.ts:updateRecurringPlan`) can
@@ -214,20 +195,12 @@ async function addMissing<T extends { id: string }>(
  * occurrence's index while still agreeing on its date — the date is what
  * `materializeDue`'s own single-device dedup (`occurrence.date > since`)
  * already treats as the real identity of an occurrence, so the merge uses
- * the same ground truth. An edit made through the transaction edit form
- * itself drops `sourcePlanId`/`occurrenceIndex` entirely (see
- * `features/transactions/service.ts:buildExpenseIncomeEntry`, which never
- * sets them) — such a transaction is already excluded from this key by
- * the `sourcePlanId !== undefined` check, so it can never disagree with
- * an incoming backup on its own edited date.
- *
- * `postings` are gated by their transaction, not merged independently by
- * their own id: a posting whose transaction already exists locally is
- * skipped even if that exact posting id isn't present, because editing a
- * transaction (`transactions.repo.ts:writeLedgerEntry`) replaces its
- * postings wholesale while keeping the transaction's id — an older
- * backup's postings for an already-edited transaction would otherwise
- * re-add stale amounts alongside the current ones.
+ * the same ground truth. An edit made through the expense edit form itself
+ * drops `sourcePlanId`/`occurrenceIndex` entirely (see
+ * `features/transactions/service.ts`, which never sets them on a manual
+ * edit) — such an expense is already excluded from this key by the
+ * `sourcePlanId !== undefined` check, so it can never disagree with an
+ * incoming backup on its own edited date.
  *
  * After merging, every `RecurringPlan` left in the table (existing or
  * newly added) gets its `lastMaterializedDate` repaired to the latest
@@ -235,12 +208,11 @@ async function addMissing<T extends { id: string }>(
  * `materializeDue()` (features/plans/service.ts) — which trusts that
  * watermark blindly to decide what's still due — would treat occurrences
  * merged in from another device as not-yet-materialized and generate
- * duplicate transactions for them the next time the app opens.
+ * duplicate expenses for them the next time the app opens.
  */
 export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary> {
   return db.transaction('rw', allTables(), async () => {
     const [
-      accounts,
       categories,
       recurringPlans,
       installmentPlans,
@@ -252,7 +224,6 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       assetPrices,
       investmentLots,
     ] = await Promise.all([
-      addMissing(db.accounts, data.accounts),
       addMissing(db.categories, data.categories),
       addMissing(db.recurringPlans, data.recurringPlans),
       addMissing(db.installmentPlans, data.installmentPlans),
@@ -269,44 +240,40 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       await db.settings.add(data.settings)
     }
 
-    const localTransactions = await db.transactions.toArray()
-    const existingTransactionIds = new Set(localTransactions.map((t) => t.id))
+    const localExpenses = await db.expenses.toArray()
+    const existingExpenseIds = new Set(localExpenses.map((e) => e.id))
     const existingOccurrenceKeys = new Set(
-      localTransactions
-        .filter((t) => t.sourcePlanId !== undefined)
-        .map((t) => `${t.sourcePlanId}:${t.date}`),
+      localExpenses
+        .filter((e) => e.sourcePlanId !== undefined)
+        .map((e) => `${e.sourcePlanId}:${e.date}`),
     )
     // Accept-as-we-go (not a plain .filter over a fixed snapshot) so that
-    // two different transaction ids for the SAME occurrence *within the
-    // same incoming file* — only reachable via a corrupted/hand-edited
-    // backup, since materializeDue() itself never writes an occurrence
-    // twice — can't both slip through by each independently missing the
-    // other in a filter taken before either was accepted.
-    const newTransactions = data.transactions.filter((t) => {
-      if (existingTransactionIds.has(t.id)) return false
-      if (t.sourcePlanId !== undefined) {
-        const key = `${t.sourcePlanId}:${t.date}`
+    // two different expense ids for the SAME occurrence *within the same
+    // incoming file* — only reachable via a corrupted/hand-edited backup,
+    // since materializeDue() itself never writes an occurrence twice —
+    // can't both slip through by each independently missing the other in
+    // a filter taken before either was accepted.
+    const newExpenses = data.expenses.filter((e) => {
+      if (existingExpenseIds.has(e.id)) return false
+      if (e.sourcePlanId !== undefined) {
+        const key = `${e.sourcePlanId}:${e.date}`
         if (existingOccurrenceKeys.has(key)) return false
         existingOccurrenceKeys.add(key)
       }
       return true
     })
-    if (newTransactions.length > 0) await db.transactions.bulkAdd(newTransactions)
-    const transactions: MergeCounts = {
-      added: newTransactions.length,
-      skipped: data.transactions.length - newTransactions.length,
+    if (newExpenses.length > 0) await db.expenses.bulkAdd(newExpenses)
+    const expenses: MergeCounts = {
+      added: newExpenses.length,
+      skipped: data.expenses.length - newExpenses.length,
     }
-
-    const addedTransactionIds = new Set(newTransactions.map((t) => t.id))
-    const newPostings = data.postings.filter((p) => addedTransactionIds.has(p.transactionId))
-    if (newPostings.length > 0) await db.postings.bulkAdd(newPostings)
 
     const allPlans = await db.recurringPlans.toArray()
     await Promise.all(
       allPlans.map(async (plan) => {
-        const planTransactions = await db.transactions.where('sourcePlanId').equals(plan.id).toArray()
-        if (planTransactions.length === 0) return
-        const latestDate = planTransactions.reduce((max, t) => (t.date > max ? t.date : max), '')
+        const planExpenses = await db.expenses.where('sourcePlanId').equals(plan.id).toArray()
+        if (planExpenses.length === 0) return
+        const latestDate = planExpenses.reduce((max, e) => (e.date > max ? e.date : max), '')
         if (!plan.lastMaterializedDate || latestDate > plan.lastMaterializedDate) {
           await db.recurringPlans.update(plan.id, { lastMaterializedDate: latestDate })
         }
@@ -314,9 +281,8 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
     )
 
     return {
-      accounts: { added: accounts.added.length, skipped: accounts.skipped },
       categories: { added: categories.added.length, skipped: categories.skipped },
-      transactions,
+      expenses,
       recurringPlans: { added: recurringPlans.added.length, skipped: recurringPlans.skipped },
       installmentPlans: { added: installmentPlans.added.length, skipped: installmentPlans.skipped },
       budgets: { added: budgets.added.length, skipped: budgets.skipped },

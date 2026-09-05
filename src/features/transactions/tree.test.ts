@@ -7,7 +7,6 @@ function cat(id: string, name: string, parentId?: string): Category {
   return {
     id,
     name,
-    kind: 'expense',
     order: 0,
     isArchived: false,
     createdAt: now,

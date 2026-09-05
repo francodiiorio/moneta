@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseQuantity } from '@/domain/decimal'
 import type { ExchangeRate, SavingsHolding } from '@/domain/entities'
-import { minor, money } from '@/domain/money'
+import { money } from '@/domain/money'
 import { valuateNetWorth, type ValuationInput } from './valuation'
 
 const now = new Date().toISOString()
@@ -20,7 +20,6 @@ function saving(overrides: Partial<SavingsHolding> = {}): SavingsHolding {
 
 function baseInput(overrides: Partial<ValuationInput> = {}): ValuationInput {
   return {
-    accounts: [],
     savings: [],
     positions: [],
     rates: [],
@@ -33,7 +32,7 @@ function baseInput(overrides: Partial<ValuationInput> = {}): ValuationInput {
 describe('valuateNetWorth — currency conversion basics', () => {
   it('same currency: no rate needed, amount passes through unchanged', () => {
     const result = valuateNetWorth(
-      baseInput({ accounts: [{ balance: minor(100_000), currency: 'ARS' }], displayCurrency: 'ARS' }),
+      baseInput({ savings: [saving({ currency: 'ARS', amount: 100_000 })], displayCurrency: 'ARS' }),
     )
     expect(result.total).toEqual(money(100_000, 'ARS'))
     expect(result.missingRateCount).toBe(0)
@@ -42,7 +41,7 @@ describe('valuateNetWorth — currency conversion basics', () => {
   it('USD -> ARS using a loaded rate', () => {
     const rates: ExchangeRate[] = [{ id: 'r1', date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1450 }]
     const result = valuateNetWorth(
-      baseInput({ accounts: [{ balance: minor(100_00), currency: 'USD' }], rates, displayCurrency: 'ARS' }),
+      baseInput({ savings: [saving({ currency: 'USD', amount: 100_00 })], rates, displayCurrency: 'ARS' }),
     )
     expect(result.total).toEqual(money(100_00 * 1450, 'ARS'))
   })
@@ -50,7 +49,7 @@ describe('valuateNetWorth — currency conversion basics', () => {
   it('ARS -> USD using the reciprocal of a loaded rate', () => {
     const rates: ExchangeRate[] = [{ id: 'r1', date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1450 }]
     const result = valuateNetWorth(
-      baseInput({ accounts: [{ balance: minor(1_450_00), currency: 'ARS' }], rates, displayCurrency: 'USD' }),
+      baseInput({ savings: [saving({ currency: 'ARS', amount: 1_450_00 })], rates, displayCurrency: 'USD' }),
     )
     expect(result.total).toEqual(money(100, 'USD'))
   })
@@ -62,23 +61,26 @@ describe('valuateNetWorth — mixed net worth', () => {
   it('ARS 3.000.000 + USD 8.000 valued in ARS', () => {
     const result = valuateNetWorth(
       baseInput({
-        accounts: [{ balance: minor(3_000_000_00), currency: 'ARS' }],
-        savings: [saving({ currency: 'USD', amount: 8_000_00 })],
+        savings: [
+          saving({ id: 's1', currency: 'ARS', amount: 3_000_000_00 }),
+          saving({ id: 's2', currency: 'USD', amount: 8_000_00 }),
+        ],
         rates,
         displayCurrency: 'ARS',
       }),
     )
     // 3.000.000 + 8.000 * 1450 = 3.000.000 + 11.600.000 = 14.600.000
     expect(result.total).toEqual(money(14_600_000_00, 'ARS'))
-    expect(result.byBucket.accounts).toEqual(money(3_000_000_00, 'ARS'))
-    expect(result.byBucket.savings).toEqual(money(11_600_000_00, 'ARS'))
+    expect(result.byBucket.savings).toEqual(money(14_600_000_00, 'ARS'))
   })
 
   it('the same net worth valued in USD instead', () => {
     const result = valuateNetWorth(
       baseInput({
-        accounts: [{ balance: minor(3_000_000_00), currency: 'ARS' }],
-        savings: [saving({ currency: 'USD', amount: 8_000_00 })],
+        savings: [
+          saving({ id: 's1', currency: 'ARS', amount: 3_000_000_00 }),
+          saving({ id: 's2', currency: 'USD', amount: 8_000_00 }),
+        ],
         rates,
         displayCurrency: 'USD',
       }),
@@ -108,14 +110,14 @@ describe('valuateNetWorth — edge cases', () => {
   it('excludes an item with a missing rate from the total, and counts it', () => {
     const result = valuateNetWorth(
       baseInput({
-        accounts: [
-          { balance: minor(100_000), currency: 'ARS' },
-          { balance: minor(100_00), currency: 'EUR' }, // no EUR rate loaded
+        savings: [
+          saving({ id: 's1', currency: 'ARS', amount: 100_000 }),
+          saving({ id: 's2', currency: 'EUR', amount: 100_00 }), // no EUR rate loaded
         ],
         displayCurrency: 'ARS',
       }),
     )
-    expect(result.total).toEqual(money(100_000, 'ARS')) // EUR account excluded, not zeroed
+    expect(result.total).toEqual(money(100_000, 'ARS')) // EUR saving excluded, not zeroed
     expect(result.missingRateCount).toBe(1)
   })
 
@@ -123,7 +125,7 @@ describe('valuateNetWorth — edge cases', () => {
     const rates: ExchangeRate[] = [{ id: 'r1', date: '2026-09-01', from: 'USD', to: 'ARS', rate: 1450 }]
     const result = valuateNetWorth(
       baseInput({
-        accounts: [{ balance: minor(100_00), currency: 'USD' }],
+        savings: [saving({ currency: 'USD', amount: 100_00 })],
         rates,
         date: '2026-08-01',
         displayCurrency: 'ARS',
@@ -146,7 +148,7 @@ describe('valuateNetWorth — edge cases', () => {
   })
 
   it('a zero amount contributes zero without being treated as missing', () => {
-    const result = valuateNetWorth(baseInput({ accounts: [{ balance: minor(0), currency: 'ARS' }] }))
+    const result = valuateNetWorth(baseInput({ savings: [saving({ currency: 'ARS', amount: 0 })] }))
     expect(result.total).toEqual(money(0, 'ARS'))
     expect(result.missingRateCount).toBe(0)
   })
@@ -158,8 +160,8 @@ describe('valuateNetWorth — edge cases', () => {
     expect(result.missingPriceCount).toBe(0)
   })
 
-  it('a negative account balance (e.g. a card in the red) is valued as-is, not excluded', () => {
-    const result = valuateNetWorth(baseInput({ accounts: [{ balance: minor(-50_000), currency: 'ARS' }] }))
+  it('a negative amount (e.g. a hand-entered debt) is valued as-is, not excluded', () => {
+    const result = valuateNetWorth(baseInput({ savings: [saving({ currency: 'ARS', amount: -50_000 })] }))
     expect(result.total).toEqual(money(-50_000, 'ARS'))
   })
 })

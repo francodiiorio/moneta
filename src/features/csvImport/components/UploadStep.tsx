@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
-import type { AccountWithBalance } from '@/database/repositories/accounts.repo'
 import type { Category } from '@/domain/entities'
+import { CURRENCIES } from '@/domain/money'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CSV_DATE_FORMATS, type CsvDateFormat } from '../dateFormats'
 import { CSV_ENCODINGS, type CsvEncoding } from '../parse'
-import type { CsvMapping } from '../schema'
+import { CSV_IMPORT_CURRENCIES, type CsvMapping } from '../schema'
 
 interface ColumnOption {
   index: number
@@ -21,9 +21,7 @@ interface UploadStepProps {
   mapping: CsvMapping
   setMapping: React.Dispatch<React.SetStateAction<CsvMapping>>
   columns: ColumnOption[]
-  accounts: AccountWithBalance[] | undefined
   expenseCategories: Category[] | undefined
-  incomeCategories: Category[] | undefined
   hasFile: boolean
   rowCount: number
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void
@@ -66,9 +64,7 @@ export function UploadStep({
   mapping,
   setMapping,
   columns,
-  accounts,
   expenseCategories,
-  incomeCategories,
   hasFile,
   rowCount,
   onFileChange,
@@ -153,53 +149,35 @@ export function UploadStep({
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Cuenta y categorías</CardTitle>
+              <CardTitle className="text-base">Moneda y categoría</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-3">
+            <CardContent className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <Label>Cuenta destino</Label>
-                <Select value={mapping.accountId} onValueChange={(v) => setMapping((m) => ({ ...m, accountId: v }))}>
+                <Label>Moneda</Label>
+                <Select value={mapping.currency} onValueChange={(v) => setMapping((m) => ({ ...m, currency: v }))}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Elegí una cuenta" />
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {accounts?.map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.name}
+                    {CSV_IMPORT_CURRENCIES.map((code) => (
+                      <SelectItem key={code} value={code}>
+                        {code} · {CURRENCIES[code]?.symbol}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label>Categoría para gastos</Label>
+                <Label>Categoría para los gastos</Label>
                 <Select
-                  value={mapping.expenseCategoryId}
-                  onValueChange={(v) => setMapping((m) => ({ ...m, expenseCategoryId: v }))}
+                  value={mapping.categoryId}
+                  onValueChange={(v) => setMapping((m) => ({ ...m, categoryId: v }))}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Elegí una categoría" />
                   </SelectTrigger>
                   <SelectContent>
                     {expenseCategories?.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>Categoría para ingresos</Label>
-                <Select
-                  value={mapping.incomeCategoryId}
-                  onValueChange={(v) => setMapping((m) => ({ ...m, incomeCategoryId: v }))}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Elegí una categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {incomeCategories?.map((category) => (
                       <SelectItem key={category.id} value={category.id}>
                         {category.name}
                       </SelectItem>
@@ -263,7 +241,7 @@ export function UploadStep({
                           ? {
                               mode: 'single',
                               amountColumn: m.amount.mode === 'debit-credit' ? m.amount.debitColumn : 0,
-                              signConvention: 'positive-is-income',
+                              signConvention: 'positive-is-expense',
                             }
                           : {
                               mode: 'debit-credit',
@@ -307,8 +285,8 @@ export function UploadStep({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="positive-is-income">Positivo = ingreso</SelectItem>
                           <SelectItem value="positive-is-expense">Positivo = gasto</SelectItem>
+                          <SelectItem value="positive-is-income">Positivo = ingreso (no se importa)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -326,7 +304,7 @@ export function UploadStep({
                       }
                     />
                     <ColumnSelect
-                      label="Columna de crédito (ingresos)"
+                      label="Columna de crédito (no se importa)"
                       columns={columns}
                       value={mapping.amount.creditColumn}
                       onChange={(index) =>

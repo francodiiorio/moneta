@@ -15,88 +15,73 @@ ARS/USD). `$10,50` es `1050`. Ver "Reglas financieras" en `CLAUDE.md`.
 
 ## Entidades
 
-### Account
-
-Una cuenta tiene **moneda fija** (`currency`). Todos sus postings están en esa moneda —
-nunca se convierte implícitamente. `openingBalance` es el saldo al momento de crear la
-cuenta en Moneta (no necesariamente el saldo histórico real); el balance actual se
-calcula como `openingBalance + suma de postings confirmados de esa cuenta`.
-
 ### Category
 
-Un nivel de anidamiento (`parentId`). `kind` es `income` o `expense` — una categoría no
-sirve para ambos tipos de movimiento.
+Un nivel de anidamiento (`parentId`). No tiene `kind` — Moneta sólo trackea gastos, así
+que no hace falta distinguir tipos de categoría.
 
-### Transaction + Posting (ledger de partida doble ligera)
+### Expense
 
-Una `Transaction` es el evento (fecha, descripción, tipo); los `Posting`s son los montos
-con signo que efectivamente mueven dinero. Toda transacción tiene **2 o más** postings, y
-sus montos suman cero (o se balancean vía `fx.rate` en una transferencia cross-currency,
-con tolerancia de 1 unidad menor por redondeo).
+Un gasto es un registro plano — fecha, monto, moneda, categoría — **sin partida doble y
+sin cuenta**. Ver ADR "Simplificación: se elimina Cuentas, Ingresos y Transferencias" en
+`docs/DECISIONS.md`: hasta esa reversión, Moneta modelaba todo movimiento (gasto,
+ingreso, transferencia, cuota) como una `Transaction` con `Posting`s de partida doble
+contra una `Account` de moneda fija. El usuario decidió que sólo le sirve trackear
+gastos, ahorros/inversiones y presupuestos — sin cuenta del otro lado del posting, la
+partida doble no tenía sentido, así que se reemplazó por esta entidad única.
 
-Ingreso, gasto, transferencia y cuota son todos el mismo primitivo — sólo cambia qué
-postings genera cada builder de `src/domain/ledger/builders.ts`:
+```ts
+{
+  id, date, amount, currency, categoryId, description,
+  notes?, tags?,
+  status: 'confirmed' | 'projected',
+  sourcePlanId?, occurrenceIndex?,
+  createdAt, updatedAt,
+}
+```
 
-- **Gasto**: posting de cuenta negativo + posting de categoría positivo.
-- **Ingreso**: posting de cuenta positivo + posting de categoría negativo.
-- **Transferencia** (misma moneda): posting negativo en la cuenta origen + positivo en la
-  destino.
-- **Transferencia cross-currency**: igual, pero cada posting está en la moneda de su
-  cuenta y la `Transaction` lleva `fx: { rate, from, to }` para poder verificar que las
-  dos puntas se corresponden.
-- **Compra de inversión** (`buildInvestmentPurchase`, opcional al cargar una compra en
-  Ahorro e Inversiones): misma forma de postings que un gasto (cuenta negativa +
-  categoría positiva), pero `kind: 'investment'` — Reportes y Presupuestos filtran por
-  `Transaction.kind`, nunca por el `kind` de la categoría, así que un gasto real y una
-  compra de inversión nunca se mezclan aunque ambos posteen contra una categoría. La
-  categoría contrapartida es fija y archivada (`INVESTMENT_CATEGORY_ID` en
-  `categories.repo.ts`) — ver ADR "Una compra de inversión no es un gasto".
+- `amount` es siempre positivo (`minorAmount.positive()`) — es la magnitud del gasto, no
+  hay signo que cargar porque no hay una segunda pata que balancear.
+- `currency` vive directo en el gasto (antes la fijaba la cuenta) — cada gasto lleva la
+  suya, mismo criterio que `InvestmentLot.currency` o `SavingsHolding.currency`.
+- `status` sigue haciendo falta para un recurrente o una cuota que todavía no venció
+  (`'projected'`) — sólo los `'confirmed'` cuentan en reportes y presupuestos.
+- `sourcePlanId` + `occurrenceIndex` linkean un gasto materializado al `RecurringPlan` o
+  `InstallmentPlan` que lo generó.
 
-Un `Posting` es de cuenta (`target: 'account'`, `accountId` seteado, `categoryId` no) o
-de categoría (al revés) — nunca ambos ni ninguno. Esto se valida en
-`validateLedgerEntry()` y con `.refine()` en el Zod schema.
-
-`Transaction.status` es `'confirmed'` o `'projected'`. Sólo los postings de transacciones
-`confirmed` cuentan para el balance de una cuenta — así una cuota o recurrente futura
-puede "existir" en la base (para mostrarse en un calendario, por ejemplo) sin afectar el
-saldo actual.
-
-`sourcePlanId` + `occurrenceIndex` linkean una transacción materializada a el
-`RecurringPlan` o `InstallmentPlan` que la generó.
-
-**Editar una transacción reemplaza sus postings, no los diffea.** `saveTransaction()`
-(`src/database/repositories/transactions.repo.ts`) borra los postings existentes e
-inserta los nuevos derivados del formulario, dentro de la misma transacción Dexie `rw`;
-conserva el `id` y el `createdAt` originales. Es más simple que un diff campo por campo y
-sigue siendo atómico — ver `docs/DECISIONS.md` si se agrega ahí una entrada.
+**Editar un gasto reemplaza el registro entero, no lo diffea.** `saveExpense()`
+(`src/database/repositories/expenses.repo.ts`) hace un `put()` completo con los campos
+del formulario, dentro de la misma transacción Dexie `rw`; conserva el `id` y el
+`createdAt` originales.
 
 ### RecurringPlan / InstallmentPlan
 
-Los planes son **plantillas**, no transacciones. Un `RecurringPlan` define una regla de
-recurrencia (`freq`, `interval`, etc.) y un template; un `InstallmentPlan` define un
-monto total y una cantidad de cuotas, con `scheduleCache` (el resultado de `allocate()`)
+Los planes son **plantillas**, no gastos. Un `RecurringPlan` define una regla de
+recurrencia (`freq`, `interval`, etc.) y un `ExpenseTemplate`
+(`{ description, categoryId, amount, currency }`); un `InstallmentPlan` define un monto
+total y una cantidad de cuotas, con `scheduleCache` (el resultado de `allocate()`)
 guardado una sola vez al crear el plan para que el cronograma no cambie si se recalcula
 después.
 
-Cuando corresponde, un plan **materializa** una `Transaction` real (con
-`sourcePlanId` + `occurrenceIndex` seteados). Esto es deliberado: permite editar o marcar
-como pagada una cuota puntual sin afectar el resto, y mantiene el historial inmutable —
-ver `docs/DECISIONS.md`.
+Cuando corresponde, un plan **materializa** un `Expense` real (con `sourcePlanId` +
+`occurrenceIndex` seteados). Esto es deliberado: permite editar o marcar como pagada una
+cuota puntual sin afectar el resto, y mantiene el historial inmutable — ver
+`docs/DECISIONS.md`.
 
-- Un `RecurringPlan` sólo materializa transacciones `confirmed`, al ponerse al día
+- Un `RecurringPlan` sólo materializa gastos `confirmed`, al ponerse al día
   (`lastMaterializedDate` → hoy) cada vez que se abre la app. No genera nada a futuro:
   no tiene un total de ocurrencias conocido de antemano (salvo que tenga
   `maxOccurrences`/`endDate`), así que no hay "cronograma completo" para previsualizar.
 - Un `InstallmentPlan`, en cambio, sí conoce sus N cuotas desde el momento en que se crea
   (`scheduleCache` + fecha de cada una), así que las escribe todas de una vez: las que ya
   vencieron como `confirmed`, el resto como `projected`. Cada cuota `projected` pasa sola
-  a `confirmed` el día que llega su fecha. `projected` ya estaba excluido de balances
-  (`accounts.repo.ts`) y reportes (`reports/service.ts`) desde antes de esta feature, así
-  que una cuota futura es visible (con badge en Movimientos) sin afectar ningún total.
-- Borrar un plan, por default, nunca borra una transacción `confirmed` — salvo que el
-  usuario tilde explícitamente "Borrar también los movimientos que ya generó" al borrar
-  un recurrente (`deleteRecurringPlan(id, { deleteGeneratedTransactions: true })`, nunca
-  el default). Ver los ADRs correspondientes en `docs/DECISIONS.md`.
+  a `confirmed` el día que llega su fecha. `projected` está excluido de reportes
+  (`reports/service.ts`) y presupuestos, así que una cuota futura es visible (con badge
+  en Movimientos) sin afectar ningún total.
+- Borrar un plan, por default, nunca borra un gasto `confirmed` — salvo que el usuario
+  tilde explícitamente "Borrar también los movimientos que ya generó" al borrar un
+  recurrente (`deleteRecurringPlan(id, { deleteGeneratedExpenses: true })`, nunca el
+  default). Ver los ADRs correspondientes en `docs/DECISIONS.md`.
 
 ### Budget
 
@@ -131,10 +116,10 @@ mecanismo especial).
 
 ### SavingsHolding
 
-Ahorros que no pasan por el ledger: plata que el usuario tiene pero no registra como
-movimientos (efectivo, una caja de ahorro que no concilia). `amount` es el importe
-completo en `currency` — no hay concepto de "postings" ni de historial de movimientos
-para un ahorro, es un valor que se edita directamente.
+Ahorros que no pasan por ningún registro de movimientos: plata que el usuario tiene pero
+no carga como gasto (efectivo, una caja de ahorro que no concilia). `amount` es el
+importe completo en `currency` — no hay concepto de historial de movimientos para un
+ahorro, es un valor que se edita directamente.
 
 ### InvestmentAsset / InvestmentHolding / InvestmentLot / AssetPrice
 
@@ -150,12 +135,9 @@ moneda:
   criterio que tenía `averageCost` antes: si no se cargó, no se inventa uno), moneda
   (denormalizada, mismo patrón que `AssetPrice`) y fecha. Es la fuente de verdad de
   cuánto tenés de un activo; nunca se edita una posición directo, se agrega/edita/borra
-  una compra — ver ADR "Tracking de inversiones por lote" en `docs/DECISIONS.md`.
-  `transactionId` (opcional, no indexado) referencia el movimiento del ledger que
-  descontó la compra de una cuenta — sólo si se eligió "Cuenta de origen" al crearla
-  (no editable después). Se resincroniza si se edita cantidad, costo o fecha de la
-  compra; nunca se crea/cambia/borra al editar — ver ADR "Una compra de inversión no
-  es un gasto".
+  una compra — ver ADR "Tracking de inversiones por lote" en `docs/DECISIONS.md`. Una
+  compra de inversión no descuenta ninguna cuenta (no existen) ni cuenta como gasto —
+  simplemente registra que ahora tenés más de ese activo.
 - **`InvestmentHolding`** es un **agregado cacheado**: la suma de los `InvestmentLot`
   de un activo (cantidad total + costo promedio ponderado —
   `domain/investments/lots.ts:aggregateLots`), recalculado transaccionalmente cada vez
@@ -183,6 +165,7 @@ El valor de una posición nunca es un atajo directo "activo → moneda de displa
 `quantity → domain/decimal:valuePosition(quantity, price)` (valor en la moneda del
 activo) `→ domain/currency:convert(...)` (moneda de display) —
 `domain/networth/valuation.ts:valuateNetWorth` es la única función que hace este cálculo.
+Valúa exclusivamente Ahorros + Inversiones — no hay bucket de Cuentas.
 
 ### Settings
 
@@ -244,11 +227,24 @@ de inversiones por lote" en `docs/DECISIONS.md`):
 investmentLots:      id, assetId, date
 ```
 
-Dexie omite del índice las claves `undefined`, así que el índice compuesto
-`[accountId+date]` sólo contiene postings de cuenta, y `[categoryId+date]` sólo los de
-categoría — eso es lo que permite consultar "todos los postings de esta cuenta,
-ordenados por fecha" con un `.where('[accountId+date]').between(...)` directo, sin table
-scan.
+**Versión 4** (simplificación: se elimina Cuentas, Ingresos y Transferencias — ver ADR
+en `docs/DECISIONS.md`. `accounts`/`postings`/`transactions` se eliminan del todo;
+`expenses` es tabla nueva y **sí** tiene `.upgrade()`: reconstruye un `Expense` por cada
+`Transaction` con `kind: 'expense'`, tomando el monto/moneda/categoría de su posting de
+categoría. Todo lo demás — income/transfer/adjustment/investment, sus postings, y las
+cuentas mismas — se descarta: un borrado real y deliberado, no un accidente de
+migración. Las categorías de ingreso también se descartan, ya que `Category` deja de
+tener `kind`):
+
+```
+categories:        id, name, parentId, isArchived, order   (pierde el índice `kind`)
+expenses:          id, date, categoryId, status, sourcePlanId, [status+date]
+```
+
+Dexie omite del índice las claves `undefined`, así que `[status+date]` sólo contiene
+gastos con ambos campos seteados (siempre, en la práctica) y `sourcePlanId` sólo aquellos
+materializados por un plan — eso es lo que permite `db.expenses.where('sourcePlanId')...`
+sin table scan.
 
 ## Versionado del schema de Dexie
 
@@ -260,26 +256,31 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
 - Bajar `LATEST_VERSION` o reordenar versiones corrompe las bases de usuarios existentes.
 - Agregar una tabla completamente nueva **sin** datos previos que migrar (el caso de la
   versión 2) no necesita `.upgrade()` — Dexie la crea vacía. Una tabla nueva que sí
-  necesita heredar datos de una tabla existente (el caso de la versión 3:
-  `investmentLots` nace poblada con un lote por cada `InvestmentHolding` previo) lleva su
-  propio `.upgrade()`.
-- Un campo nuevo **no indexado** en una tabla ya existente (el caso de
-  `InvestmentLot.transactionId`, agregado sin una versión nueva) no necesita tocar
-  `db.ts` en absoluto — Dexie no sabe ni le importa qué campos no indexados tiene cada
-  fila. Sólo hace falta una versión nueva (con su `.stores()`) cuando cambia qué queda
-  **indexado**.
+  necesita heredar datos de una tabla existente (los casos de la versión 3:
+  `investmentLots` nace poblada con un lote por cada `InvestmentHolding` previo; y la
+  versión 4: `expenses` nace poblada a partir de las `Transaction`s de gasto existentes)
+  lleva su propio `.upgrade()`.
+- Un campo nuevo **no indexado** en una tabla ya existente no necesita tocar `db.ts` en
+  absoluto — Dexie no sabe ni le importa qué campos no indexados tiene cada fila. Sólo
+  hace falta una versión nueva (con su `.stores()`) cuando cambia qué queda **indexado**.
+- Una migración puede ser **destructiva** (la versión 4 lo es, deliberadamente, por
+  decisión explícita del usuario) — pasar `null` en `.stores()` para una tabla la
+  elimina del todo. Esto es la excepción, no la regla: toda migración anterior fue
+  puramente aditiva/derivacional, y una migración destructiva merece su propia
+  verificación manual contra la base real antes de shippearse (ver
+  `docs/DECISIONS.md`).
 
 ## Formato de backup (independiente del schema de Dexie)
 
 ```jsonc
 {
   "format": "moneta-backup",
-  "version": 3,
+  "version": 4,
   "exportedAt": "2026-08-23T14:03:11.000Z",
   "app": { "name": "moneta", "version": "0.0.0" },
   "checksum": "sha256 hex sobre `data` canonicalizado",
   "data": {
-    "accounts": [], "categories": [], "transactions": [], "postings": [],
+    "categories": [], "expenses": [],
     "recurringPlans": [], "installmentPlans": [], "budgets": [],
     "exchangeRates": [], "settings": {},
     "savingsHoldings": [], "investmentAssets": [], "investmentHoldings": [],
@@ -299,19 +300,31 @@ Reglas (ver `src/features/backups/`):
   v3 (tracking por lote) migra un v2 sintetizando un `InvestmentLot` heredado por cada
   `InvestmentHolding` con cantidad positiva (`migrations/v2_to_v3.ts`) — misma lógica que
   el `.upgrade()` de Dexie de la versión 3, para el camino de import en vez del de uso
-  normal de la app.
+  normal de la app. La v4 (simplificación) migra un v3 igual que el `.upgrade()` de Dexie
+  de la versión 4: reconstruye `expenses` a partir de las `Transaction`s de gasto,
+  descarta cuentas/ingresos/transferencias, y filtra las categorías de ingreso
+  (`migrations/v3_to_v4.ts`).
+- Como una migración vieja (`schemas/v1.ts`, `v2.ts`, `v3.ts`) tiene que seguir validando
+  un archivo `.finance` exactamente como lo hacía cuando esa versión era la última, esos
+  schemas **no** pueden depender de los tipos de dominio actuales una vez que el dominio
+  cambia de forma incompatible — `schemas/legacy.ts` congela copias de los shapes viejos
+  (`Account`, `Posting`, `Transaction`, la `Category` con `kind`, etc.) que `v1.ts`/
+  `v2.ts`/`v3.ts` importan en su lugar. Antes de la v4 esto no hacía falta: cada cambio de
+  dominio anterior fue aditivo, así que las versiones viejas podían seguir importando
+  directo de `@/domain/entities` sin que su validación cambiara de significado.
 - No todo cambio de forma necesita una versión de backup nueva: ensanchar un enum
-  compartido por import (no copia congelada) — `transactionKindSchema` ganando
-  `'investment'`, o antes `investmentAssetTypeSchema` ganando `'cedear'` — o agregar un
-  campo opcional a una entidad ya versionada (`InvestmentLot.transactionId`) son cambios
-  puramente aditivos: un `.finance` viejo se sigue importando exactamente igual, porque
-  `schemas/v2.ts`/`v3.ts` referencian esos tipos de dominio en vez de copiarlos.
+  compartido por import (no copia congelada), o agregar un campo opcional a una entidad
+  ya versionada, son cambios puramente aditivos: un `.finance` viejo se sigue importando
+  exactamente igual, porque el schema de esa versión referencia esos tipos de dominio en
+  vez de copiarlos — siempre que el cambio siga siendo compatible hacia atrás (ver el
+  punto anterior para cuándo deja de serlo).
 - `migrateToLatest()` corre la cadena hasta la versión más reciente y falla explícito si
   el archivo es de una versión más nueva que la app instalada (mensaje claro, no un
   crash).
-- Antes de escribir nada, el import corre `validateLedgerIntegrity()` sobre **todas** las
-  transacciones del archivo — mismos invariantes que una escritura normal. Un backup
-  corrupto o editado a mano queda rechazado sin tocar la base actual.
+- Antes de escribir nada, el import corre `validateLedgerIntegrity()` sobre **todos**
+  los gastos del archivo — monto positivo y categoría no vacía, ya migrado a la última
+  versión. Sin partida doble no hay más invariante que verificar. Un backup corrupto o
+  editado a mano queda rechazado sin tocar la base actual.
 - El checksum se recalcula y se compara: si no coincide, se avisa pero no se bloquea el
   import (podría ser una edición manual legítima).
 
@@ -325,20 +338,14 @@ localmente** — ver el ADR en `docs/DECISIONS.md` para el porqué.
   tabla: sólo se agrega una fila cuya ID no esté ya presente. Con `generateId()`
   (`lib/ids.ts`) la colisión de IDs entre dos dispositivos independientes es
   despreciable, así que "misma ID" en la práctica significa "es la misma entidad".
-- `transactions` se dedupe por ID **y**, cuando tienen `sourcePlanId` +
-  `occurrenceIndex`, también por ese par. Un `RecurringPlan` que ya existía en ambos
+- `expenses` se dedupe por ID **y**, cuando tienen `sourcePlanId` + `occurrenceIndex`,
+  también por `sourcePlanId + date`. Un `RecurringPlan` que ya existía en ambos
   dispositivos antes de que se usaran por separado materializa la misma ocurrencia
-  calendario con un `id` de transacción distinto en cada uno (`generateId()` es
-  aleatorio, no determinístico por fecha/plan) — dedupear sólo por `id` trataría esas dos
-  transacciones como no relacionadas y duplicaría el monto en el balance de la cuenta.
-- `postings` es la única tabla que **no** se mergea por su propia ID: una posting sólo se
-  agrega si su `transactionId` es una transacción que *también* se está agregando en ese
-  merge. Necesario porque editar una transacción (`transactions.repo.ts:writeLedgerEntry`)
-  reemplaza sus postings conservando el `id` de la transacción — un backup viejo de una
-  transacción ya editada localmente tiene postings con IDs que ya no existen en ningún
-  lado, y agregarlos por su cuenta duplicaría el monto.
+  calendario con un `id` de gasto distinto en cada uno (`generateId()` es aleatorio, no
+  determinístico por fecha/plan) — dedupear sólo por `id` trataría esos dos gastos como
+  no relacionados y duplicaría el monto en reportes/presupuestos.
 - Después de mergear, todo `RecurringPlan` (existente o recién agregado) recalcula su
-  `lastMaterializedDate` al máximo `date` real entre sus transacciones locales con ese
+  `lastMaterializedDate` al máximo `date` real entre sus gastos locales con ese
   `sourcePlanId`, si es posterior al valor actual. Sin esto, `materializeDue()`
   (`features/plans/service.ts`) — que confía ciegamente en ese watermark para decidir qué
   falta materializar — trataría ocurrencias traídas por el merge como pendientes y las
@@ -347,14 +354,14 @@ localmente** — ver el ADR en `docs/DECISIONS.md` para el porqué.
   especial: como casi siempre existe ya localmente, el `settings` del archivo se ignora
   por completo — la moneda base y el tema del dispositivo actual nunca cambian por un
   merge.
-- Sin deduplicación de entidades por nombre: dos cuentas "Banco" con IDs distintas
+- Sin deduplicación de entidades por nombre: dos categorías "Comida" con IDs distintas
   (creadas independientemente en cada dispositivo) quedan duplicadas después de un merge
   — se concilian a mano. Es una limitación de alcance deliberada, no un bug. Lo mismo
   aplica a `ExchangeRate`: dos tasas para el mismo `(date, from, to)` cargadas por
-  separado en cada dispositivo quedan como filas distintas (a diferencia de una cuenta
+  separado en cada dispositivo quedan como filas distintas (a diferencia de una categoría
   duplicada, esto no es sólo cosmético — para dos tasas del mismo `(date, from, to)` con
   `capturedAt`, `resolveRate()` desempata por la más reciente (igual que dentro de un
-  solo dispositivo, ver más abajo); si alguna de las dos no tiene `capturedAt` (una fila
+  solo dispositivo, ver más arriba); si alguna de las dos no tiene `capturedAt` (una fila
   vieja, de antes de la Etapa 6C), el desempate vuelve a ser no determinístico. De
   cualquier forma conviene revisar la pestaña Cotizaciones en Ahorro e Inversiones después de un
   merge si se cargaron tasas manualmente en ambos dispositivos). `AssetPrice` tiene
@@ -369,7 +376,7 @@ localmente** — ver el ADR en `docs/DECISIONS.md` para el porqué.
 
 ### Cifrado opcional (sobre independiente del formato de datos)
 
-El objeto de arriba (`BackupV1`) nunca cambia por esto — cifrar es una capa de transporte
+El objeto de arriba (`BackupV4`) nunca cambia por esto — cifrar es una capa de transporte
 que lo envuelve entero, no una versión nueva del formato. Un `.finance` cifrado es:
 
 ```jsonc
@@ -378,7 +385,7 @@ que lo envuelve entero, no una versión nueva del formato. Un `.finance` cifrado
   "version": 1,
   "kdf": "PBKDF2", "hash": "SHA-256", "iterations": 600000,
   "salt": "base64...", "iv": "base64...",
-  "ciphertext": "base64... (el BackupV1 de arriba, JSON.stringify + AES-256-GCM)"
+  "ciphertext": "base64... (el BackupV4 de arriba, JSON.stringify + AES-256-GCM)"
 }
 ```
 

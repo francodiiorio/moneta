@@ -167,6 +167,14 @@ tabs). Un clic más para llegar a Cotizaciones es un costo menor frente a duplic
 
 ## Import de CSV: una categoría por lote, duplicados destildados no bloqueados
 
+> **Parcialmente superada.** Tras "Simplificación: se elimina Cuentas, Ingresos y
+> Transferencias" (al final de este documento), ya no hay cuenta destino ni categoría de
+> ingreso — sólo **una** categoría de gasto para todo el lote y una moneda elegida
+> directo en el mapeo. Una fila cuyo signo/columna indica ingreso queda marcada
+> "excluded" (no se importa, no se puede tildar) en vez de ofrecer categorizarla como
+> ingreso. El resto de esta decisión (duplicados destildados pero no bloqueados, fecha
+> elegida a mano) sigue vigente.
+
 **Decisión:** `src/features/csvImport/` importa un extracto bancario a una sola cuenta
 por vez, con **una** categoría de gasto y **una** de ingreso elegidas para todo el lote
 (el `kind` de cada fila sale del signo del monto o de qué columna — débito/crédito —
@@ -193,6 +201,11 @@ usuario lo elige explícito en el mapeo en vez de una heurística que puede acer
 mayoría de las veces y arruinar silenciosamente el resto.
 
 ## Ledger de partida doble ligera en vez de transacciones tipadas simples
+
+> **Obsoleta.** El ledger de partida doble (`Transaction`+`Posting`+`Account`) se
+> eliminó por completo — ver "Simplificación: se elimina Cuentas, Ingresos y
+> Transferencias" al final de este documento. Se deja esta entrada como registro
+> histórico de por qué se eligió partida doble en su momento.
 
 **Decisión:** toda transacción es una lista de `Posting`s con signo que suman cero, en vez
 de un registro con `type: 'income'|'expense'|'transfer'` + `accountId` + `amount` +
@@ -268,7 +281,9 @@ cuotas como planes + instancias materializadas" arriba).
 ## Borrar un recurrente: opción explícita para borrar también su historial
 
 **Decisión:** `deleteRecurringPlan` (`database/repositories/recurringPlans.repo.ts`)
-acepta `{ deleteGeneratedTransactions: true }`, que borra también toda transacción
+acepta `{ deleteGeneratedExpenses: true }` (renombrado de `deleteGeneratedTransactions`
+tras "Simplificación: se elimina Cuentas, Ingresos y Transferencias" — mismo mecanismo,
+ahora sobre `Expense` en vez de `Transaction`), que borra también todo gasto
 `confirmed` que ese plan haya generado (`deleteAllBySourcePlanId`, junto a la
 `deleteProjectedBySourcePlanId` ya existente para cuotas). Sigue sin ser el default —
 `PlansPage` sólo ofrece el checkbox ("Borrar también los N movimientos que ya generó")
@@ -376,6 +391,11 @@ traída desde otro dispositivo cuya fecha sea posterior al watermark local, en l
 apertura de la app. Ver `docs/DATA_MODEL.md` "Modo merge" para el detalle completo.
 
 ## Cuenta con moneda fija + tasas manuales, no conversión automática
+
+> **Parcialmente obsoleta.** `Account` se eliminó por completo — ver "Simplificación:
+> se elimina Cuentas, Ingresos y Transferencias" al final de este documento. La carga
+> manual de tasas (`ExchangeRate`, sin integración automática por defecto) sigue vigente
+> tal cual, ahora aplicada directo a gastos/ahorros/inversiones en vez de a cuentas.
 
 **Decisión:** cada `Account` tiene una `currency` fija; las tasas de cambio
 (`ExchangeRate`) las carga el usuario a mano, con fecha. No hay integración con ninguna
@@ -557,6 +577,15 @@ sólo confirma, con `page.emulateMedia({ media: 'print' })`, que los estilos de 
 efectivamente ocultan la barra de acciones de sólo-pantalla.
 
 ## Ahorro e Inversiones deja de incluir Cuentas
+
+> **Superada.** Cuentas se eliminó del todo (no sólo de esta pestaña) — ver
+> "Simplificación: se elimina Cuentas, Ingresos y Transferencias" al final de este
+> documento. `domain/networth:valuateNetWorth` ya no acepta un bucket de cuentas en
+> absoluto (antes lo aceptaba pero esta feature pasaba `accounts: []`); Reportes y el
+> informe mensual, mencionados abajo como el lugar donde Cuentas seguía consolidada,
+> también la perdieron. Se deja esta entrada porque explica bien la separación
+> conceptual "Ahorro e Inversiones vs. patrimonio total" que motivó la reversión
+> posterior.
 
 **Decisión:** `/patrimonio` se renombra a "Ahorro e Inversiones" (nav, `PageHeader`) y su
 pestaña Resumen (total + gráfico de Distribución) deja de sumar Cuentas — pasa a ser
@@ -883,6 +912,14 @@ general del repo de invariantes ruidosos sobre corrección silenciosa.
 
 ## Una compra de inversión no es un gasto: `kind: 'investment'` + cuenta de origen opcional
 
+> **Obsoleta.** Esta feature completa (el quinto `kind: 'investment'` y la "Cuenta de
+> origen" opcional al cargar una compra) se revirtió por completo al eliminar Cuentas —
+> ver "Simplificación: se elimina Cuentas, Ingresos y Transferencias" al final de este
+> documento. `InvestmentLot` volvió a no tener `transactionId`. Se deja esta entrada
+> como registro histórico de un problema real (inflar "Gasto por categoría" al cargar
+> una compra a mano) que ya no aplica: sin cuentas, no hay saldo que descontar ni
+> ambigüedad "gasto vs. inversión" que resolver.
+
 **Problema:** cargar una compra en Ahorro e Inversiones (`InvestmentLot`) nunca tocó el
 ledger — son dos sistemas separados por diseño (ver ADR "Ahorro e Inversiones deja de
 incluir Cuentas"). El usuario notó el problema real que eso genera: para que el saldo de
@@ -995,3 +1032,71 @@ opciones válidas, y un submit que fallaba recién en el invariant de moneda del
 repository — un error genuino pero con un toast que no explicaba qué corregir. Se
 agregó un `useEffect` que resetea `accountId` a `NO_ACCOUNT` cada vez que cambia el
 activo seleccionado.
+
+## Simplificación: se elimina Cuentas, Ingresos y Transferencias
+
+**Decisión:** Moneta deja de trackear ingresos, cuentas y transferencias. De acá en más
+sólo registra **Gastos, Ahorros/Inversiones y Presupuestos**. `Account`, `Transaction` y
+`Posting` (el ledger de partida doble completo, base arquitectónica del proyecto desde
+la Etapa 0) se eliminan del dominio, la base de datos y el formato de backup — sin
+excepción, sin flag, sin modo dual. Se reemplazan por una entidad plana única,
+`Expense`: fecha, monto, moneda, categoría, sin partida doble y sin cuenta del otro
+lado. Ver `docs/DATA_MODEL.md` "Expense" para el shape completo.
+
+**Por qué:** pedido directo del usuario — trackear ingresos y cuentas no le resultaba
+útil, y quería simplificar la app a lo que efectivamente usa: gastos, ahorro/inversión y
+presupuesto. Se evaluó explícitamente un modo dual (toggle entre "app completa" y "app
+simplificada", conviviendo en la misma base) y se descartó: para una app de un solo
+usuario tomando una decisión permanente, mantener dos modelos de dominio en paralelo
+—cada feature nueva tendría que soportar ambos— es una complejidad de mantenimiento que
+no se paga sola. Se optó por simplificar la app directamente, sin bandera.
+
+**Qué se eliminó, concretamente:**
+- **Dominio**: `domain/ledger/` completo (`builders.ts`, `invariants.ts`, `balance.ts`,
+  `types.ts`) — sin partida doble no hay nada que balancear ni invariante de ledger que
+  validar. `accountSchema`/`accountTypeSchema`, `postingSchema`/`postingTargetSchema`,
+  `transactionSchema`/`transactionKindSchema` desaparecen de `domain/entities/schemas.ts`.
+  `categorySchema` pierde `kind` (sin ingreso, sólo existe un tipo de categoría).
+  `domain/networth/valuation.ts` pierde el bucket `accounts` — `valuateNetWorth` ya sólo
+  valúa Ahorros + Inversiones, para cualquier llamador (antes Reportes pasaba su propia
+  lista de cuentas; ahora no puede, el parámetro no existe).
+- **Base de datos**: `db.version(4)` en `src/database/db.ts` es la primera migración
+  **destructiva** del proyecto — todas las anteriores eran aditivas/derivacionales (ver
+  `docs/DATA_MODEL.md` "Versionado del schema de Dexie"). Reconstruye `expenses` a
+  partir de cada `Transaction` con `kind: 'expense'` (tomando monto/moneda/categoría de
+  su posting de categoría) y **descarta** todo lo demás: income, transfer, adjustment,
+  investment, sus postings, y las cuentas mismas. Las categorías de ingreso también se
+  descartan. Es un borrado real de datos, decidido explícitamente por el usuario tras
+  confirmar dos veces (una vez para los ingresos, otra para las transferencias) — no un
+  efecto secundario accidental de la migración.
+- **Backup**: `schemas/v4.ts` + `migrations/v3_to_v4.ts`, mismo criterio que la
+  migración de Dexie mount para el camino de import. Como una versión de backup vieja
+  tiene que seguir validando un archivo `.finance` exactamente como lo hacía antes,
+  `schemas/legacy.ts` congela copias de los shapes que `v1.ts`/`v2.ts`/`v3.ts` ya no
+  pueden importar en vivo desde `@/domain/entities` (ver `docs/DATA_MODEL.md`).
+  `validateLedgerIntegrity` se simplifica a "monto positivo + categoría no vacía" — ya
+  no hay partida doble que verificar.
+- **UI**: se borra `features/accounts/` entero (página, formulario, repository) y su
+  entrada de navegación; `features/transactions/` (ruta `/movimientos` sin renombrar,
+  para acotar el riesgo de un cambio ya de por sí enorme) pasa a ser un formulario único
+  de gasto, sin tabs de Gasto/Ingreso/Transferencia; `features/plans/` pierde los
+  selectores de cuenta y el `kind` de un recurrente; `features/csvImport/` pierde el
+  selector de cuenta destino y la categoría de ingreso (ver ADR de CSV import arriba);
+  `features/categories/` pierde el tab Ingresos; `features/reports/`/`features/dashboard/`
+  pierden "Ingresos"/"Balance neto" y el bucket Cuentas de patrimonio.
+- **Reversión de una feature reciente**: "Cuenta de origen" en compras de inversión
+  (`kind: 'investment'` + `InvestmentLot.transactionId`, ver ADR arriba) dependía por
+  completo de que existieran cuentas — se revirtió íntegra, `InvestmentLot` vuelve a no
+  tener vínculo con ningún movimiento.
+
+**Costo aceptado:** es un borrado de datos irreversible — todo ingreso y transferencia
+cargados hasta ahora se pierden. El usuario lo confirmó explícitamente, dos veces, antes
+de proceder. Se verificó la migración contra la base real del usuario (con un backup
+exportado antes, sin excepción) antes de dar el trabajo por terminado — ver
+`docs/DATA_MODEL.md` y el checklist de verificación de esta migración.
+
+**Qué NO cambió:** las reglas financieras de fondo (`CLAUDE.md` "Reglas financieras")
+siguen intactas para lo que queda — enteros en unidades menores, `roundHalfUp`,
+`allocate()` para cuotas — sólo se simplificó qué se registra, no cómo se calcula.
+Ahorros e Inversiones (`SavingsHolding`, `InvestmentAsset`/`Holding`/`Lot`/`AssetPrice`)
+y Presupuestos no cambiaron de forma en absoluto.

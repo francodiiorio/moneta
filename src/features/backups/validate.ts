@@ -1,48 +1,18 @@
-import { minor, type CurrencyCode } from '@/domain/money'
-import { validateLedgerEntry, type PostingDraft } from '@/domain/ledger'
-import type { BackupDataV2 } from './schemas/v2'
+import type { LatestBackupData } from './migrations'
 
-/** Re-validates every transaction's postings using the same domain
- *  invariants applied on normal writes — a backup file is untrusted
- *  input and must prove itself before it replaces the live database. */
-export function validateLedgerIntegrity(data: BackupDataV2): void {
-  const accountCurrencies = new Map<string, CurrencyCode>(
-    data.accounts.map((a) => [a.id, a.currency]),
-  )
-
-  const postingsByTransaction = new Map<string, PostingDraft[]>()
-  for (const posting of data.postings) {
-    const draft: PostingDraft = {
-      target: posting.target,
-      amount: minor(posting.amount),
-      currency: posting.currency,
-      ...(posting.accountId !== undefined && { accountId: posting.accountId }),
-      ...(posting.categoryId !== undefined && { categoryId: posting.categoryId }),
+/** Sin partida doble no hay nada que balancear — la única invariante que
+ *  queda es la más básica: todo gasto tiene un monto positivo y una
+ *  categoría. Zod ya fuerza esto vía `expenseSchema` en el parseo normal,
+ *  pero un archivo importado es entrada no confiable y ya migrada a mano
+ *  (los migrators construyen objetos directo, sin pasar por Zod) — esta
+ *  es la última verificación antes de escribir sobre la base real. */
+export function validateLedgerIntegrity(data: LatestBackupData): void {
+  for (const expense of data.expenses) {
+    if (expense.amount <= 0) {
+      throw new Error(`Gasto inválido "${expense.description}" (${expense.id}): el monto debe ser mayor a cero`)
     }
-    const list = postingsByTransaction.get(posting.transactionId) ?? []
-    list.push(draft)
-    postingsByTransaction.set(posting.transactionId, list)
-  }
-
-  for (const transaction of data.transactions) {
-    const postings = postingsByTransaction.get(transaction.id) ?? []
-    try {
-      validateLedgerEntry(
-        {
-          date: transaction.date,
-          kind: transaction.kind,
-          description: transaction.description,
-          status: transaction.status,
-          ...(transaction.fx !== undefined && { fx: transaction.fx }),
-          postings,
-        },
-        accountCurrencies,
-      )
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw new Error(
-        `Transacción inválida "${transaction.description}" (${transaction.id}): ${message}`,
-      )
+    if (!expense.categoryId) {
+      throw new Error(`Gasto inválido "${expense.description}" (${expense.id}): falta la categoría`)
     }
   }
 }

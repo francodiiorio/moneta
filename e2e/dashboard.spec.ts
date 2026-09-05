@@ -1,21 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 // Regression: the Dashboard's "Ahorro e inversiones" card must match
-// /patrimonio's own total (both come from the same getNetWorthSummary),
-// and — the part that actually matters here — neither one may fold in a
-// cuenta's balance. See docs/DECISIONS.md "Ahorro e Inversiones deja de
-// incluir Cuentas".
-test('Dashboard "Ahorro e inversiones" matches /patrimonio and excludes cuentas', async ({ page }) => {
-  // Create an account with a balance so the dashboard isn't in its empty
-  // state — its balance must NOT show up in the "Ahorro e inversiones" card.
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Banco Prueba')
-  await page.getByLabel('Saldo inicial').fill('1000')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-  await expect(page.getByText('Banco Prueba')).toBeVisible()
-
+// /patrimonio's own total (both come from the same getNetWorthSummary).
+test('Dashboard "Ahorro e inversiones" matches /patrimonio', async ({ page }) => {
   await page.goto('/patrimonio')
   await page.getByRole('tab', { name: 'Ahorros' }).click()
   await page.getByRole('button', { name: 'Nuevo ahorro' }).first().click()
@@ -25,15 +12,12 @@ test('Dashboard "Ahorro e inversiones" matches /patrimonio and excludes cuentas'
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.getByRole('tab', { name: 'Resumen' }).click()
-  // 500 from the ahorro — NOT 1.500, which is what it'd be if the 1000 from
-  // Banco Prueba leaked in.
   await expect(page.getByText('Total ahorros e inversiones', { exact: true })).toBeVisible()
   await expect(page.getByText(/500,00/).first()).toBeVisible()
 
   await page.goto('/')
   await expect(page.getByText('Ahorro e inversiones', { exact: true })).toBeVisible()
   await expect(page.getByText(/500,00/).first()).toBeVisible()
-  await expect(page.getByText(/1[.,]500,00/)).not.toBeVisible()
 
   // Regression: these cards used to always render, showing an inline
   // "sin datos" message — they should be absent entirely when there's
@@ -43,18 +27,10 @@ test('Dashboard "Ahorro e inversiones" matches /patrimonio and excludes cuentas'
 })
 
 test('Dashboard shows expense-by-category chart and a recent expenses list', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Banco Prueba')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   await page.goto('/movimientos')
-  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByRole('button', { name: 'Nuevo gasto' }).first().click()
   await page.getByLabel('Descripción').fill('Supermercado')
   await page.getByLabel('Monto').fill('1500')
-  await page.getByRole('combobox', { name: 'Cuenta' }).click()
-  await page.getByRole('option', { name: 'Banco Prueba' }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Comida' }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
@@ -63,20 +39,17 @@ test('Dashboard shows expense-by-category chart and a recent expenses list', asy
   await page.goto('/')
   await expect(page.getByText('Gasto por categoría este mes', { exact: true })).toBeVisible()
   await expect(page.getByText('Últimos gastos del mes', { exact: true })).toBeVisible()
-  await expect(page.getByText('Comida · Banco Prueba')).toBeVisible()
+  // .getByText('Comida') would also match Recharts' aria-hidden text-
+  // measurement span and the chart's own <tspan> label — scope to the
+  // recent-expenses row, the only actual paragraph with that text.
+  await expect(page.getByRole('paragraph').filter({ hasText: 'Comida' })).toBeVisible()
   await expect(page.getByText('Supermercado')).toBeVisible()
 })
 
 test('Dashboard shows the expense variation vs. the previous month', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Banco Prueba')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   // 1000 last month, 1500 this month — a 50% increase in gastos.
   await page.goto('/movimientos')
-  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByRole('button', { name: 'Nuevo gasto' }).first().click()
   await page.getByLabel('Descripción').fill('Gasto mes pasado')
   // DateField is a Popover+Calendar, not a native date input — its
   // trigger button still inherits the accessible name "Fecha" from the
@@ -92,18 +65,14 @@ test('Dashboard shows the expense variation vs. the previous month', async ({ pa
   // that class on its .rdp-day parent cell.
   await page.locator('.rdp-day:not(.rdp-outside) .rdp-day_button', { hasText: /^1$/ }).click()
   await page.getByLabel('Monto').fill('1000')
-  await page.getByRole('combobox', { name: 'Cuenta' }).click()
-  await page.getByRole('option', { name: 'Banco Prueba' }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Comida' }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
-  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByRole('button', { name: 'Nuevo gasto' }).first().click()
   await page.getByLabel('Descripción').fill('Gasto este mes')
   await page.getByLabel('Monto').fill('1500')
-  await page.getByRole('combobox', { name: 'Cuenta' }).click()
-  await page.getByRole('option', { name: 'Banco Prueba' }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Comida' }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
@@ -114,14 +83,6 @@ test('Dashboard shows the expense variation vs. the previous month', async ({ pa
 })
 
 test('Dashboard shows a "Progreso de tus inversiones" card once a position has a price', async ({ page }) => {
-  // The Dashboard's empty state gates on having at least one account —
-  // unrelated to inversiones, but needed so the rest of the page renders.
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Banco Prueba')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   await page.goto('/patrimonio')
   await page.getByRole('tab', { name: 'Inversiones' }).click()
 
@@ -163,12 +124,6 @@ test('Dashboard shows a "Progreso de tus inversiones" card once a position has a
 // end-to-end, through the exact page (Dashboard, via
 // getSavingsAndInvestmentsHistory) whose crash report first surfaced it.
 test('a large peso-denominated CEDEAR position does not crash the Dashboard', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Banco Prueba')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   await page.goto('/patrimonio')
   await page.getByRole('tab', { name: 'Inversiones' }).click()
   await page.getByRole('button', { name: 'Nuevo activo' }).click()
@@ -201,12 +156,6 @@ test('a large peso-denominated CEDEAR position does not crash the Dashboard', as
 })
 
 test('el ícono de ojo oculta el monto de "Ahorro e inversiones" y lo recuerda entre recargas', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Banco Prueba')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   // También carga una inversión: "Progreso de tus inversiones" muestra
   // montos reales en su tooltip, así que ocultar el monto de arriba
   // tiene que ocultar esta card entera — si no, el toggle no sirve de nada.

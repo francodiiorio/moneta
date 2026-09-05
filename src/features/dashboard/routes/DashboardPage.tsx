@@ -1,8 +1,7 @@
 import { Link } from 'react-router'
 import { toast } from 'sonner'
-import { Eye, EyeOff, LayoutDashboard, TriangleAlert } from 'lucide-react'
+import { Eye, EyeOff, TriangleAlert } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
-import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,7 +18,6 @@ import { useExpenseByCategory } from '@/features/reports/hooks/useExpenseByCateg
 import { useNetWorthSummary } from '@/features/networth/hooks/useNetWorthSummary'
 import { useSavingsAndInvestmentsHistory } from '@/features/networth/hooks/useSavingsAndInvestmentsHistory'
 import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithProgress'
-import { useHasAccounts } from '../hooks/useHasAccounts'
 import { useRecentExpenses } from '../hooks/useRecentExpenses'
 import { useSettings } from '../hooks/useSettings'
 import { RecentExpensesList } from '../components/RecentExpensesList'
@@ -28,14 +26,13 @@ import { VariationBadge } from '../components/VariationBadge'
 const BUDGET_ALERT_THRESHOLD = 90
 
 export function DashboardPage() {
-  const hasAccounts = useHasAccounts()
   const settings = useSettings()
   const hideAmount = settings?.hideSavingsAndInvestmentsAmount ?? false
   const month = currentMonthStamp()
   const summary = useMonthSummary(month)
   const previousSummary = useMonthSummary(shiftMonth(month, -1))
   // Same source of truth as /patrimonio (Ahorro e Inversiones) — Ahorros +
-  // Inversiones, deliberately not Cuentas (ya tiene su propia página). See
+  // Inversiones, deliberately not Cuentas (ya no existen). See
   // docs/DECISIONS.md "Ahorro e Inversiones deja de incluir Cuentas".
   const savingsAndInvestments = useNetWorthSummary()
   const expenseByCategory = useExpenseByCategory(month)
@@ -57,8 +54,6 @@ export function DashboardPage() {
       ? percentChange(firstInvestmentPoint.value, lastInvestmentPoint.value)
       : undefined
 
-  const incomeChange =
-    summary && previousSummary ? percentChange(previousSummary.income, summary.income) : undefined
   const expenseChange =
     summary && previousSummary ? percentChange(previousSummary.expense, summary.expense) : undefined
 
@@ -72,19 +67,6 @@ export function DashboardPage() {
     }
   }
 
-  if (hasAccounts === false) {
-    return (
-      <div className="flex flex-col gap-4">
-        <PageHeader title="Dashboard" description="Resumen del mes, y de tus ahorros e inversiones." />
-        <EmptyState
-          icon={LayoutDashboard}
-          title="Todavía no hay datos"
-          description="Cargá tus cuentas y movimientos para ver el resumen acá."
-        />
-      </div>
-    )
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
@@ -94,47 +76,21 @@ export function DashboardPage() {
 
       <MissingRateBanner
         count={missingRateCount}
-        itemLabel={['movimiento, ahorro o inversión', 'movimientos, ahorros o inversiones']}
+        itemLabel={['gasto, ahorro o inversión', 'gastos, ahorros o inversiones']}
       />
 
-      {/* One card, not four — the four numbers are read together at a
-          glance (that's the point of a dashboard), so four separately
-          bordered/shadowed boxes was pure visual noise for the same
-          information. 4-column layout (and its divider) only from lg:+ —
-          same breakpoint the old sm:grid-cols-2 lg:grid-cols-4 layout used.
-          sm: is too aggressive: a 4-column row in the ~640-1024px range
-          (tablet portrait, an unmaximized laptop window) doesn't leave
-          enough width for a several-digit amount, and it clips instead of
-          wrapping. Below lg: it's a 2x2 grid, where a vertical divide
-          would fall in the wrong place anyway (Tailwind's divide-x is
-          DOM-adjacency-based, not row-aware). */}
+      {/* One card, not two — mismo criterio que el resto del Dashboard: los
+          números se leen juntos de un vistazo. Divider sólo desde sm:+. */}
       <Card className="py-0">
-        <CardContent className="grid grid-cols-2 gap-4 p-4 lg:grid-cols-4 lg:gap-0 lg:divide-x lg:divide-border">
-          <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
-            <p className="text-xs text-muted-foreground">Ingresos del mes</p>
-            <p className="mt-1 text-xl font-semibold">
-              {summary ? <MoneyText value={summary.income} /> : <span className="text-muted-foreground">—</span>}
-            </p>
-            {incomeChange !== undefined && <VariationBadge percent={incomeChange} />}
-          </div>
-          <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
+        <CardContent className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:gap-0 sm:divide-x sm:divide-border">
+          <div className="sm:px-4 sm:first:pl-0 sm:last:pr-0">
             <p className="text-xs text-muted-foreground">Gastos del mes</p>
             <p className="mt-1 text-xl font-semibold">
               {summary ? <MoneyText value={summary.expense} /> : <span className="text-muted-foreground">—</span>}
             </p>
             {expenseChange !== undefined && <VariationBadge percent={expenseChange} invert />}
           </div>
-          <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
-            <p className="text-xs text-muted-foreground">Balance neto</p>
-            <p className="mt-1 text-xl font-semibold">
-              {summary ? (
-                <MoneyText value={summary.net} signColor />
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </p>
-          </div>
-          <div className="lg:px-4 lg:first:pl-0 lg:last:pr-0">
+          <div className="sm:px-4 sm:first:pl-0 sm:last:pr-0">
             <div className="flex items-center gap-1">
               <p className="text-xs text-muted-foreground">Ahorro e inversiones</p>
               <Button

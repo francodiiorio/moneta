@@ -20,7 +20,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { fromDateStamp, formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { useTransactions } from '../hooks/useTransactions'
-import { useAccounts } from '../hooks/useAccounts'
 import { useAllCategories } from '../hooks/useAllCategories'
 import { useTransactionsUiStore } from '../store'
 import { TransactionFormDialog } from '../components/TransactionFormDialog'
@@ -46,18 +45,14 @@ function dateLabel(date: string): string {
 
 export function TransactionsPage() {
   const transactions = useTransactions()
-  const accounts = useAccounts()
   const categories = useAllCategories()
 
   const {
     month,
-    accountFilter,
     categoryFilter,
     setMonth,
-    setAccountFilter,
     setCategoryFilter,
     dialogOpen,
-    dialogKind,
     editingTransactionId,
     openCreateDialog,
     openEditDialog,
@@ -73,9 +68,9 @@ export function TransactionsPage() {
     if (!pendingDeleteId) return
     try {
       await removeTransaction(pendingDeleteId)
-      toast.success('Movimiento eliminado')
+      toast.success('Gasto eliminado')
     } catch {
-      toast.error('No se pudo eliminar el movimiento')
+      toast.error('No se pudo eliminar el gasto')
     } finally {
       setPendingDeleteId(null)
     }
@@ -85,7 +80,7 @@ export function TransactionsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Movimientos"
-        description="Ingresos, gastos y transferencias."
+        description="Tus gastos."
         actions={
           <>
             <Button variant="outline" asChild>
@@ -96,7 +91,7 @@ export function TransactionsPage() {
             </Button>
             <Button onClick={() => openCreateDialog()}>
               <Plus className="size-4" />
-              Nuevo movimiento
+              Nuevo gasto
             </Button>
           </>
         }
@@ -114,20 +109,6 @@ export function TransactionsPage() {
             <ChevronRight className="size-4" />
           </Button>
         </div>
-
-        <Select value={accountFilter ?? ALL} onValueChange={(v) => setAccountFilter(v === ALL ? null : v)}>
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="Todas las cuentas" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Todas las cuentas</SelectItem>
-            {accounts?.map((account) => (
-              <SelectItem key={account.id} value={account.id}>
-                {account.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
 
         <Select value={categoryFilter ?? ALL} onValueChange={(v) => setCategoryFilter(v === ALL ? null : v)}>
           <SelectTrigger className="w-48">
@@ -153,9 +134,9 @@ export function TransactionsPage() {
       ) : groups.length === 0 ? (
         <EmptyState
           icon={Receipt}
-          title="No hay movimientos este mes"
-          description="Registrá un gasto, un ingreso o una transferencia para empezar."
-          action={<Button onClick={() => openCreateDialog()}>Nuevo movimiento</Button>}
+          title="No hay gastos este mes"
+          description="Registrá un gasto para empezar."
+          action={<Button onClick={() => openCreateDialog()}>Nuevo gasto</Button>}
         />
       ) : (
         <div className="flex flex-col gap-4">
@@ -163,25 +144,14 @@ export function TransactionsPage() {
             <div key={date}>
               <p className="mb-1 text-xs font-medium text-muted-foreground">{dateLabel(date)}</p>
               <div className="rounded-xl border border-border px-3">
-                {items.map((item) => {
-                  // No form handles 'adjustment' (nothing creates one today) or
-                  // 'investment' (se edita desde la compra que lo generó, en
-                  // Ahorro e Inversiones — ver ADR "Una compra de inversión no
-                  // es un gasto") — hide "Editar" rather than open a dialog
-                  // that can't represent either.
-                  const editableKind =
-                    item.kind === 'expense' || item.kind === 'income' || item.kind === 'transfer'
-                      ? item.kind
-                      : undefined
-                  return (
-                    <TransactionRow
-                      key={item.id}
-                      item={item}
-                      {...(editableKind && { onEdit: () => openEditDialog(item.id, editableKind) })}
-                      onDelete={() => setPendingDeleteId(item.id)}
-                    />
-                  )
-                })}
+                {items.map((item) => (
+                  <TransactionRow
+                    key={item.id}
+                    item={item}
+                    onEdit={() => openEditDialog(item.id)}
+                    onDelete={() => setPendingDeleteId(item.id)}
+                  />
+                ))}
               </div>
             </div>
           ))}
@@ -191,18 +161,14 @@ export function TransactionsPage() {
       <TransactionFormDialog
         open={dialogOpen}
         item={editingItem}
-        initialKind={dialogKind}
         onOpenChange={(open) => (open ? undefined : closeDialog())}
       />
 
       <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar este movimiento?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta acción no se puede deshacer. El movimiento y sus efectos sobre el saldo de la
-              cuenta se eliminan por completo.
-            </AlertDialogDescription>
+            <AlertDialogTitle>¿Eliminar este gasto?</AlertDialogTitle>
+            <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>

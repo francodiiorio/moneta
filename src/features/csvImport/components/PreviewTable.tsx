@@ -4,18 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { MoneyText } from '@/components/MoneyText'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { negate, type Money } from '@/domain/money'
+import { negate } from '@/domain/money'
 import { formatShortDate } from '@/lib/dates'
 import type { PreviewRow } from '../service'
-
-/** `row.amount` is always a positive magnitude (what the builders expect
- *  — see service.ts) — negate it here, display-only, so an expense shows
- *  red/negative and an income shows green/positive like everywhere else
- *  in the app, without changing what actually gets persisted. */
-function signedForDisplay(row: PreviewRow): Money | undefined {
-  if (!row.amount || !row.kind) return row.amount
-  return row.kind === 'expense' ? negate(row.amount) : row.amount
-}
 
 interface PreviewTableProps {
   rows: PreviewRow[]
@@ -24,6 +15,7 @@ interface PreviewTableProps {
   selectedCount: number
   duplicateCount: number
   invalidCount: number
+  excludedCount: number
   onBack: () => void
   onImport: () => void
   isBusy: boolean
@@ -36,6 +28,7 @@ export function PreviewTable({
   selectedCount,
   duplicateCount,
   invalidCount,
+  excludedCount,
   onBack,
   onImport,
   isBusy,
@@ -46,6 +39,7 @@ export function PreviewTable({
         {selectedCount} a importar
         {duplicateCount > 0 && ` · ${duplicateCount} posible${duplicateCount === 1 ? '' : 's'} duplicado${duplicateCount === 1 ? '' : 's'}`}
         {invalidCount > 0 && ` · ${invalidCount} fila${invalidCount === 1 ? '' : 's'} inválida${invalidCount === 1 ? '' : 's'}`}
+        {excludedCount > 0 && ` · ${excludedCount} fila${excludedCount === 1 ? '' : 's'} sin importar (no es gasto)`}
       </p>
 
       <div className="rounded-xl border border-border">
@@ -61,33 +55,33 @@ export function PreviewTable({
           </TableHeader>
           <TableBody>
             {rows.map((row) => {
-              const displayAmount = signedForDisplay(row)
+              const isDisabled = row.status === 'invalid' || row.status === 'excluded'
               return (
-              <TableRow key={row.index} className={row.status === 'invalid' ? 'opacity-50' : undefined}>
-                <TableCell>
-                  <Checkbox
-                    checked={selected.has(row.index)}
-                    disabled={row.status === 'invalid'}
-                    onCheckedChange={() => onToggle(row.index)}
-                    aria-label={`Importar fila ${row.index + 1}`}
-                  />
-                </TableCell>
-                <TableCell>{row.date ? formatShortDate(row.date) : row.raw[0] || '—'}</TableCell>
-                <TableCell className="max-w-64 truncate" title={row.description}>
-                  {row.description ?? row.raw.join(' ')}
-                </TableCell>
-                <TableCell className="text-right">
-                  {displayAmount ? <MoneyText value={displayAmount} signColor /> : '—'}
-                </TableCell>
-                <TableCell>
-                  {row.status === 'duplicate' && <Badge variant="secondary">Posible duplicado</Badge>}
-                  {row.status === 'invalid' && (
-                    <Badge variant="destructive" title={row.invalidReason}>
-                      {row.invalidReason}
-                    </Badge>
-                  )}
-                </TableCell>
-              </TableRow>
+                <TableRow key={row.index} className={isDisabled ? 'opacity-50' : undefined}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selected.has(row.index)}
+                      disabled={isDisabled}
+                      onCheckedChange={() => onToggle(row.index)}
+                      aria-label={`Importar fila ${row.index + 1}`}
+                    />
+                  </TableCell>
+                  <TableCell>{row.date ? formatShortDate(row.date) : row.raw[0] || '—'}</TableCell>
+                  <TableCell className="max-w-64 truncate" title={row.description}>
+                    {row.description ?? row.raw.join(' ')}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {row.amount ? <MoneyText value={negate(row.amount)} signColor /> : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {row.status === 'duplicate' && <Badge variant="secondary">Posible duplicado</Badge>}
+                    {(row.status === 'invalid' || row.status === 'excluded') && (
+                      <Badge variant="destructive" title={row.invalidReason}>
+                        {row.invalidReason}
+                      </Badge>
+                    )}
+                  </TableCell>
+                </TableRow>
               )
             })}
           </TableBody>
@@ -100,7 +94,7 @@ export function PreviewTable({
           Volver
         </Button>
         <Button onClick={onImport} disabled={isBusy || selectedCount === 0}>
-          Importar {selectedCount} movimiento{selectedCount === 1 ? '' : 's'}
+          Importar {selectedCount} gasto{selectedCount === 1 ? '' : 's'}
         </Button>
       </div>
     </div>

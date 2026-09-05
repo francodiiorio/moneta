@@ -15,19 +15,15 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DateField } from '@/components/DateField'
 import type { RecurringPlan } from '@/domain/entities'
-import { formatMoney, money } from '@/domain/money'
+import { CURRENCIES, formatMoney, money } from '@/domain/money'
 import { cn } from '@/lib/cn'
-import { invariant } from '@/lib/invariant'
 import { todayStamp } from '@/lib/dates'
-import { useAccounts } from '../hooks/useAccounts'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
-import { useIncomeCategories } from '../hooks/useIncomeCategories'
 import { createRecurringPlanFromForm, MaterializationFailedError, updateRecurringPlanFromForm } from '../service'
-import { recurringPlanFormSchema, type RecurringPlanFormValues } from '../schema'
+import { PLAN_CURRENCIES, recurringPlanFormSchema, type RecurringPlanFormValues } from '../schema'
 
 interface RecurringPlanFormDialogProps {
   open: boolean
@@ -40,10 +36,8 @@ interface RecurringPlanFormDialogProps {
 function defaultValues(): RecurringPlanFormValues {
   return {
     description: '',
-    kind: 'expense',
-    accountId: '',
     categoryId: '',
-    toAccountId: '',
+    currency: 'ARS',
     amount: '',
     freq: 'monthly',
     interval: '1',
@@ -56,19 +50,10 @@ function defaultValues(): RecurringPlanFormValues {
 
 function planToFormValues(plan: RecurringPlan): RecurringPlanFormValues {
   const { template, rule } = plan
-  // A plan's template is only ever built by createRecurringPlanFromForm,
-  // which never accepts 'adjustment' or 'investment' — see
-  // buildTemplateEntry in service.ts.
-  invariant(
-    template.kind !== 'adjustment' && template.kind !== 'investment',
-    `Un recurrente no puede tener kind: ${template.kind}`,
-  )
   return {
     description: template.description,
-    kind: template.kind,
-    accountId: template.accountId,
-    categoryId: template.categoryId ?? '',
-    toAccountId: template.toAccountId ?? '',
+    categoryId: template.categoryId,
+    currency: template.currency,
     amount: formatMoney(money(template.amount, template.currency)).replace(/[^\d,.-]/g, ''),
     freq: rule.freq,
     interval: String(rule.interval),
@@ -87,9 +72,7 @@ const FREQ_LABELS: Record<RecurringPlanFormValues['freq'], string> = {
 }
 
 export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringPlanFormDialogProps) {
-  const accounts = useAccounts()
-  const expenseCategories = useExpenseCategories()
-  const incomeCategories = useIncomeCategories()
+  const categories = useExpenseCategories()
   const isEditing = !!plan
 
   const form = useForm<RecurringPlanFormValues>({
@@ -117,15 +100,7 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
   // otherwise a hidden field could block the form with no visible feedback.
   const hasAdvancedError = !!(form.formState.errors.endDate || form.formState.errors.maxOccurrences)
 
-  const kind = form.watch('kind')
   const freq = form.watch('freq')
-  const accountId = form.watch('accountId')
-  const categories = kind === 'income' ? incomeCategories : expenseCategories
-  // A recurring transfer template only holds one amount+currency — it can't
-  // represent a cross-currency leg (see service.ts:createRecurringPlanFromForm),
-  // so only same-currency destination accounts are offered.
-  const selectedCurrency = accounts?.find((a) => a.id === accountId)?.currency
-  const toAccountOptions = accounts?.filter((a) => a.id !== accountId && a.currency === selectedCurrency)
 
   async function onSubmit(values: RecurringPlanFormValues) {
     try {
@@ -164,20 +139,6 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4">
             <FormField
               control={form.control}
-              name="kind"
-              render={({ field }) => (
-                <Tabs value={field.value} onValueChange={field.onChange}>
-                  <TabsList className="w-full">
-                    <TabsTrigger value="expense">Gasto</TabsTrigger>
-                    <TabsTrigger value="income">Ingreso</TabsTrigger>
-                    <TabsTrigger value="transfer">Transferencia</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              )}
-            />
-
-            <FormField
-              control={form.control}
               name="description"
               render={({ field }) => (
                 <FormItem>
@@ -193,20 +154,20 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
-                name="accountId"
+                name="currency"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{kind === 'transfer' ? 'Desde' : 'Cuenta'}</FormLabel>
+                    <FormLabel>Moneda</FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Elegí una cuenta" />
+                          <SelectValue />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {accounts?.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.name}
+                        {PLAN_CURRENCIES.map((code) => (
+                          <SelectItem key={code} value={code}>
+                            {code} · {CURRENCIES[code]?.symbol}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -230,57 +191,30 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
               />
             </div>
 
-            {kind === 'transfer' ? (
-              <FormField
-                control={form.control}
-                name="toAccountId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Hacia</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Cuenta destino" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {toAccountOptions?.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            ) : (
-              <FormField
-                control={form.control}
-                name="categoryId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Categoría</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Elegí una categoría" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {categories?.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
+            <FormField
+              control={form.control}
+              name="categoryId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Categoría</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Elegí una categoría" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {categories?.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <FormField

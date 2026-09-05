@@ -29,9 +29,8 @@ const MIN_PASSPHRASE_LENGTH = 8
 type ImportMode = 'replace' | 'merge'
 
 const MERGE_LABELS: Record<keyof MergeSummary, [string, string]> = {
-  accounts: ['cuenta', 'cuentas'],
   categories: ['categoría', 'categorías'],
-  transactions: ['movimiento', 'movimientos'],
+  expenses: ['gasto', 'gastos'],
   recurringPlans: ['recurrente', 'recurrentes'],
   installmentPlans: ['compra en cuotas', 'compras en cuotas'],
   budgets: ['presupuesto', 'presupuestos'],

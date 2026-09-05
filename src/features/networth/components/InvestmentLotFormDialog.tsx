@@ -12,8 +12,7 @@ import { formatQuantity, quantity } from '@/domain/decimal'
 import { formatMoney, money } from '@/domain/money'
 import type { InvestmentAsset, InvestmentLot } from '@/domain/entities'
 import { todayStamp } from '@/lib/dates'
-import { useAccounts } from '../hooks/useAccounts'
-import { investmentLotFormSchema, NO_ACCOUNT, type InvestmentLotFormValues } from '../schema'
+import { investmentLotFormSchema, type InvestmentLotFormValues } from '../schema'
 import { createInvestmentLotFromForm, updateInvestmentLotFromForm } from '../service'
 
 interface InvestmentLotFormDialogProps {
@@ -38,7 +37,7 @@ interface InvestmentLotFormDialogProps {
 }
 
 function defaultValues(initialAssetId?: string): InvestmentLotFormValues {
-  return { assetId: initialAssetId ?? '', quantity: '', costPerUnit: '', date: todayStamp(), accountId: NO_ACCOUNT }
+  return { assetId: initialAssetId ?? '', quantity: '', costPerUnit: '', date: todayStamp() }
 }
 
 export function InvestmentLotFormDialog({
@@ -65,23 +64,6 @@ export function InvestmentLotFormDialog({
   const selectedAssetId = form.watch('assetId')
   const selectedAsset = assets?.find((a) => a.id === selectedAssetId)
 
-  const accounts = useAccounts()
-  // Sin FX en esta versión: sólo se puede vincular una cuenta en la
-  // misma moneda que el activo — ver ADR "Una compra de inversión no es
-  // un gasto" en docs/DECISIONS.md.
-  const fundingAccounts = selectedAsset
-    ? accounts?.filter((a) => !a.isArchived && a.currency === selectedAsset.currency)
-    : []
-
-  // Cambiar de activo (sólo posible al crear — assetLocked lo impide al
-  // editar) puede dejar elegida una cuenta que ya no está en
-  // fundingAccounts (otra moneda) — sin esto, el form manda igual ese
-  // accountId viejo y el submit falla recién en el invariant de moneda
-  // del repository, con un toast de error que no explica qué corregir.
-  useEffect(() => {
-    form.setValue('accountId', NO_ACCOUNT)
-  }, [selectedAssetId, form])
-
   useEffect(() => {
     if (!open) return
     const asset = lot ? assets?.find((a) => a.id === lot.assetId) : undefined
@@ -95,9 +77,6 @@ export function InvestmentLotFormDialog({
                 ? formatMoney(money(lot.costPerUnit, asset.currency)).replace(/[^\d,.-]/g, '')
                 : '',
             date: lot.date,
-            // El campo no se muestra al editar (sólo se puede elegir al
-            // crear), pero el form necesita el valor completo igual.
-            accountId: NO_ACCOUNT,
           }
         : defaultValues(initialAssetId),
     )
@@ -182,47 +161,6 @@ export function InvestmentLotFormDialog({
                 )}
               />
             </div>
-
-            {!isEditing && (
-              <FormField
-                control={form.control}
-                name="accountId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cuenta de origen (opcional)</FormLabel>
-                    <Select value={field.value ?? NO_ACCOUNT} onValueChange={field.onChange} disabled={!selectedAsset}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value={NO_ACCOUNT}>Sin cuenta</SelectItem>
-                        {fundingAccounts?.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {!selectedAsset
-                        ? 'Elegí un activo primero.'
-                        : fundingAccounts && fundingAccounts.length === 0
-                          ? `No tenés cuentas en ${selectedAsset.currency}.`
-                          : 'Descuenta el total de esa cuenta como un movimiento. No cuenta como gasto.'}
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
-
-            {isEditing && lot?.transactionId !== undefined && (
-              <p className="text-xs text-muted-foreground">
-                Esta compra tiene un movimiento vinculado — se actualiza solo si cambiás cantidad, costo o fecha.
-              </p>
-            )}
 
             <FormField
               control={form.control}

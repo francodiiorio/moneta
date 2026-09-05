@@ -28,21 +28,20 @@ const NO_PARENT = '__none__'
 interface CategoryFormDialogProps {
   open: boolean
   category: Category | undefined
-  defaultKind: Category['kind']
   onOpenChange: (open: boolean) => void
 }
 
-function defaultValues(kind: Category['kind']): CategoryFormValues {
-  return { name: '', kind, parentId: '', color: '', icon: '' }
+function defaultValues(): CategoryFormValues {
+  return { name: '', parentId: '', color: '', icon: '' }
 }
 
-export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }: CategoryFormDialogProps) {
+export function CategoryFormDialog({ open, category, onOpenChange }: CategoryFormDialogProps) {
   const categories = useCategories()
   const isEditing = !!category
 
   const form = useForm<CategoryFormValues>({
     resolver: zodResolver(categoryFormSchema),
-    defaultValues: defaultValues(defaultKind),
+    defaultValues: defaultValues(),
   })
 
   useEffect(() => {
@@ -51,22 +50,19 @@ export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }
       category
         ? {
             name: category.name,
-            kind: category.kind,
             parentId: category.parentId ?? '',
             color: category.color ?? '',
             icon: category.icon ?? '',
           }
-        : defaultValues(defaultKind),
+        : defaultValues(),
     )
     // Keyed on category?.id (a stable primitive), not the live-query-derived
     // `category` object, so a background refetch of the same category doesn't
     // reset an in-progress edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, category?.id, defaultKind, form])
+  }, [open, category?.id, form])
 
-  const kind = form.watch('kind')
-  const parentOptions =
-    categories?.filter((c) => c.kind === kind && !c.parentId && !c.isArchived && c.id !== category?.id) ?? []
+  const parentOptions = categories?.filter((c) => !c.parentId && !c.isArchived && c.id !== category?.id) ?? []
   const selectedColor = form.watch('color')
   const selectedIcon = form.watch('icon')
 
@@ -92,8 +88,8 @@ export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }
           <DialogTitle>{isEditing ? 'Editar categoría' : 'Nueva categoría'}</DialogTitle>
           <DialogDescription>
             {isEditing
-              ? 'El tipo y la categoría padre quedan fijos — el resto se puede cambiar.'
-              : 'Agregá una categoría de gasto o ingreso.'}
+              ? 'La categoría padre queda fija — el resto se puede cambiar.'
+              : 'Agregá una categoría para clasificar tus gastos.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -108,37 +104,6 @@ export function CategoryFormDialog({ open, category, defaultKind, onOpenChange }
                   <FormControl>
                     <Input placeholder="Ej: Comida" {...field} />
                   </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="kind"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tipo</FormLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={(next) => {
-                      field.onChange(next)
-                      // A category chosen as parent before the type switch may no
-                      // longer be valid (a subcategory must match its parent's tipo).
-                      form.setValue('parentId', '')
-                    }}
-                    disabled={isEditing}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="expense">Gasto</SelectItem>
-                      <SelectItem value="income">Ingreso</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

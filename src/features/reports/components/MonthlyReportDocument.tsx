@@ -10,8 +10,8 @@ interface MonthlyReportDocumentProps {
   month: MonthStamp
 }
 
-/** A printable "photo" of one month — income/expense, expense by category,
- *  and (when there's anything to value) a net worth snapshot. Exported as
+/** A printable "photo" of one month — gastos, gasto por categoría, and
+ *  (when there's anything to value) a net worth snapshot. Exported as
  *  a PDF via the browser's own print dialog (see docs/DECISIONS.md
  *  "Informe mensual").
  *
@@ -42,8 +42,7 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
     )
   }
 
-  const isEmpty =
-    report.summary.income.amount === 0 && report.summary.expense.amount === 0 && report.netWorth === undefined
+  const isEmpty = report.summary.expense.amount === 0 && report.netWorth === undefined
 
   // coverageEnd is clamped to "today" (report.generatedOn) whenever the
   // month hasn't ended yet — true for the current month, and also for any
@@ -89,25 +88,11 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
           <p className="text-sm text-neutral-600">No hay nada registrado en este mes.</p>
         ) : (
           <>
-            <section className="mb-6 grid grid-cols-3 gap-4 print:break-inside-avoid">
-              <div>
-                <p className="text-xs text-neutral-500">Ingresos</p>
-                <p className="mt-1 text-lg font-semibold">
-                  <MoneyText value={report.summary.income} />
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-neutral-500">Gastos</p>
-                <p className="mt-1 text-lg font-semibold">
-                  <MoneyText value={report.summary.expense} />
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-neutral-500">Balance neto</p>
-                <p className="mt-1 text-lg font-semibold">
-                  <MoneyText value={report.summary.net} />
-                </p>
-              </div>
+            <section className="mb-6 print:break-inside-avoid">
+              <p className="text-xs text-neutral-500">Gastos</p>
+              <p className="mt-1 text-lg font-semibold">
+                <MoneyText value={report.summary.expense} />
+              </p>
             </section>
 
             <section className="mb-6 print:break-inside-avoid">
@@ -161,13 +146,7 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
             <p className="text-lg font-semibold">
               <MoneyText value={report.netWorth.total} />
             </p>
-            <dl className="mt-3 grid grid-cols-3 gap-4 text-sm">
-              <div>
-                <dt className="text-xs text-neutral-500">Cuentas</dt>
-                <dd className="mt-0.5">
-                  <MoneyText value={report.netWorth.byBucket.accounts} />
-                </dd>
-              </div>
+            <dl className="mt-3 grid grid-cols-2 gap-4 text-sm">
               <div>
                 <dt className="text-xs text-neutral-500">Ahorros</dt>
                 <dd className="mt-0.5">
@@ -182,8 +161,7 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
               </div>
             </dl>
             <p className="mt-3 text-xs text-neutral-500">
-              Cuentas: balance real a esa fecha. Ahorros e inversiones: cantidad actual, valuada al precio y tipo de
-              cambio de esa fecha.
+              Ahorros e inversiones: cantidad actual, valuada al precio y tipo de cambio de esa fecha.
             </p>
           </section>
         )}
@@ -194,8 +172,8 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
               <p>
                 No se{' '}
                 {report.missingRateCount === 1
-                  ? 'pudo convertir 1 movimiento o cuenta'
-                  : `pudieron convertir ${report.missingRateCount} movimientos o cuentas`}{' '}
+                  ? 'pudo convertir 1 gasto'
+                  : `pudieron convertir ${report.missingRateCount} gastos`}{' '}
                 por falta de tasa de cambio.
               </p>
             )}

@@ -1,4 +1,7 @@
 import { z } from 'zod'
+import { CURRENCY_CODES } from '@/domain/money'
+
+export const CSV_IMPORT_CURRENCIES = CURRENCY_CODES
 
 const columnIndex = z.number().int().nonnegative()
 
@@ -11,7 +14,10 @@ const encodingSchema = z.enum(['utf-8', 'windows-1252'])
 
 /** Some banks export a single signed amount column (positive/negative
  *  meaning varies by bank), others export separate debit/credit columns
- *  — both are common enough to support without guessing. */
+ *  — both are common enough to support without guessing. Sólo se
+ *  importan gastos: el lado que no representa un gasto (positivo cuando
+ *  `signConvention` es 'positive-is-income', o la columna de crédito) se
+ *  excluye de la vista previa — ver service.ts. */
 export const amountMappingSchema = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('single'),
@@ -27,9 +33,8 @@ export const amountMappingSchema = z.discriminatedUnion('mode', [
 export type AmountMapping = z.infer<typeof amountMappingSchema>
 
 export const csvMappingSchema = z.object({
-  accountId: z.string().min(1, 'Elegí una cuenta'),
-  expenseCategoryId: z.string().min(1, 'Elegí una categoría de gasto'),
-  incomeCategoryId: z.string().min(1, 'Elegí una categoría de ingreso'),
+  categoryId: z.string().min(1, 'Elegí una categoría'),
+  currency: z.string().min(3).max(8),
   hasHeaderRow: z.boolean(),
   encoding: encodingSchema,
   dateFormat: dateFormatSchema,
