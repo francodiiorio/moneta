@@ -180,30 +180,37 @@
   --ring: #235347;
 }
 
+/* Fondo corrido un escalón de la paleta hacia arriba (051F20 -> 0B2B26):
+   el hex más oscuro se veía casi negro contra la referencia visual que
+   el usuario dio para este tema, más verde/menos negra. Cada token de
+   acá para abajo también se corre un escalón para conservar el mismo
+   contraste relativo entre superficies (fondo/card/secondary/accent) —
+   contraste texto/fondo re-verificado ≥4.66:1 en todos los pares antes
+   de fijar estos valores. */
 .dark[data-theme='dani'] {
-  --background: #051f20;
+  --background: #0b2b26;
   --foreground: #daf1de;
 
-  --card: #0b2b26;
+  --card: #163832;
   --card-foreground: #daf1de;
 
-  --popover: #0b2b26;
+  --popover: #163832;
   --popover-foreground: #daf1de;
 
   --primary: #8eb69b;
   --primary-foreground: #051f20;
 
-  --secondary: #163832;
+  --secondary: #235347;
   --secondary-foreground: #daf1de;
 
-  --muted: #163832;
+  --muted: #235347;
   --muted-foreground: #8eb69b;
 
-  --accent: #235347;
-  --accent-foreground: #daf1de;
+  --accent: color-mix(in oklab, #235347 40%, #8eb69b 60%);
+  --accent-foreground: #051f20;
 
-  --border: #235347;
-  --input: #235347;
+  --border: color-mix(in oklab, #235347 60%, #8eb69b 40%);
+  --input: color-mix(in oklab, #235347 60%, #8eb69b 40%);
   --ring: #8eb69b;
 }
 

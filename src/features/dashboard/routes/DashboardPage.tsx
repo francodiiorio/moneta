@@ -99,10 +99,10 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card>
-          <CardContent className="flex items-start justify-between gap-3 px-4">
-            <div className="flex items-start gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Receipt className="size-4" />
+          <CardContent className="flex items-center justify-between gap-3 px-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Receipt className="size-6" />
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Gastos del mes</p>
@@ -120,10 +120,10 @@ export function DashboardPage() {
         </Card>
 
         <Card>
-          <CardContent className="flex items-start justify-between gap-3 px-4">
-            <div className="flex items-start gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <TrendingUp className="size-4" />
+          <CardContent className="flex items-center justify-between gap-3 px-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <TrendingUp className="size-6" />
               </div>
               <div>
                 <div className="flex items-center gap-1">
