@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../db'
 import { createCategory } from './categories.repo'
 import {
@@ -49,17 +49,28 @@ describe('saveExpense', () => {
   })
 
   it('editing an existing id overwrites the row wholesale, preserving id and createdAt', async () => {
-    const category = await setup()
-    const id = await saveExpense(input(category.id))
-    const original = await db.expenses.get(id)
+    // saveExpense stamps createdAt/updatedAt with new Date().toISOString()
+    // (millisecond resolution) — two real-clock calls back to back can
+    // land in the same millisecond and flake the updatedAt-changed
+    // assertion below. Faking only Date (not timers) keeps Dexie's own
+    // async scheduling untouched while making the two calls deterministic.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const category = await setup()
+      const id = await saveExpense(input(category.id))
+      const original = await db.expenses.get(id)
 
-    await saveExpense(input(category.id, { description: 'Super (editado)', amount: 2000 }), id)
+      vi.advanceTimersByTime(1)
+      await saveExpense(input(category.id, { description: 'Super (editado)', amount: 2000 }), id)
 
-    expect(await db.expenses.count()).toBe(1)
-    const updated = await db.expenses.get(id)
-    expect(updated).toMatchObject({ id, description: 'Super (editado)', amount: 2000 })
-    expect(updated?.createdAt).toBe(original?.createdAt)
-    expect(updated?.updatedAt).not.toBe(original?.updatedAt)
+      expect(await db.expenses.count()).toBe(1)
+      const updated = await db.expenses.get(id)
+      expect(updated).toMatchObject({ id, description: 'Super (editado)', amount: 2000 })
+      expect(updated?.createdAt).toBe(original?.createdAt)
+      expect(updated?.updatedAt).not.toBe(original?.updatedAt)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('rejects editing an id that does not exist', async () => {
