@@ -270,8 +270,12 @@ export interface ReportCategoryRow {
 
 export interface ReportNetWorth {
   asOfDate: DateStamp
-  total: Money
-  byBucket: { savings: Money; investments: Money }
+  /** Same holdings, valued in each currency — the informe always shows
+   *  ahorro e inversiones in both pesos and dólares, regardless of
+   *  Settings.baseCurrency (that setting only governs the Gastos side of
+   *  the report). */
+  ars: { total: Money; byBucket: { savings: Money; investments: Money } }
+  usd: { total: Money; byBucket: { savings: Money; investments: Money } }
   missingPriceCount: number
 }
 
@@ -292,8 +296,8 @@ export interface MonthlyReport {
 }
 
 /** Composes a "photo" of a single month — gastos, gasto por categoría, y
- *  (cuando hay algo que valuar) una foto del patrimonio — para el informe
- *  mensual imprimible. Pure composition over already-tested functions; no
+ *  (cuando hay algo que valuar) una foto del ahorro e inversiones — para el
+ *  informe mensual imprimible. Pure composition over already-tested functions; no
  *  new domain logic. Accepted cost: getMonthSummary and getExpenseByCategory
  *  each independently re-read settings/rates/the month's expenses, so this
  *  does a few redundant local IndexedDB reads — reusing already-tested
@@ -317,7 +321,12 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   const assetById = new Map(assets.map((a) => [a.id, a]))
   const { baseCurrency, rateProfile } = settings
 
-  const valuation = await netWorthAsOf(coverageEnd, baseCurrency, rates, rateProfile, savings, holdings, assetById)
+  // Ahorro e inversiones always reports in both ARS and USD (see
+  // ReportNetWorth) — same holdings/prices, just valued twice.
+  const [valuationArs, valuationUsd] = await Promise.all([
+    netWorthAsOf(coverageEnd, 'ARS', rates, rateProfile, savings, holdings, assetById),
+    netWorthAsOf(coverageEnd, 'USD', rates, rateProfile, savings, holdings, assetById),
+  ])
   const tracksNetWorth = savings.length > 0 || holdings.length > 0
 
   const totalExpense = summary.expense.amount
@@ -329,9 +338,11 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   const netWorth: ReportNetWorth | undefined = tracksNetWorth
     ? {
         asOfDate: coverageEnd,
-        total: valuation.netWorth,
-        byBucket: valuation.byBucket,
-        missingPriceCount: valuation.missingPriceCount,
+        ars: { total: valuationArs.netWorth, byBucket: valuationArs.byBucket },
+        usd: { total: valuationUsd.netWorth, byBucket: valuationUsd.byBucket },
+        // Whether a position has any price loaded at all doesn't depend on
+        // which currency it's then converted to — identical in both calls.
+        missingPriceCount: valuationArs.missingPriceCount,
       }
     : undefined
 
@@ -345,8 +356,10 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
     categories,
     // Same reasoning as ReportsPage: expenses' misses are a subset of
     // summary's (same scan, same conversion) — adding both would
-    // double-count the same expense.
-    missingRateCount: summary.missingRateCount + valuation.missingRateCount,
+    // double-count the same expense. The ARS and USD valuations are
+    // independent conversions, though, so a rate missing for one but not
+    // the other is two distinct misses, not a double-count.
+    missingRateCount: summary.missingRateCount + valuationArs.missingRateCount + valuationUsd.missingRateCount,
     ...(netWorth && { netWorth }),
   }
 }

@@ -212,7 +212,8 @@ describe('getMonthlyReport', () => {
       const report = await getMonthlyReport('2026-08')
       expect(report.isCurrentMonth).toBe(true)
       expect(report.coverageEnd).toBe(todayStamp())
-      expect(report.netWorth?.total).toEqual(money(50_000, 'ARS')) // 100 USD * 500
+      expect(report.netWorth?.ars.total).toEqual(money(50_000, 'ARS')) // 100 USD * 500
+      expect(report.netWorth?.usd.total).toEqual(money(100, 'USD'))
     } finally {
       vi.useRealTimers()
     }
@@ -224,12 +225,14 @@ describe('getMonthlyReport', () => {
     expect(report.summary.expense.amount).toBe(0)
   })
 
-  it('includes the net worth section for a savings-only user', async () => {
+  it('includes the net worth section, in both ARS and USD, for a savings-only user', async () => {
     await createSavingsHolding({ name: 'Efectivo', currency: 'ARS', amount: 50_000 })
+    await createExchangeRate({ date: '2026-01-01', from: 'USD', to: 'ARS', rate: 500 })
 
     const report = await getMonthlyReport('2026-08')
     expect(report.netWorth).toBeDefined()
-    expect(report.netWorth?.byBucket.savings).toEqual(money(50_000, 'ARS'))
+    expect(report.netWorth?.ars.byBucket.savings).toEqual(money(50_000, 'ARS'))
+    expect(report.netWorth?.usd.byBucket.savings).toEqual(money(100, 'USD'))
   })
 
   it('degrades a future month to an empty report instead of crashing', async () => {

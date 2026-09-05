@@ -3,11 +3,45 @@ import { Link } from 'react-router'
 import { ArrowLeft, Loader2, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MoneyText } from '@/components/MoneyText'
+import type { Money } from '@/domain/money'
 import { formatFullDate, formatMonthLabel, type MonthStamp } from '@/lib/dates'
 import { useMonthlyReport } from '../hooks/useMonthlyReport'
 
 interface MonthlyReportDocumentProps {
   month: MonthStamp
+}
+
+function NetWorthColumn({
+  label,
+  total,
+  byBucket,
+}: {
+  label: string
+  total: Money
+  byBucket: { savings: Money; investments: Money }
+}) {
+  return (
+    <div>
+      <p className="text-xs text-neutral-500">{label}</p>
+      <p className="mt-1 text-lg font-semibold">
+        <MoneyText value={total} />
+      </p>
+      <dl className="mt-3 grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <dt className="text-xs text-neutral-500">Ahorros</dt>
+          <dd className="mt-0.5">
+            <MoneyText value={byBucket.savings} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-neutral-500">Inversiones</dt>
+          <dd className="mt-0.5">
+            <MoneyText value={byBucket.investments} />
+          </dd>
+        </div>
+      </dl>
+    </div>
+  )
 }
 
 /** A printable "photo" of one month — gastos, gasto por categoría, and
@@ -141,25 +175,12 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
         {report.netWorth && (
           <section className="mb-6 print:break-inside-avoid">
             <h2 className="mb-2 text-sm font-semibold text-neutral-700">
-              Patrimonio al {formatFullDate(report.netWorth.asOfDate)}
+              Ahorro e inversiones al {formatFullDate(report.netWorth.asOfDate)}
             </h2>
-            <p className="text-lg font-semibold">
-              <MoneyText value={report.netWorth.total} />
-            </p>
-            <dl className="mt-3 grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <dt className="text-xs text-neutral-500">Ahorros</dt>
-                <dd className="mt-0.5">
-                  <MoneyText value={report.netWorth.byBucket.savings} />
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-neutral-500">Inversiones</dt>
-                <dd className="mt-0.5">
-                  <MoneyText value={report.netWorth.byBucket.investments} />
-                </dd>
-              </div>
-            </dl>
+            <div className="grid grid-cols-2 gap-6">
+              <NetWorthColumn label="En pesos" total={report.netWorth.ars.total} byBucket={report.netWorth.ars.byBucket} />
+              <NetWorthColumn label="En dólares" total={report.netWorth.usd.total} byBucket={report.netWorth.usd.byBucket} />
+            </div>
             <p className="mt-3 text-xs text-neutral-500">
               Ahorros e inversiones: cantidad actual, valuada al precio y tipo de cambio de esa fecha.
             </p>
