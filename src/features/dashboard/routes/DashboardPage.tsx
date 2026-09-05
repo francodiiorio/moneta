@@ -105,7 +105,15 @@ export function DashboardPage() {
                 <Receipt className="size-6" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Gastos del mes</p>
+                {/* h-6 matches the eye-toggle Button's own height in the
+                    "Ahorro e inversiones" card below — without it, that
+                    card's label row is taller (icon-xs button vs. bare
+                    text), so centering each content block independently
+                    in two equal-height cards lands them at different
+                    vertical offsets. */}
+                <div className="flex h-6 items-center">
+                  <p className="text-xs text-muted-foreground">Gastos del mes</p>
+                </div>
                 <p className="mt-1 text-xl font-semibold">
                   {summary ? <MoneyText value={summary.expense} /> : <span className="text-muted-foreground">—</span>}
                 </p>
@@ -126,7 +134,7 @@ export function DashboardPage() {
                 <TrendingUp className="size-6" />
               </div>
               <div>
-                <div className="flex items-center gap-1">
+                <div className="flex h-6 items-center gap-1">
                   <p className="text-xs text-muted-foreground">Ahorro e inversiones</p>
                   <Button
                     variant="ghost"
