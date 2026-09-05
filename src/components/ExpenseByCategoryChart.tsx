@@ -104,7 +104,7 @@ export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
   const total = sumMoney(items[0]!.amount.currency, items.map((i) => i.amount))
 
   return (
-    <div className="group/pie flex flex-col gap-3">
+    <div className="pie-legend-wrap flex flex-col gap-3">
       <ResponsiveContainer width="100%" height={240} initialDimension={{ width: 400, height: 240 }}>
         <PieChart>
           <Pie
@@ -138,22 +138,18 @@ export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
       {/* The dependable identity channel for 2+ series is never
           color-matching alone — but on a device with a mouse, the
           per-slice Tooltip above already gives that on hover, so the
-          static list is redundant chrome; it only fades in over the chart
-          on hover there (`group-hover`, gated to `hover: hover` so it
-          never engages on touch). Touch devices have no hover at all, so
-          they keep the list always visible — same reasoning as the
-          `(hover: hover)` gate on this same rule elsewhere in the app. Built
-          in plain HTML (not Recharts' own Legend) so the label text stays
-          in a text token, never the series hue. Capped height + scroll
-          (not unbounded growth): otherwise a month with many categories
-          grows this card past the neighboring "Evolución de gastos" card,
-          which then stretches to match it (CSS grid's default
-          row-stretch) and looks broken next to it. */}
-      <ul
-        className="flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1
-          [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity
-          [@media(hover:hover)]:group-hover/pie:pointer-events-auto [@media(hover:hover)]:group-hover/pie:opacity-100"
-      >
+          static list is redundant chrome there: the `.pie-legend`/
+          `.pie-legend-wrap` rules in styles.css collapse it to zero
+          height (not just invisible — a reserved-but-invisible legend
+          would still leave this card taller than its "Evolución de
+          gastos" neighbor on the Dashboard) until the pointer is over
+          the donut. Touch devices have no hover at all, so this rule is
+          itself gated on `(hover: hover)` and they keep the list always
+          visible. Built in plain HTML (not Recharts' own Legend) so the
+          label text stays in a text token, never the series hue. Capped
+          height + scroll either way, so a month with many categories
+          can't grow this list without bound. */}
+      <ul className="pie-legend flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1">
         {data.map((row, index) => (
           <li key={row.categoryId} className="flex items-center gap-2 text-sm">
             <span
