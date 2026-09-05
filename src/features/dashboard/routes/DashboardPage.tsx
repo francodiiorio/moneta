@@ -162,7 +162,7 @@ export function DashboardPage() {
       )}
 
       {(hasCategoryData || hasExpenseHistory) && (
-        <div className={cn('grid gap-3', hasCategoryData && hasExpenseHistory && 'lg:grid-cols-2')}>
+        <div className={cn('grid items-start gap-3', hasCategoryData && hasExpenseHistory && 'lg:grid-cols-2')}>
           {hasCategoryData && expenseByCategory && (
             <Card>
               <CardHeader>

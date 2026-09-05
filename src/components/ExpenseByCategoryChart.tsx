@@ -155,6 +155,11 @@ function PieView({ items }: { items: CategoryAmount[] }) {
             strokeWidth={2}
             label={renderPieSliceLabel}
             labelLine={false}
+            // The default sweep-in animation can get caught mid-transition
+            // by a re-render right after mount (e.g. a sibling card's height
+            // settling), showing a broken-looking partial slice — not worth
+            // it for a static financial figure anyway.
+            isAnimationActive={false}
           >
             {data.map((row, index) => (
               <Cell
@@ -170,8 +175,12 @@ function PieView({ items }: { items: CategoryAmount[] }) {
       {/* Legend is always present for 2+ series — the dependable identity
           channel, never color-matching alone. Built in plain HTML (not
           Recharts' own Legend) so the label text stays in a text token
-          instead of Recharts' default of coloring it with the series hue. */}
-      <ul className="flex flex-col gap-1.5">
+          instead of Recharts' default of coloring it with the series hue.
+          Capped height + scroll (not unbounded growth): otherwise a month
+          with many categories grows this card past the neighboring
+          "Evolución de gastos" card, which then stretches to match it
+          (CSS grid's default row-stretch) and looks broken next to it. */}
+      <ul className="flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1">
         {data.map((row, index) => (
           <li key={row.categoryId} className="flex items-center gap-2 text-sm">
             <span
