@@ -271,6 +271,71 @@
   --ring: #7da0ca;
 }
 
+/* Tema "Crepúsculo" — src/app/color-themes.ts. Paleta de 6 tonos violeta a
+   durazno provista por el usuario (190019 · 2B124C · 522B5B · 854F6C ·
+   DFB6B2 · FBE4D8), de más oscuro a más claro — mismo criterio que "Dani"
+   y "Océano": hex literal, sin convertir a oklch. A diferencia de esos dos,
+   acá los 6 hex ya alcanzaron el mínimo de contraste directamente (el más
+   ajustado, muted-foreground claro contra el fondo, dio 5.16:1), así que
+   no hizo falta derivar ningún tono intermedio con color-mix() más que
+   para las superficies secondary/muted/accent claras, que sí necesitan
+   algo más pálido que el hex más claro de la paleta.
+   --positive/--negative/--destructive y --chart-1..6 NO se redefinen acá
+   — ver la nota en color-themes.ts. */
+[data-theme='crepusculo'] {
+  --background: #fbe4d8;
+  --foreground: #190019;
+
+  --card: #ffffff;
+  --card-foreground: #190019;
+
+  --popover: #ffffff;
+  --popover-foreground: #190019;
+
+  --primary: #522b5b;
+  --primary-foreground: #ffffff;
+
+  --secondary: color-mix(in oklab, #fbe4d8 60%, white);
+  --secondary-foreground: #522b5b;
+
+  --muted: color-mix(in oklab, #fbe4d8 60%, white);
+  --muted-foreground: #854f6c;
+
+  --accent: color-mix(in oklab, #dfb6b2 35%, white);
+  --accent-foreground: #522b5b;
+
+  --border: color-mix(in oklab, #dfb6b2 40%, white);
+  --input: color-mix(in oklab, #dfb6b2 40%, white);
+  --ring: #522b5b;
+}
+
+.dark[data-theme='crepusculo'] {
+  --background: #190019;
+  --foreground: #fbe4d8;
+
+  --card: #2b124c;
+  --card-foreground: #fbe4d8;
+
+  --popover: #2b124c;
+  --popover-foreground: #fbe4d8;
+
+  --primary: #dfb6b2;
+  --primary-foreground: #190019;
+
+  --secondary: #522b5b;
+  --secondary-foreground: #fbe4d8;
+
+  --muted: #522b5b;
+  --muted-foreground: #dfb6b2;
+
+  --accent: #854f6c;
+  --accent-foreground: #fbe4d8;
+
+  --border: #522b5b;
+  --input: #522b5b;
+  --ring: #dfb6b2;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
