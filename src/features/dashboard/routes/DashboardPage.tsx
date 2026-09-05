@@ -15,12 +15,11 @@ import { currentMonthStamp, formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { percentChange } from '@/domain/money'
 import { useMonthSummary } from '@/features/reports/hooks/useMonthSummary'
 import { useExpenseByCategory } from '@/features/reports/hooks/useExpenseByCategory'
+import { useExpenseHistory } from '@/features/reports/hooks/useExpenseHistory'
 import { useNetWorthSummary } from '@/features/networth/hooks/useNetWorthSummary'
 import { useSavingsAndInvestmentsHistory } from '@/features/networth/hooks/useSavingsAndInvestmentsHistory'
 import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithProgress'
-import { useRecentExpenses } from '../hooks/useRecentExpenses'
 import { useSettings } from '../hooks/useSettings'
-import { RecentExpensesList } from '../components/RecentExpensesList'
 import { VariationBadge } from '../components/VariationBadge'
 
 const BUDGET_ALERT_THRESHOLD = 90
@@ -36,11 +35,12 @@ export function DashboardPage() {
   // docs/DECISIONS.md "Ahorro e Inversiones deja de incluir Cuentas".
   const savingsAndInvestments = useNetWorthSummary()
   const expenseByCategory = useExpenseByCategory(month)
-  const recentExpenses = useRecentExpenses(month)
+  const expenseHistory = useExpenseHistory(6)
   const budgets = useBudgetsWithProgress(month)
   const budgetsToReview = budgets?.items.filter((b) => b.progress.percentUsed >= BUDGET_ALERT_THRESHOLD).slice(0, 3)
   const hasCategoryData = expenseByCategory !== undefined && expenseByCategory.items.length > 0
-  const hasRecentExpenses = recentExpenses !== undefined && recentExpenses.length > 0
+  const expenseHistoryPoints = expenseHistory?.points.map((p) => ({ month: p.month, value: p.expense }))
+  const hasExpenseHistory = expenseHistoryPoints !== undefined && expenseHistoryPoints.some((p) => p.value.amount !== 0)
 
   const investmentsHistory = useSavingsAndInvestmentsHistory()
   const investmentPoints = investmentsHistory?.points.map((p) => ({ month: p.month, value: p.byBucket.investments }))
@@ -88,7 +88,6 @@ export function DashboardPage() {
             <p className="mt-1 text-xl font-semibold">
               {summary ? <MoneyText value={summary.expense} /> : <span className="text-muted-foreground">—</span>}
             </p>
-            {expenseChange !== undefined && <VariationBadge percent={expenseChange} invert />}
           </div>
           <div className="sm:px-4 sm:first:pl-0 sm:last:pr-0">
             <div className="flex items-center gap-1">
@@ -162,8 +161,8 @@ export function DashboardPage() {
         </Card>
       )}
 
-      {(hasCategoryData || hasRecentExpenses) && (
-        <div className={cn('grid gap-3', hasCategoryData && hasRecentExpenses && 'lg:grid-cols-2')}>
+      {(hasCategoryData || hasExpenseHistory) && (
+        <div className={cn('grid gap-3', hasCategoryData && hasExpenseHistory && 'lg:grid-cols-2')}>
           {hasCategoryData && expenseByCategory && (
             <Card>
               <CardHeader>
@@ -175,13 +174,14 @@ export function DashboardPage() {
             </Card>
           )}
 
-          {hasRecentExpenses && recentExpenses && (
+          {hasExpenseHistory && expenseHistoryPoints && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Últimos gastos del mes</CardTitle>
+                <CardTitle className="text-base">Evolución de gastos</CardTitle>
               </CardHeader>
               <CardContent>
-                <RecentExpensesList items={recentExpenses} />
+                <MoneyTrendChart points={expenseHistoryPoints} height={220} />
+                {expenseChange !== undefined && <VariationBadge percent={expenseChange} invert />}
               </CardContent>
             </Card>
           )}

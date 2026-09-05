@@ -226,6 +226,38 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
   return { points, missingRateCount, missingPriceCount }
 }
 
+export interface ExpenseHistoryPoint {
+  month: MonthStamp
+  expense: Money
+}
+
+export interface ExpenseHistory {
+  points: ExpenseHistoryPoint[]
+  missingRateCount: number
+}
+
+/** One point per month for the last `monthsBack` months (current month
+ *  included, partial) — same shape/monthsBack default as getNetWorthHistory,
+ *  for a "Gastos" trend chart. Reuses getMonthSummary per month rather than
+ *  re-deriving its scan+conversion logic; same accepted-cost tradeoff as
+ *  getMonthlyReport (a few redundant settings/rates reads for one local
+ *  user, in exchange for reusing already-tested code). */
+export async function getExpenseHistory(monthsBack = 6): Promise<ExpenseHistory> {
+  const currentMonth = currentMonthStamp()
+
+  const points: ExpenseHistoryPoint[] = []
+  let missingRateCount = 0
+
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const month = shiftMonth(currentMonth, -i)
+    const summary = await getMonthSummary(month)
+    missingRateCount += summary.missingRateCount
+    points.push({ month, expense: summary.expense })
+  }
+
+  return { points, missingRateCount }
+}
+
 export interface ReportCategoryRow {
   categoryId: string
   categoryName: string
