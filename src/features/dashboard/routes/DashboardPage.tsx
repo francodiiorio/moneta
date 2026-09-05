@@ -101,15 +101,33 @@ export function DashboardPage() {
                 {hideAmount ? <EyeOff /> : <Eye />}
               </Button>
             </div>
-            <p className="mt-1 text-xl font-semibold">
-              {hideAmount ? (
-                <span className="font-mono tabular-nums text-muted-foreground">••••••</span>
-              ) : savingsAndInvestments ? (
-                <MoneyText value={savingsAndInvestments.total} />
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-            </p>
+            {/* Both spans stay mounted, stacked via absolute inset-0, and
+                crossfade on opacity — a conditional render would swap DOM
+                nodes outright and skip the transition entirely. h-7 gives
+                the wrapper an explicit height since neither absolutely
+                positioned child contributes one of its own. */}
+            <div className="relative mt-1 h-7 text-xl font-semibold">
+              <span
+                className={cn(
+                  'absolute inset-0 font-mono tabular-nums text-muted-foreground transition-opacity duration-150',
+                  hideAmount ? 'opacity-100' : 'pointer-events-none opacity-0',
+                )}
+              >
+                ••••••
+              </span>
+              <span
+                className={cn(
+                  'absolute inset-0 transition-opacity duration-150',
+                  hideAmount ? 'pointer-events-none opacity-0' : 'opacity-100',
+                )}
+              >
+                {savingsAndInvestments ? (
+                  <MoneyText value={savingsAndInvestments.total} />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -144,21 +162,38 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Gated on !hideAmount too — el tooltip de MoneyTrendChart muestra
-          montos reales de la misma serie que "Ahorro e inversiones" recién
-          ocultó arriba; mostrar la card acá volvería a filtrarlos. */}
-      {!hideAmount && hasInvestmentProgress && investmentPoints && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Progreso de tus inversiones</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MoneyTrendChart points={investmentPoints} height={180} />
-            {investmentChange !== undefined && (
-              <VariationBadge percent={investmentChange} compareLabel="hace 5 meses" />
-            )}
-          </CardContent>
-        </Card>
+      {/* Gated on hasInvestmentProgress only — that's a real "nothing to
+          show" case (no unmount transition needed). hideAmount, on the
+          other hand, is a user toggle (the eye icon above), so it collapses
+          the card smoothly instead of mounting/unmounting it outright: the
+          tooltip here shows the real amounts behind the same total the eye
+          just hid, and an abrupt disappearance read as a glitch rather
+          than a deliberate hide. Grid-rows 0fr/1fr, not max-height: it
+          animates to the content's actual height instead of a guessed cap
+          (see CLAUDE.md-adjacent precedent in ExpenseByCategoryChart's
+          `.pie-legend`, which used max-height because its content is
+          capped anyway — this content isn't). */}
+      {hasInvestmentProgress && investmentPoints && (
+        <div
+          className={cn(
+            'grid transition-[grid-template-rows] duration-200 ease',
+            hideAmount ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+          )}
+        >
+          <div className="overflow-hidden">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Progreso de tus inversiones</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MoneyTrendChart points={investmentPoints} height={180} />
+                {investmentChange !== undefined && (
+                  <VariationBadge percent={investmentChange} compareLabel="hace 5 meses" />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       )}
 
       {(hasCategoryData || hasExpenseHistory) && (
