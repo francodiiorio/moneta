@@ -343,6 +343,79 @@
   --ring: #dfb6b2;
 }
 
+/* Tema "Abismo" — src/app/color-themes.ts. Paleta de 6 tonos teal/azul
+   provista por el usuario (031716 · 032F30 · 0A7075 · 0C969C · 6BA3BE ·
+   274D60) — a diferencia de los otros temas, NO viene ordenada de más
+   oscuro a más claro tal cual se presenta: 274D60 (luminancia relativa
+   0.066) es en realidad más oscuro que 0A7075 (0.129), así que los roles
+   acá se asignaron calculando luminancia real por hex, no por el orden
+   en que se dieron. Los dos tonos medios (0A7075/274D60) quedan
+   demasiado "intermedios" para servir de superficie a color completo
+   (fallan contraste contra texto claro Y oscuro a la vez), así que sólo
+   se usan mezclados con color-mix() hacia los extremos oscuros — igual
+   idea que Dani/Océano/Crepúsculo, pero acá hace falta en el lado oscuro
+   también, no sólo en el claro. Contraste ≥4.6:1 en casi todos los
+   pares; el único que queda más ajustado (muted-foreground oscuro
+   contra --secondary/--muted a color completo, ~4.1:1) es una
+   combinación que en la app real sólo aparece como bg-muted/50 (mezclado
+   con el fondo detrás, nunca a color completo), así que el contraste
+   efectivo en pantalla es mayor a ese piso calculado.
+   --positive/--negative/--destructive y --chart-1..6 NO se redefinen acá
+   — ver la nota en color-themes.ts. */
+[data-theme='abismo'] {
+  --background: color-mix(in oklab, #6ba3be 55%, white);
+  --foreground: #031716;
+
+  --card: #ffffff;
+  --card-foreground: #031716;
+
+  --popover: #ffffff;
+  --popover-foreground: #031716;
+
+  --primary: #0a7075;
+  --primary-foreground: #ffffff;
+
+  --secondary: color-mix(in oklab, #6ba3be 40%, white);
+  --secondary-foreground: #032f30;
+
+  --muted: color-mix(in oklab, #6ba3be 40%, white);
+  --muted-foreground: #274d60;
+
+  --accent: color-mix(in oklab, #0c969c 35%, white);
+  --accent-foreground: #032f30;
+
+  --border: color-mix(in oklab, #6ba3be 45%, white);
+  --input: color-mix(in oklab, #6ba3be 45%, white);
+  --ring: #0a7075;
+}
+
+.dark[data-theme='abismo'] {
+  --background: #031716;
+  --foreground: #6ba3be;
+
+  --card: #032f30;
+  --card-foreground: #6ba3be;
+
+  --popover: #032f30;
+  --popover-foreground: #6ba3be;
+
+  --primary: #0c969c;
+  --primary-foreground: #031716;
+
+  --secondary: color-mix(in oklab, #032f30 85%, #0a7075 15%);
+  --secondary-foreground: #6ba3be;
+
+  --muted: color-mix(in oklab, #032f30 85%, #0a7075 15%);
+  --muted-foreground: color-mix(in oklab, #0c969c 40%, #6ba3be 60%);
+
+  --accent: color-mix(in oklab, #032f30 75%, #274d60 25%);
+  --accent-foreground: #6ba3be;
+
+  --border: color-mix(in oklab, #032f30 65%, #0a7075 35%);
+  --input: color-mix(in oklab, #032f30 65%, #0a7075 35%);
+  --ring: #0c969c;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

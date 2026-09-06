@@ -17,6 +17,7 @@ export const COLOR_THEMES: ColorThemeOption[] = [
   { id: 'dani', label: 'Dani' },
   { id: 'oceano', label: 'Océano' },
   { id: 'crepusculo', label: 'Crepúsculo' },
+  { id: 'abismo', label: 'Abismo' },
 ]
 
 export const DEFAULT_COLOR_THEME = 'indigo'
