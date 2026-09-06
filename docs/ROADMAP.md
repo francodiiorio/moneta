@@ -280,3 +280,14 @@ por qué, y qué se evaluó y se descartó).
   Encontrado en el camino: Recharts no dibuja ni la barra ni su label cuando el valor es
   exactamente 0 — mismo fix que ya usaba `NetWorthDistribution`, descartar la fila en vez
   de graficar un valor nulo.
+- App nativa para iOS (uso personal, no App Store) — envolver el build de Vite ya
+  existente con Capacitor y compilarla/instalarla vía Xcode con el Apple ID del usuario
+  como "Personal Team" (gratis, sin cuenta de Apple Developer Program). Trade-off
+  aceptado de antemano: firmada así, la app expira cada 7 días y hay que reconectar a
+  una Mac con Xcode para reinstalarla — el usuario confirmó que tiene Mac disponible y
+  que le sirve esa fricción semanal. Motivación original: una vez que sea un proyecto
+  nativo, se habilita un widget de verdad (WidgetKit) para cargar un gasto rápido desde
+  la pantalla de inicio/bloqueo — hoy sólo existe el camino de PWA (agregar un segundo
+  ícono a la pantalla de inicio apuntando a una URL que abra directo el formulario), que
+  sigue siendo la opción sin fricción si esto no se termina encarando. No iniciado —
+  explícitamente pausado a pedido del usuario.
