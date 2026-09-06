@@ -1106,9 +1106,9 @@ y Presupuestos no cambiaron de forma en absoluto.
 El Dashboard sumó un selector de mes (`useDashboardUiStore`, `MonthSelector.tsx`) y
 selectores de período funcionales en los dos gráficos de tendencia ("Últimos N
 meses", `PeriodSelect.tsx`), además de un rediseño visual (ícono-badge por KPI, badges
-de variación en pastilla, footer de marca en el sidebar, y `ExpenseByCategoryChart`
-con la leyenda al costado del donut en vez de abajo, acotada a `MAX_PIE_SLICES` filas
-con un "Otras categorías (+N)" al final en vez de scroll u ocultarla).
+de variación en pastilla, y `ExpenseByCategoryChart` con la leyenda al costado del
+donut en vez de abajo, acotada a `MAX_PIE_SLICES` filas con un "Otras categorías (+N)"
+al final en vez de scroll u ocultarla).
 
 **Decisión no obvia:** el selector de mes nuevo sólo alcanza a las tarjetas de
 gasto ("Gastos del mes", "Gasto por categoría", "Evolución de gastos",
