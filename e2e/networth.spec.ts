@@ -15,7 +15,7 @@ test('creates a savings holding and sees it added to the net worth total', async
   await expect(page.getByText('Ahorro Prueba')).toBeVisible()
 
   await page.getByRole('tab', { name: 'Resumen' }).click()
-  await expect(page.getByText('Total ahorros e inversiones', { exact: true })).toBeVisible()
+  await expect(page.getByText('Total patrimonio', { exact: true })).toBeVisible()
   await expect(page.getByText(/1[.,]000,00/).first()).toBeVisible()
 })
 
@@ -261,7 +261,7 @@ test('borrar el único lote de una posición hace que la posición desaparezca',
   await expect(page.getByText('Sin posición cargada')).toBeVisible()
 })
 
-test('/ajustes/tasas redirects to Ahorro e Inversiones, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {
+test('/ajustes/tasas redirects to Patrimonio, and a manual rate can be loaded from Cotizaciones', async ({ page }) => {
   await page.goto('/ajustes/tasas')
   await expect(page).toHaveURL('/patrimonio')
 

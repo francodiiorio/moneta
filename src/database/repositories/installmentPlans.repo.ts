@@ -49,7 +49,7 @@ export async function createInstallmentPlan(
   }
   const schedule = buildInstallmentSchedule(plan)
 
-  await db.transaction('rw', db.installmentPlans, db.expenses, async () => {
+  await db.transaction('rw', db.installmentPlans, db.expenses, db.categories, async () => {
     await db.installmentPlans.add(plan)
     for (const occurrence of schedule) {
       await saveExpense({
@@ -97,7 +97,7 @@ export interface UpdateInstallmentPlanInput {
  * historical-immutability rule as `deleteInstallmentPlan`.
  */
 export async function updateInstallmentPlan(id: string, input: UpdateInstallmentPlanInput): Promise<InstallmentPlan> {
-  return db.transaction('rw', db.installmentPlans, db.expenses, async () => {
+  return db.transaction('rw', db.installmentPlans, db.expenses, db.categories, async () => {
     const existing = await db.installmentPlans.get(id)
     invariant(existing, `No se encontró la compra en cuotas: ${id}`)
 

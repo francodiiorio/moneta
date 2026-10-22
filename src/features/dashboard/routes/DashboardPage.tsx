@@ -18,6 +18,7 @@ import { useMonthSummary } from '@/features/reports/hooks/useMonthSummary'
 import { useExpenseByCategory } from '@/features/reports/hooks/useExpenseByCategory'
 import { useExpenseHistory } from '@/features/reports/hooks/useExpenseHistory'
 import { useNetWorthSummary } from '@/features/networth/hooks/useNetWorthSummary'
+import { useNetWorthMonthChange } from '@/features/networth/hooks/useNetWorthMonthChange'
 import { useSavingsAndInvestmentsHistory } from '@/features/networth/hooks/useSavingsAndInvestmentsHistory'
 import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithProgress'
 import { useDashboardUiStore } from '../store'
@@ -31,14 +32,14 @@ const BUDGET_ALERT_THRESHOLD = 90
 export function DashboardPage() {
   const settings = useSettings()
   const hideAmount = settings?.hideSavingsAndInvestmentsAmount ?? false
-  // Sólo las tarjetas de gasto siguen este mes — Ahorro e inversiones y su
+  // Sólo las tarjetas de gasto siguen este mes — Patrimonio y su
   // progreso siempre muestran hoy, ver docs/DECISIONS.md.
   const month = useDashboardUiStore((s) => s.month)
   const summary = useMonthSummary(month)
   const previousSummary = useMonthSummary(shiftMonth(month, -1))
-  // Same source of truth as /patrimonio (Ahorro e Inversiones) — Ahorros +
-  // Inversiones, deliberately not Cuentas (ya no existen). See
-  // docs/DECISIONS.md "Ahorro e Inversiones deja de incluir Cuentas".
+  // Same source of truth as /patrimonio — Cuentas + Ahorros + Inversiones
+  // (las cuentas volvieron en la Etapa 8, ver docs/DECISIONS.md "Se
+  // reintroducen Cuentas, Ingresos y Transferencias").
   const savingsAndInvestments = useNetWorthSummary()
   const expenseByCategory = useExpenseByCategory(month)
   const budgets = useBudgetsWithProgress(month)
@@ -60,16 +61,10 @@ export function DashboardPage() {
     firstInvestmentPoint && lastInvestmentPoint
       ? percentChange(firstInvestmentPoint.value, lastInvestmentPoint.value)
       : undefined
-  // "Ahorro e inversiones" KPI badge, month-over-month — independiente del
-  // período elegido arriba: los puntos siempre son mensuales y consecutivos
-  // terminando en hoy, así que los dos últimos son siempre "mes anterior
-  // vs. mes actual" sea cual sea investmentMonthsBack. Mismo fetch que ya
-  // alimenta el gráfico, no hace falta otra consulta.
-  const previousInvestmentPoint = investmentPoints?.[investmentPoints.length - 2]
-  const investmentMonthChange =
-    previousInvestmentPoint && lastInvestmentPoint
-      ? percentChange(previousInvestmentPoint.value, lastInvestmentPoint.value)
-      : undefined
+  // "Patrimonio" KPI badge: variación del total vs. fin del mes pasado,
+  // comparando siempre el mismo conjunto de cuentas (ver
+  // getNetWorthMonthChange) — independiente del período elegido arriba.
+  const netWorthMonthChange = useNetWorthMonthChange()
 
   const expenseChange =
     summary && previousSummary ? percentChange(previousSummary.expense, summary.expense) : undefined
@@ -88,13 +83,13 @@ export function DashboardPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Dashboard"
-        description={`Resumen de ${formatMonthLabel(month).toLowerCase()} y de tus ahorros e inversiones.`}
+        description={`Resumen de ${formatMonthLabel(month).toLowerCase()} y de tu patrimonio.`}
         actions={<MonthSelector />}
       />
 
       <MissingRateBanner
         count={missingRateCount}
-        itemLabel={['gasto, ahorro o inversión', 'gastos, ahorros o inversiones']}
+        itemLabel={['gasto, cuenta, ahorro o inversión', 'gastos, cuentas, ahorros o inversiones']}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -106,7 +101,7 @@ export function DashboardPage() {
               </div>
               <div>
                 {/* h-6 matches the eye-toggle Button's own height in the
-                    "Ahorro e inversiones" card below — without it, that
+                    "Patrimonio" card below — without it, that
                     card's label row is taller (icon-xs button vs. bare
                     text), so centering each content block independently
                     in two equal-height cards lands them at different
@@ -135,7 +130,7 @@ export function DashboardPage() {
               </div>
               <div>
                 <div className="flex h-6 items-center gap-1">
-                  <p className="text-xs text-muted-foreground">Ahorro e inversiones</p>
+                  <p className="text-xs text-muted-foreground">Patrimonio</p>
                   <Button
                     variant="ghost"
                     size="icon-xs"
@@ -174,9 +169,9 @@ export function DashboardPage() {
                 </div>
               </div>
             </div>
-            {investmentMonthChange !== undefined && (
+            {netWorthMonthChange !== undefined && (
               <div className="flex shrink-0 flex-col items-end">
-                <VariationBadge percent={investmentMonthChange} />
+                <VariationBadge percent={netWorthMonthChange} />
               </div>
             )}
           </CardContent>

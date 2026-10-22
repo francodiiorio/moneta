@@ -172,7 +172,7 @@ describe('buildPreview — duplicate detection', () => {
 
 describe('loadExistingDuplicateKeys / prepareImport / importSelectedRows (integration)', () => {
   async function setup() {
-    const category = await createCategory({ name: 'Varios' })
+    const category = await createCategory({ kind: 'expense', name: 'Varios' })
     return { category }
   }
 

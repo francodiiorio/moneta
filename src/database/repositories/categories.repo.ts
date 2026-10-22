@@ -1,10 +1,11 @@
 import { db } from '../db'
-import type { Category } from '@/domain/entities'
+import type { Category, CategoryKind } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 
 export interface CreateCategoryInput {
   name: string
+  kind: CategoryKind
   parentId?: string
   color?: string
   icon?: string
@@ -32,21 +33,27 @@ const DEFAULT_CATEGORIES: readonly string[] = [
   'Otros',
 ]
 
+const DEFAULT_INCOME_CATEGORIES: readonly string[] = ['Sueldo', 'Otros ingresos']
+
 export async function listCategories(): Promise<Category[]> {
   return db.categories.orderBy('order').toArray()
 }
 
-/** Active categories only — an archived one can't be picked for a new
- *  gasto, presupuesto, plan or import mapping (a past record that already
- *  used one still shows its name via `listCategories`, unfiltered). */
-export async function listActiveCategories(): Promise<Category[]> {
-  return (await listCategories()).filter((c) => !c.isArchived)
+/** Active categories of one kind only — an archived one can't be picked
+ *  for a new gasto/ingreso, presupuesto, plan or import mapping (a past
+ *  record that already used one still shows its name via
+ *  `listCategories`, unfiltered). `kind` is explicit, never defaulted: a
+ *  gasto picker offering income categories (or vice versa) is exactly the
+ *  bug this parameter exists to prevent. */
+export async function listActiveCategories(kind: CategoryKind): Promise<Category[]> {
+  return (await listCategories()).filter((c) => !c.isArchived && c.kind === kind)
 }
 
-async function assertValidParent(parentId: string | undefined): Promise<void> {
+async function assertValidParent(parentId: string | undefined, kind: CategoryKind): Promise<void> {
   if (!parentId) return
   const parent = await db.categories.get(parentId)
   invariant(parent, `Categoría padre no encontrada: ${parentId}`)
+  invariant(parent.kind === kind, 'Una subcategoría tiene que ser del mismo tipo (gasto/ingreso) que su padre')
   invariant(
     !parent.parentId,
     `"${parent.name}" ya es una subcategoría — sólo se admite un nivel de jerarquía`,
@@ -56,11 +63,12 @@ async function assertValidParent(parentId: string | undefined): Promise<void> {
 export async function createCategory(input: CreateCategoryInput): Promise<Category> {
   const now = new Date().toISOString()
   return db.transaction('rw', db.categories, async () => {
-    await assertValidParent(input.parentId)
+    await assertValidParent(input.parentId, input.kind)
     const maxOrder = await db.categories.orderBy('order').last()
     const category: Category = {
       id: generateId(),
       name: input.name,
+      kind: input.kind,
       order: (maxOrder?.order ?? -1) + 1,
       isArchived: false,
       createdAt: now,
@@ -95,15 +103,18 @@ export async function setCategoryArchived(id: string, isArchived: boolean): Prom
   })
 }
 
-/** Swaps `order` with the adjacent sibling (same `parentId`, active only).
- *  No-op if `id` is already at that end of its sibling group. */
+/** Swaps `order` with the adjacent sibling (same `parentId` and `kind`,
+ *  active only). No-op if `id` is already at that end of its sibling
+ *  group. `kind` matters: top-level gasto and ingreso categories share
+ *  `parentId: undefined`, and each tab of the management page only shows
+ *  one kind — swapping across them would reorder something invisible. */
 export async function moveCategory(id: string, direction: 'up' | 'down'): Promise<void> {
   await db.transaction('rw', db.categories, async () => {
     const category = await db.categories.get(id)
     invariant(category, `Categoría no encontrada: ${id}`)
 
     const siblings = (await db.categories.toArray())
-      .filter((c) => c.parentId === category.parentId && !c.isArchived)
+      .filter((c) => c.parentId === category.parentId && c.kind === category.kind && !c.isArchived)
       .sort((a, b) => a.order - b.order)
 
     const index = siblings.findIndex((c) => c.id === id)
@@ -129,7 +140,34 @@ export async function seedDefaultsIfEmpty(): Promise<void> {
     const categories: Category[] = DEFAULT_CATEGORIES.map((name, index) => ({
       id: generateId(),
       name,
+      kind: 'expense',
       order: index,
+      isArchived: false,
+      createdAt: now,
+      updatedAt: now,
+    }))
+    await db.categories.bulkAdd(categories)
+  })
+}
+
+/** Seeds the starter income categories once, when there's no income
+ *  category at all (archived ones count) — covers both a brand-new
+ *  database and one upgraded from version 4, where the Etapa 7 migration
+ *  had deleted every income category. Same never-duplicates guarantee as
+ *  `seedDefaultsIfEmpty`. */
+export async function seedIncomeDefaultsIfNone(): Promise<void> {
+  await db.transaction('rw', db.categories, async () => {
+    const count = await db.categories.where('kind').equals('income').count()
+    if (count > 0) return
+
+    const now = new Date().toISOString()
+    const maxOrder = await db.categories.orderBy('order').last()
+    const start = (maxOrder?.order ?? -1) + 1
+    const categories: Category[] = DEFAULT_INCOME_CATEGORIES.map((name, index) => ({
+      id: generateId(),
+      name,
+      kind: 'income',
+      order: start + index,
       isArchived: false,
       createdAt: now,
       updatedAt: now,

@@ -3,6 +3,7 @@ import { db } from '../db'
 import type { Expense } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
+import { assertAccountAccepts } from './accounts.repo'
 import type { CurrencyCode } from '@/domain/money'
 import type { DateStamp } from '@/lib/dates'
 
@@ -17,6 +18,8 @@ export interface ExpenseInput {
   tags?: string[]
   sourcePlanId?: string
   occurrenceIndex?: number
+  /** Debit only — the gasto left this account (see domain/accounts). */
+  accountId?: string
 }
 
 export async function listExpensesInRange(startDate: string, endDate: string): Promise<Expense[]> {
@@ -38,11 +41,28 @@ export async function listExpensesInRange(startDate: string, endDate: string): P
  * transaction a caller (bulkSaveExpenses, installmentPlans.repo.ts,
  * recurringPlans.repo.ts) already has open on `db.expenses`, so this is
  * free for them.
+ *
+ * The category must be a gasto category — the same rule backup import
+ * enforces (`validateLedgerIntegrity`), so the app can never write a gasto
+ * that its own backup would then refuse to restore. That's why every
+ * parent transaction above also covers `db.categories`.
+ *
+ * `db.accounts` joins the scope only when the gasto has an `accountId`:
+ * the plan repos' parent transactions don't cover it, and Dexie rejects a
+ * nested transaction that asks for a table its parent doesn't have —
+ * plans never set `accountId` (Etapa 8, Fase 1), so they keep nesting
+ * fine.
  */
 export async function saveExpense(input: ExpenseInput, existingId?: string): Promise<string> {
   invariant(input.amount > 0, `El monto debe ser mayor a cero, recibido: ${input.amount}`)
 
-  return db.transaction('rw', db.expenses, async () => {
+  const tables =
+    input.accountId !== undefined ? [db.expenses, db.categories, db.accounts] : [db.expenses, db.categories]
+  return db.transaction('rw', tables, async () => {
+    const category = await db.categories.get(input.categoryId)
+    invariant(category, `Categoría no encontrada: ${input.categoryId}`)
+    invariant(category.kind === 'expense', `"${category.name}" no es una categoría de gasto`)
+    if (input.accountId !== undefined) await assertAccountAccepts(input.accountId, input)
     const now = new Date().toISOString()
     const id = existingId ?? generateId()
 
@@ -67,6 +87,7 @@ export async function saveExpense(input: ExpenseInput, existingId?: string): Pro
       ...(input.tags !== undefined && { tags: input.tags }),
       ...(input.sourcePlanId !== undefined && { sourcePlanId: input.sourcePlanId }),
       ...(input.occurrenceIndex !== undefined && { occurrenceIndex: input.occurrenceIndex }),
+      ...(input.accountId !== undefined && { accountId: input.accountId }),
     }
     await db.expenses.put(expense)
     return id
@@ -80,7 +101,7 @@ export async function saveExpense(input: ExpenseInput, existingId?: string): Pro
  * this repo.
  */
 export async function bulkSaveExpenses(inputs: readonly ExpenseInput[]): Promise<void> {
-  await db.transaction('rw', db.expenses, async () => {
+  await db.transaction('rw', db.expenses, db.categories, async () => {
     for (const input of inputs) {
       await saveExpense(input)
     }

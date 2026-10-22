@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test'
 // browser's locale.
 test('the date picker shows dd/mm/aaaa, navigates months, and can be cleared', async ({ page }) => {
   await page.goto('/movimientos')
-  await page.getByRole('button', { name: 'Nuevo gasto' }).first().click()
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
 
   const trigger = page.getByLabel('Fecha', { exact: true })
   await expect(trigger).toHaveText(/^\d{2}\/\d{2}\/\d{4}$/)

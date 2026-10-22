@@ -20,6 +20,7 @@ function saving(overrides: Partial<SavingsHolding> = {}): SavingsHolding {
 
 function baseInput(overrides: Partial<ValuationInput> = {}): ValuationInput {
   return {
+    accounts: [],
     savings: [],
     positions: [],
     rates: [],
@@ -163,5 +164,36 @@ describe('valuateNetWorth — edge cases', () => {
   it('a negative amount (e.g. a hand-entered debt) is valued as-is, not excluded', () => {
     const result = valuateNetWorth(baseInput({ savings: [saving({ currency: 'ARS', amount: -50_000 })] }))
     expect(result.total).toEqual(money(-50_000, 'ARS'))
+  })
+})
+
+describe('valuateNetWorth — accounts bucket', () => {
+  const rates: ExchangeRate[] = [{ id: 'r1', date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1450 }]
+
+  it('adds account balances (converted) to the total, in their own bucket', () => {
+    const result = valuateNetWorth(
+      baseInput({
+        accounts: [money(500_000_00, 'ARS'), money(1_000_00, 'USD')],
+        savings: [saving({ currency: 'ARS', amount: 100_000_00 })],
+        rates,
+        displayCurrency: 'ARS',
+      }),
+    )
+    expect(result.byBucket.accounts).toEqual(money(500_000_00 + 1_000_00 * 1450, 'ARS'))
+    expect(result.byBucket.savings).toEqual(money(100_000_00, 'ARS'))
+    expect(result.total).toEqual(money(500_000_00 + 1_000_00 * 1450 + 100_000_00, 'ARS'))
+  })
+
+  it('a negative account balance (overdraft) subtracts from the total', () => {
+    const result = valuateNetWorth(
+      baseInput({ accounts: [money(-20_000_00, 'ARS')], savings: [saving({ amount: 50_000_00 })] }),
+    )
+    expect(result.total).toEqual(money(30_000_00, 'ARS'))
+  })
+
+  it('an account without a usable rate is excluded and counted as missing', () => {
+    const result = valuateNetWorth(baseInput({ accounts: [money(1_00, 'EUR')], displayCurrency: 'ARS' }))
+    expect(result.byBucket.accounts).toEqual(money(0, 'ARS'))
+    expect(result.missingRateCount).toBe(1)
   })
 })

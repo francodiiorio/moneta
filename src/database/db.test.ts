@@ -120,3 +120,104 @@ describe('db.version(3) upgrade — legacy holdings get one inherited lot', () =
     }
   })
 })
+
+const V1_STORES = {
+  accounts: 'id, name, type, currency, isArchived, order',
+  categories: 'id, name, kind, parentId, isArchived, order',
+  transactions: 'id, date, kind, status, sourcePlanId, [status+date], [kind+date]',
+  postings: 'id, transactionId, [accountId+date], [categoryId+date], date',
+  recurringPlans: 'id, isPaused, lastMaterializedDate',
+  installmentPlans: 'id, accountId, firstDueDate',
+  budgets: 'id, categoryId, [categoryId+startsOn]',
+  exchangeRates: 'id, [from+to+date], date',
+  settings: 'id',
+}
+const V2_STORES = {
+  savingsHoldings: 'id, currency',
+  investmentAssets: 'id, type, symbol',
+  investmentHoldings: 'id, assetId',
+  assetPrices: 'id, [assetId+date], assetId, date',
+}
+
+// Same technique as above, for Etapa 8 (version 5): a database at exactly
+// the shape version(4) shipped with gets `kind: 'expense'` on every
+// category, and the brand-new accounts/incomes/accountAdjustments tables.
+describe('db.version(5) upgrade — categories get kind, accounts come back', () => {
+  it('marks every pre-existing category as an expense category', async () => {
+    const name = `moneta-test-upgrade-v5-${Date.now()}`
+    const legacyDb = new Dexie(name)
+    legacyDb.version(1).stores(V1_STORES)
+    legacyDb.version(2).stores(V2_STORES)
+    legacyDb.version(3).stores({ investmentLots: 'id, assetId, date' })
+    legacyDb.version(4).stores({
+      accounts: null,
+      postings: null,
+      transactions: null,
+      categories: 'id, name, parentId, isArchived, order',
+      expenses: 'id, date, categoryId, status, sourcePlanId, [status+date]',
+    })
+    await legacyDb.open()
+    await legacyDb.table('categories').add({
+      id: 'cat1',
+      name: 'Comida',
+      order: 0,
+      isArchived: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    legacyDb.close()
+
+    const upgraded = new MonetaDatabase(name)
+    try {
+      await upgraded.open()
+      expect(await upgraded.categories.get('cat1')).toMatchObject({ kind: 'expense' })
+      expect(await upgraded.categories.where('kind').equals('expense').count()).toBe(1)
+      expect(await upgraded.accounts.count()).toBe(0)
+      expect(await upgraded.incomes.count()).toBe(0)
+      expect(await upgraded.accountAdjustments.count()).toBe(0)
+    } finally {
+      upgraded.close()
+      await Dexie.delete(name)
+    }
+  })
+
+  it('a version(3) database goes through 4 (accounts dropped) and 5 (accounts recreated, empty)', async () => {
+    const name = `moneta-test-upgrade-v3-v5-${Date.now()}`
+    const legacyDb = new Dexie(name)
+    legacyDb.version(1).stores(V1_STORES)
+    legacyDb.version(2).stores(V2_STORES)
+    legacyDb.version(3).stores({ investmentLots: 'id, assetId, date' })
+    await legacyDb.open()
+    await legacyDb.table('accounts').add({ id: 'old-account', name: 'Banco', type: 'bank', currency: 'ARS' })
+    await legacyDb.table('categories').add({
+      id: 'cat-income',
+      name: 'Sueldo',
+      kind: 'income',
+      order: 0,
+      isArchived: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    await legacyDb.table('categories').add({
+      id: 'cat-expense',
+      name: 'Comida',
+      kind: 'expense',
+      order: 1,
+      isArchived: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    legacyDb.close()
+
+    const upgraded = new MonetaDatabase(name)
+    try {
+      await upgraded.open()
+      expect(await upgraded.accounts.count()).toBe(0)
+      const categories = await upgraded.categories.toArray()
+      expect(categories.map((c) => [c.id, c.kind])).toEqual([['cat-expense', 'expense']])
+    } finally {
+      upgraded.close()
+      await Dexie.delete(name)
+    }
+  })
+})

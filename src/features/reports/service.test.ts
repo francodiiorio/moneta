@@ -27,7 +27,7 @@ afterEach(async () => {
 
 describe('getMonthSummary', () => {
   it('sums expenses in a single currency', async () => {
-    const foodCat = await createCategory({ name: 'Comida' })
+    const foodCat = await createCategory({ kind: 'expense', name: 'Comida' })
 
     await saveExpense({ date: '2026-08-05', description: 'Super', categoryId: foodCat.id, amount: 1000, currency: 'ARS', status: 'confirmed' })
     await saveExpense({ date: '2026-08-06', description: 'Almacén', categoryId: foodCat.id, amount: 500, currency: 'ARS', status: 'confirmed' })
@@ -38,7 +38,7 @@ describe('getMonthSummary', () => {
   })
 
   it('converts cross-currency expenses to the base currency using the rate at the expense date', async () => {
-    const category = await createCategory({ name: 'Viajes' })
+    const category = await createCategory({ kind: 'expense', name: 'Viajes' })
     await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1000 })
 
     await saveExpense({ date: '2026-08-15', description: 'Hotel', categoryId: category.id, amount: 100, currency: 'USD', status: 'confirmed' })
@@ -49,7 +49,7 @@ describe('getMonthSummary', () => {
   })
 
   it("prefers settings.rateProfile's rate over an untagged one for the same pair/date", async () => {
-    const category = await createCategory({ name: 'Viajes' })
+    const category = await createCategory({ kind: 'expense', name: 'Viajes' })
     await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1000 }) // untagged
     await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1500, profile: 'blue' })
     await updateSettings({ rateProfile: 'blue' })
@@ -61,7 +61,7 @@ describe('getMonthSummary', () => {
   })
 
   it('counts a missing rate instead of throwing, and does not let it affect other totals', async () => {
-    const category = await createCategory({ name: 'Varios' })
+    const category = await createCategory({ kind: 'expense', name: 'Varios' })
     // no exchange rate loaded at all
 
     await saveExpense({ date: '2026-08-05', description: 'Compra ARS', categoryId: category.id, amount: 2000, currency: 'ARS', status: 'confirmed' })
@@ -73,7 +73,7 @@ describe('getMonthSummary', () => {
   })
 
   it('excludes projected expenses, only counting confirmed ones', async () => {
-    const category = await createCategory({ name: 'Comida' })
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
 
     await saveExpense({ date: '2026-08-05', description: 'Cuota futura', categoryId: category.id, amount: 9999, currency: 'ARS', status: 'projected' })
     await saveExpense({ date: '2026-08-06', description: 'Real', categoryId: category.id, amount: 300, currency: 'ARS', status: 'confirmed' })
@@ -85,7 +85,7 @@ describe('getMonthSummary', () => {
 
 describe('getExpenseHistory', () => {
   it('anchors the trailing window to anchorMonth instead of always the current month', async () => {
-    const foodCat = await createCategory({ name: 'Comida' })
+    const foodCat = await createCategory({ kind: 'expense', name: 'Comida' })
     await saveExpense({ date: '2025-01-10', description: 'Super', categoryId: foodCat.id, amount: 1000, currency: 'ARS', status: 'confirmed' })
     // Outside the 3-month window ending at the anchor (2024-11..2025-01) —
     // must not leak in just because it's a real expense elsewhere.
@@ -100,8 +100,8 @@ describe('getExpenseHistory', () => {
 
 describe('getExpenseByCategory', () => {
   it('groups and sorts by total amount descending', async () => {
-    const food = await createCategory({ name: 'Comida' })
-    const transport = await createCategory({ name: 'Transporte' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
+    const transport = await createCategory({ kind: 'expense', name: 'Transporte' })
 
     await saveExpense({ date: '2026-08-01', description: 'a', categoryId: food.id, amount: 1000, currency: 'ARS', status: 'confirmed' })
     await saveExpense({ date: '2026-08-02', description: 'b', categoryId: food.id, amount: 500, currency: 'ARS', status: 'confirmed' })
@@ -118,8 +118,21 @@ describe('getExpenseByCategory', () => {
   it('counts a missing rate and falls back to a placeholder name for a deleted category', async () => {
     // No category record exists for this id — simulates a dangling
     // reference (categories today can only be archived, never hard-deleted,
-    // but the fallback should still hold if that ever changes).
-    await saveExpense({ date: '2026-08-01', description: 'Sin tasa', categoryId: 'missing-category', amount: 10, currency: 'USD', status: 'confirmed' })
+    // but the fallback should still hold if that ever changes). Written
+    // straight to Dexie: saveExpense itself rightly refuses an unknown
+    // category, so the only way to get here is data that predates it.
+    const now = new Date().toISOString()
+    await db.expenses.add({
+      id: 'dangling',
+      date: '2026-08-01',
+      description: 'Sin tasa',
+      categoryId: 'missing-category',
+      amount: 10,
+      currency: 'USD',
+      status: 'confirmed',
+      createdAt: now,
+      updatedAt: now,
+    })
 
     const { items, missingRateCount } = await getExpenseByCategory('2026-08')
     expect(missingRateCount).toBe(1)
@@ -195,8 +208,8 @@ describe('getMonthlyReport', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-09-15T12:00:00Z'))
     try {
-      const foodCat = await createCategory({ name: 'Comida' })
-      const funCat = await createCategory({ name: 'Ocio' })
+      const foodCat = await createCategory({ kind: 'expense', name: 'Comida' })
+      const funCat = await createCategory({ kind: 'expense', name: 'Ocio' })
 
       await saveExpense({ date: '2026-08-05', description: 'Super', categoryId: foodCat.id, amount: 3000, currency: 'ARS', status: 'confirmed' })
       await saveExpense({ date: '2026-08-06', description: 'Cine', categoryId: funCat.id, amount: 1000, currency: 'ARS', status: 'confirmed' })
@@ -263,7 +276,7 @@ describe('getMonthlyReport', () => {
   })
 
   it('does not double-count a missing rate between the summary and the valuation', async () => {
-    const category = await createCategory({ name: 'Viajes' })
+    const category = await createCategory({ kind: 'expense', name: 'Viajes' })
     // No exchange rate loaded at all — the USD expense and the USD savings
     // each miss independently; summary's own miss and the valuation's own
     // miss must not be summed as if they were the same item twice.
@@ -272,5 +285,67 @@ describe('getMonthlyReport', () => {
 
     const report = await getMonthlyReport('2026-08')
     expect(report.missingRateCount).toBe(2) // one from summary's expense, one from valuing the USD saving
+  })
+})
+
+describe('Reportes con cuentas (Etapa 8)', () => {
+  afterEach(async () => {
+    await Promise.all([db.accounts.clear(), db.incomes.clear()])
+  })
+
+  async function withToday(iso: string, run: () => Promise<void>): Promise<void> {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(iso))
+    try {
+      await run()
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  async function seedAccount() {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const { saveIncome } = await import('@/database/repositories/incomes.repo')
+    const account = await createAccount({
+      name: 'Galicia',
+      type: 'bank',
+      currency: 'ARS',
+      openingBalance: 1_000,
+      openingDate: '2026-07-10',
+    })
+    const category = await createCategory({ kind: 'income', name: 'Sueldo' })
+    await saveIncome({
+      date: '2026-08-05',
+      description: 'Sueldo',
+      categoryId: category.id,
+      accountId: account.id,
+      amount: 500,
+      currency: 'ARS',
+    })
+  }
+
+  it('getNetWorthHistory uses the real account balance per month, and nothing before it opened', async () => {
+    await withToday('2026-08-23T12:00:00Z', async () => {
+      await updateSettings({ baseCurrency: 'ARS' })
+      await seedAccount()
+      const { points } = await getNetWorthHistory(3)
+      expect(points.map((p) => [p.month, p.netWorth.amount])).toEqual([
+        ['2026-06', 0],
+        ['2026-07', 1_000],
+        ['2026-08', 1_500],
+      ])
+    })
+  })
+
+  it('getMonthlyReport has a patrimonio section with only accounts, in both currencies', async () => {
+    await withToday('2026-08-23T12:00:00Z', async () => {
+      await updateSettings({ baseCurrency: 'ARS' })
+      await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1000 })
+      await seedAccount()
+      const report = await getMonthlyReport('2026-08')
+      expect(report.netWorth?.ars.byBucket.accounts).toEqual(money(1_500, 'ARS'))
+      expect(report.netWorth?.usd.byBucket.accounts).toEqual(money(2, 'USD')) // 15,00 ARS / 1000 = 0,015 USD → 0,02
+      expect(report.netWorth?.ars.total).toEqual(money(1_500, 'ARS'))
+    })
   })
 })

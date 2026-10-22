@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('exporta un informe del mes y lo muestra sin chrome de la app', async ({ page }) => {
   await page.goto('/movimientos')
-  await page.getByRole('button', { name: 'Nuevo gasto' }).first().click()
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
   await page.getByLabel('Descripción').fill('Supermercado')
   await page.getByLabel('Monto').fill('1500')
   await page.getByText('Elegí una categoría').click()

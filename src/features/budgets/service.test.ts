@@ -19,7 +19,7 @@ afterEach(async () => {
 
 describe('getBudgetsWithProgress', () => {
   it('compares a monthly budget against the selected month\'s spend', async () => {
-    const food = await createCategory({ name: 'Comida' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
     await saveExpense({ date: '2026-08-05', description: 'Super', categoryId: food.id, amount: 4_000, currency: 'ARS', status: 'confirmed' })
 
@@ -33,7 +33,7 @@ describe('getBudgetsWithProgress', () => {
   })
 
   it('carries the category\'s color/icon, omitting them when unset', async () => {
-    const food = await createCategory({ name: 'Comida', color: '#ef4444', icon: 'utensils' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida', color: '#ef4444', icon: 'utensils' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
     await saveExpense({ date: '2026-08-05', description: 'Super', categoryId: food.id, amount: 4_000, currency: 'ARS', status: 'confirmed' })
 
@@ -43,7 +43,7 @@ describe('getBudgetsWithProgress', () => {
   })
 
   it('omits categoryColor/categoryIcon for a category with neither set', async () => {
-    const food = await createCategory({ name: 'Comida' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
     await saveExpense({ date: '2026-08-05', description: 'Super', categoryId: food.id, amount: 4_000, currency: 'ARS', status: 'confirmed' })
 
@@ -53,7 +53,7 @@ describe('getBudgetsWithProgress', () => {
   })
 
   it('accumulates spend across the whole year for a yearly budget', async () => {
-    const travel = await createCategory({ name: 'Viajes' })
+    const travel = await createCategory({ kind: 'expense', name: 'Viajes' })
     await createBudget({ categoryId: travel.id, currency: 'ARS', period: 'yearly', amount: 100_000, startsOn: '2026-01' })
     await saveExpense({ date: '2026-02-01', description: 'Vuelo', categoryId: travel.id, amount: 30_000, currency: 'ARS', status: 'confirmed' })
     await saveExpense({ date: '2026-07-01', description: 'Hotel', categoryId: travel.id, amount: 20_000, currency: 'ARS', status: 'confirmed' })
@@ -65,7 +65,7 @@ describe('getBudgetsWithProgress', () => {
   })
 
   it('shows a budgeted category with zero actual spend as 0% used', async () => {
-    const food = await createCategory({ name: 'Comida' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
 
     const { items } = await getBudgetsWithProgress('2026-08')
@@ -74,7 +74,7 @@ describe('getBudgetsWithProgress', () => {
   })
 
   it('uses the budget version in effect for the evaluated month, not always the latest', async () => {
-    const food = await createCategory({ name: 'Comida' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 20_000, startsOn: '2026-08' })
 
@@ -86,7 +86,7 @@ describe('getBudgetsWithProgress', () => {
   })
 
   it('keeps resolving correctly after deleting the middle version of three', async () => {
-    const food = await createCategory({ name: 'Comida' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
     const middle = await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 20_000, startsOn: '2026-06' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 30_000, startsOn: '2026-09' })
@@ -104,7 +104,7 @@ describe('getBudgetsWithProgress', () => {
   })
 
   it('converts a budget stored in a currency that is no longer the base currency', async () => {
-    const food = await createCategory({ name: 'Comida' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
     await createBudget({ categoryId: food.id, currency: 'USD', period: 'monthly', amount: 100, startsOn: '2026-01' })
     await createExchangeRate({ date: '2026-01-01', from: 'USD', to: 'ARS', rate: 1000 })
 
@@ -114,7 +114,7 @@ describe('getBudgetsWithProgress', () => {
   })
 
   it('passes through missingRateCount when actual spend cannot be converted', async () => {
-    const food = await createCategory({ name: 'Comida' })
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
     await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 10_000, startsOn: '2026-01' })
     // no exchange rate loaded — this expense can't be converted to ARS
     await saveExpense({ date: '2026-08-05', description: 'Compra', categoryId: food.id, amount: 10, currency: 'USD', status: 'confirmed' })

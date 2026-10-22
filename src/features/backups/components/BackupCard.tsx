@@ -40,6 +40,9 @@ const MERGE_LABELS: Record<keyof MergeSummary, [string, string]> = {
   investmentHoldings: ['posición', 'posiciones'],
   assetPrices: ['precio cargado', 'precios cargados'],
   investmentLots: ['compra', 'compras'],
+  accounts: ['cuenta', 'cuentas'],
+  incomes: ['ingreso', 'ingresos'],
+  accountAdjustments: ['ajuste de saldo', 'ajustes de saldo'],
 }
 
 function joinList(parts: string[]): string {

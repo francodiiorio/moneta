@@ -89,7 +89,12 @@ export async function importBackup(file: File, options: ImportOptions = {}): Pro
 
   const expectedChecksum =
     typeof raw === 'object' && raw !== null && 'checksum' in raw ? raw.checksum : undefined
-  const actualChecksum = await computeChecksum(data)
+  // Over the file's own `data`, exactly as exported — not the migrated
+  // result: migrating an older version always changes the shape (new
+  // tables, new fields), so hashing that would flag every old backup as
+  // "modified". migrateToLatest already validated `raw` has a `data`.
+  const fileData = typeof raw === 'object' && raw !== null && 'data' in raw ? raw.data : undefined
+  const actualChecksum = await computeChecksum(fileData)
   const checksumMatched =
     typeof expectedChecksum === 'string' && expectedChecksum === actualChecksum
 

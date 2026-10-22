@@ -19,7 +19,7 @@ afterEach(async () => {
 const rule: RecurrenceRule = { freq: 'monthly', interval: 1, startDate: '2026-01-01' }
 
 async function setup() {
-  const category = await createCategory({ name: 'Alquiler' })
+  const category = await createCategory({ kind: 'expense', name: 'Alquiler' })
   const template: ExpenseTemplate = {
     description: 'Alquiler',
     categoryId: category.id,

@@ -1,11 +1,15 @@
 import type { EntityTable } from 'dexie'
 import { db } from '../db'
+import { movementAccountProblem } from '@/domain/accounts'
 import type {
+  Account,
+  AccountAdjustment,
   AssetPrice,
   Budget,
   Category,
   ExchangeRate,
   Expense,
+  Income,
   InstallmentPlan,
   InvestmentAsset,
   InvestmentHolding,
@@ -28,6 +32,9 @@ export interface AllTablesData {
   investmentHoldings: InvestmentHolding[]
   assetPrices: AssetPrice[]
   investmentLots: InvestmentLot[]
+  accounts: Account[]
+  incomes: Income[]
+  accountAdjustments: AccountAdjustment[]
 }
 
 /** Every table a full backup touches — shared by replaceAllTables and
@@ -47,6 +54,9 @@ function allTables() {
     db.investmentHoldings,
     db.assetPrices,
     db.investmentLots,
+    db.accounts,
+    db.incomes,
+    db.accountAdjustments,
   ] as const
 }
 
@@ -64,6 +74,9 @@ export async function readAllTables(): Promise<AllTablesData> {
     investmentHoldings,
     assetPrices,
     investmentLots,
+    accounts,
+    incomes,
+    accountAdjustments,
   ] = await Promise.all([
     db.categories.toArray(),
     db.expenses.toArray(),
@@ -77,6 +90,9 @@ export async function readAllTables(): Promise<AllTablesData> {
     db.investmentHoldings.toArray(),
     db.assetPrices.toArray(),
     db.investmentLots.toArray(),
+    db.accounts.toArray(),
+    db.incomes.toArray(),
+    db.accountAdjustments.toArray(),
   ])
   return {
     categories,
@@ -90,6 +106,9 @@ export async function readAllTables(): Promise<AllTablesData> {
     investmentHoldings,
     assetPrices,
     investmentLots,
+    accounts,
+    incomes,
+    accountAdjustments,
     ...(settings !== undefined && { settings }),
   }
 }
@@ -112,6 +131,9 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.investmentHoldings.clear(),
       db.assetPrices.clear(),
       db.investmentLots.clear(),
+      db.accounts.clear(),
+      db.incomes.clear(),
+      db.accountAdjustments.clear(),
     ])
     await Promise.all([
       db.categories.bulkAdd(data.categories),
@@ -126,6 +148,9 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.investmentHoldings.bulkAdd(data.investmentHoldings),
       db.assetPrices.bulkAdd(data.assetPrices),
       db.investmentLots.bulkAdd(data.investmentLots),
+      db.accounts.bulkAdd(data.accounts),
+      db.incomes.bulkAdd(data.incomes),
+      db.accountAdjustments.bulkAdd(data.accountAdjustments),
     ])
   })
 }
@@ -153,6 +178,9 @@ export interface MergeSummary {
   investmentHoldings: MergeCounts
   assetPrices: MergeCounts
   investmentLots: MergeCounts
+  accounts: MergeCounts
+  incomes: MergeCounts
+  accountAdjustments: MergeCounts
 }
 
 /** Adds only the rows of `incoming` whose id isn't already present in
@@ -166,6 +194,51 @@ async function addMissing<T extends { id: string }>(
   const added = incoming.filter((row) => !existingIds.has(row.id))
   if (added.length > 0) await table.bulkAdd(added)
   return { added, skipped: incoming.length - added.length }
+}
+
+/**
+ * Throws (rolling back the whole merge) if any movement the merge just
+ * added doesn't fit the account and category that actually ended up in
+ * the database. `validateLedgerIntegrity` already checked the file
+ * against itself, but in a merge the LOCAL account wins on an id clash —
+ * and the local copy may have since changed currency or opening date (an
+ * edit allowed while it had no movements locally). Without this, an
+ * incoming ARS ingreso could land in a now-USD account and make every
+ * balance computation throw, or fall before the opening date and silently
+ * stop counting. Must run inside `mergeAllTables`' transaction.
+ */
+async function assertMergedMovementsFit(added: {
+  incomes: readonly Income[]
+  expenses: readonly Expense[]
+  adjustments: readonly AccountAdjustment[]
+}): Promise<void> {
+  const accountById = new Map((await db.accounts.toArray()).map((a) => [a.id, a]))
+  const categoryKindById = new Map((await db.categories.toArray()).map((c) => [c.id, c.kind]))
+
+  function check(label: string, accountId: string, movement: { date: string; currency: string }): void {
+    const account = accountById.get(accountId)
+    if (!account) throw new Error(`${label}: la cuenta ${accountId} no existe`)
+    const problem = movementAccountProblem(account, movement)
+    if (problem) throw new Error(`${label}: ${problem} (en tu base local)`)
+  }
+
+  for (const income of added.incomes) {
+    const label = `Ingreso "${income.description}" (${income.id})`
+    if (categoryKindById.get(income.categoryId) !== 'income') {
+      throw new Error(`${label}: la categoría no existe o no es de ingreso en tu base local`)
+    }
+    check(label, income.accountId, income)
+  }
+  for (const expense of added.expenses) {
+    const label = `Gasto "${expense.description}" (${expense.id})`
+    if (categoryKindById.get(expense.categoryId) === 'income') {
+      throw new Error(`${label}: usa una categoría de ingreso en tu base local`)
+    }
+    if (expense.accountId !== undefined) check(label, expense.accountId, expense)
+  }
+  for (const adjustment of added.adjustments) {
+    check(`Ajuste de saldo (${adjustment.id})`, adjustment.accountId, adjustment)
+  }
 }
 
 /**
@@ -223,6 +296,9 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       investmentHoldings,
       assetPrices,
       investmentLots,
+      accounts,
+      incomes,
+      accountAdjustments,
     ] = await Promise.all([
       addMissing(db.categories, data.categories),
       addMissing(db.recurringPlans, data.recurringPlans),
@@ -234,6 +310,9 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       addMissing(db.investmentHoldings, data.investmentHoldings),
       addMissing(db.assetPrices, data.assetPrices),
       addMissing(db.investmentLots, data.investmentLots),
+      addMissing(db.accounts, data.accounts),
+      addMissing(db.incomes, data.incomes),
+      addMissing(db.accountAdjustments, data.accountAdjustments),
     ])
 
     if (data.settings && !(await db.settings.get('singleton'))) {
@@ -263,6 +342,12 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       return true
     })
     if (newExpenses.length > 0) await db.expenses.bulkAdd(newExpenses)
+
+    await assertMergedMovementsFit({
+      incomes: incomes.added,
+      expenses: newExpenses,
+      adjustments: accountAdjustments.added,
+    })
     const expenses: MergeCounts = {
       added: newExpenses.length,
       skipped: data.expenses.length - newExpenses.length,
@@ -292,6 +377,9 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       investmentHoldings: { added: investmentHoldings.added.length, skipped: investmentHoldings.skipped },
       assetPrices: { added: assetPrices.added.length, skipped: assetPrices.skipped },
       investmentLots: { added: investmentLots.added.length, skipped: investmentLots.skipped },
+      accounts: { added: accounts.added.length, skipped: accounts.skipped },
+      incomes: { added: incomes.added.length, skipped: incomes.skipped },
+      accountAdjustments: { added: accountAdjustments.added.length, skipped: accountAdjustments.skipped },
     }
   })
 }

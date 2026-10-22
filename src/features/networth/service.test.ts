@@ -3,6 +3,9 @@ import { db } from '@/database/db'
 import { createExchangeRate } from '@/database/repositories/exchangeRates.repo'
 import { createInvestmentAsset, createInvestmentHolding, listInvestmentHoldings } from '@/database/repositories/investments.repo'
 import { createAssetPrice } from '@/database/repositories/assetPrices.repo'
+import { createAccount } from '@/database/repositories/accounts.repo'
+import { createCategory } from '@/database/repositories/categories.repo'
+import { saveIncome } from '@/database/repositories/incomes.repo'
 import { updateSettings } from '@/database/repositories/settings.repo'
 import { QUANTITY_SCALE } from '@/domain/decimal'
 import { money } from '@/domain/money'
@@ -35,6 +38,9 @@ afterEach(async () => {
     db.assetPrices.clear(),
     db.investmentLots.clear(),
     db.categories.clear(),
+    db.accounts.clear(),
+    db.incomes.clear(),
+    db.accountAdjustments.clear(),
   ])
 })
 
@@ -507,5 +513,110 @@ describe('createExchangeRateFromForm', () => {
   it('omits profile when NO_PROFILE is selected', async () => {
     const rate = await createExchangeRateFromForm({ date: '2026-08-23', from: 'USD', to: 'ARS', rate: '1500', profile: NO_PROFILE })
     expect('profile' in rate).toBe(false)
+  })
+})
+
+describe('Patrimonio incluye Cuentas (Etapa 8)', () => {
+  it('adds each account balance (opening + ingresos) to the total, in its own bucket', async () => {
+    await updateSettings({ baseCurrency: 'ARS' })
+    await createExchangeRate({ date: '2026-01-01', from: 'USD', to: 'ARS', rate: 1000 })
+    const account = await createAccount({
+      name: 'Galicia',
+      type: 'bank',
+      currency: 'ARS',
+      openingBalance: 50_000_00,
+      openingDate: '2026-01-01',
+    })
+    const category = await createCategory({ kind: 'income', name: 'Sueldo' })
+    await saveIncome({
+      date: '2026-01-05',
+      description: 'Sueldo',
+      categoryId: category.id,
+      accountId: account.id,
+      amount: 10_000_00,
+      currency: 'ARS',
+    })
+    await createAccount({ name: 'Caja USD', type: 'bank', currency: 'USD', openingBalance: 100_00, openingDate: '2026-01-01' })
+    await createSavingsHoldingFromForm({ name: 'Colchón', currency: 'ARS', amount: '1000' })
+
+    const summary = await getNetWorthSummary('ARS')
+    expect(summary.byBucket.accounts).toEqual(money(60_000_00 + 100_000_00, 'ARS'))
+    expect(summary.byBucket.savings).toEqual(money(1_000_00, 'ARS'))
+    expect(summary.total).toEqual(money(161_000_00, 'ARS'))
+  })
+
+  it('history uses each account real balance at month-end, and leaves it out before it opened', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-23T12:00:00Z'))
+    try {
+      await updateSettings({ baseCurrency: 'ARS' })
+      const account = await createAccount({
+        name: 'Galicia',
+        type: 'bank',
+        currency: 'ARS',
+        openingBalance: 1_000,
+        openingDate: '2026-07-10',
+      })
+      const category = await createCategory({ kind: 'income', name: 'Sueldo' })
+      await saveIncome({
+        date: '2026-08-05',
+        description: 'Sueldo',
+        categoryId: category.id,
+        accountId: account.id,
+        amount: 500,
+        currency: 'ARS',
+      })
+
+      const { points } = await getSavingsAndInvestmentsHistory(3) // Jun, Jul, Aug(today)
+      expect(points.map((p) => [p.month, p.byBucket.accounts.amount])).toEqual([
+        ['2026-06', 0], // not open yet — left out, not counted
+        ['2026-07', 1_000],
+        ['2026-08', 1_500],
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('getNetWorthMonthChange', () => {
+  async function withToday<T>(iso: string, run: () => Promise<T>): Promise<T> {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(iso))
+    try {
+      return await run()
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+
+  it('an account opened this month does not count on either side — no fake jump', async () => {
+    const { getNetWorthMonthChange } = await import('./service')
+    await withToday('2026-08-23T12:00:00Z', async () => {
+      await updateSettings({ baseCurrency: 'ARS' })
+      await createSavingsHoldingFromForm({ name: 'Colchón', currency: 'ARS', amount: '1000' })
+      await createAccount({ name: 'Nueva', type: 'bank', currency: 'ARS', openingBalance: 500_000_00, openingDate: '2026-08-10' })
+      expect(await getNetWorthMonthChange()).toBe(0)
+    })
+  })
+
+  it('an account open since before last month counts its real change', async () => {
+    const { getNetWorthMonthChange } = await import('./service')
+    await withToday('2026-08-23T12:00:00Z', async () => {
+      await updateSettings({ baseCurrency: 'ARS' })
+      const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 1_000, openingDate: '2026-07-01' })
+      const category = await createCategory({ kind: 'income', name: 'Sueldo' })
+      await saveIncome({ date: '2026-08-05', description: 'Sueldo', categoryId: category.id, accountId: account.id, amount: 500, currency: 'ARS' })
+      expect(await getNetWorthMonthChange()).toBe(50)
+    })
+  })
+
+  it('is undefined when the total is negative (overdraft) instead of throwing', async () => {
+    const { getNetWorthMonthChange } = await import('./service')
+    await withToday('2026-08-23T12:00:00Z', async () => {
+      await updateSettings({ baseCurrency: 'ARS' })
+      await createAccount({ name: 'Descubierto', type: 'bank', currency: 'ARS', openingBalance: -1_000, openingDate: '2026-07-01' })
+      expect(await getNetWorthMonthChange()).toBeUndefined()
+    })
   })
 })

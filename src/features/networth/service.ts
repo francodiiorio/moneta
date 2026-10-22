@@ -9,11 +9,15 @@ import {
 import { quantity, parseQuantity, valuePosition } from '@/domain/decimal'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { convert, MissingRateError } from '@/domain/currency'
-import { money, parseAmount, percentChange, sub, type CurrencyCode, type Money } from '@/domain/money'
+import { isNegative, money, parseAmount, percentChange, sub, type CurrencyCode, type Money } from '@/domain/money'
 import { AUTO_PRICE_ASSET_TYPES } from '@/domain/entities'
 import type { AssetPrice, ExchangeRate, InvestmentAsset, InvestmentHolding, SavingsHolding } from '@/domain/entities'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
+// Cuentas (Etapa 8) suman al patrimonio — re-using another feature's
+// service is the established exception, see docs/DECISIONS.md "Un feature
+// puede importar el service.ts/hooks de otro, nunca sus componentes".
+import { getAccountBalancesAt } from '@/features/accounts/service'
 import { NO_PROFILE, rateValueToNumber, type ExchangeRateFormValues } from './schema'
 import type {
   InvestmentAssetFormValues,
@@ -73,9 +77,10 @@ export interface NetWorthSummary extends ValuationResult {
   displayCurrency: CurrencyCode
 }
 
-/** Valúa Ahorros + Inversiones a una fecha puntual: pide el último precio
- *  de cada activo vigente a esa fecha y llama a
- *  `domain/networth:valuateNetWorth`. Compartido por `getNetWorthSummary`
+/** Valúa Cuentas + Ahorros + Inversiones a una fecha puntual: pide el
+ *  último precio de cada activo vigente a esa fecha y llama a
+ *  `domain/networth:valuateNetWorth`. `accounts` son los saldos de las
+ *  cuentas ya abiertas a esa fecha (ver `getAccountBalancesAt`). Compartido por `getNetWorthSummary`
  *  (una sola fecha, hoy) y `getSavingsAndInvestmentsHistory` (una fecha
  *  por mes) — la única diferencia entre ambas es la fecha que se le pasa. */
 async function valueSavingsAndInvestmentsAt(
@@ -83,6 +88,7 @@ async function valueSavingsAndInvestmentsAt(
   displayCurrency: CurrencyCode,
   rates: readonly ExchangeRate[],
   profile: string | undefined,
+  accounts: readonly Money[],
   savings: readonly SavingsHolding[],
   holdings: readonly { assetId: string; quantity: number }[],
   assetById: Map<string, InvestmentAsset>,
@@ -101,6 +107,7 @@ async function valueSavingsAndInvestmentsAt(
   })
 
   return valuateNetWorth({
+    accounts,
     savings,
     positions,
     rates,
@@ -115,11 +122,12 @@ export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode)
   const displayCurrency = overrideDisplayCurrency ?? settings.displayCurrency ?? settings.baseCurrency
   const date = todayStamp()
 
-  const [savings, holdings, assets, rates] = await Promise.all([
+  const [savings, holdings, assets, rates, accountBalances] = await Promise.all([
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
     exchangeRatesRepo.listExchangeRates(),
+    getAccountBalancesAt([date]),
   ])
   const assetById = new Map(assets.map((a) => [a.id, a]))
 
@@ -128,6 +136,7 @@ export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode)
     displayCurrency,
     rates,
     settings.rateProfile,
+    accountBalances.get(date) ?? [],
     savings,
     holdings,
     assetById,
@@ -136,10 +145,53 @@ export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode)
   return { ...result, displayCurrency }
 }
 
+/**
+ * Month-over-month change of the Patrimonio total, for the Dashboard's
+ * KPI badge: last month-end vs. today. Like-for-like — only accounts
+ * already open at last month-end count on BOTH sides, so creating an
+ * account (and starting to track money that was always there) doesn't
+ * read as the patrimonio jumping. `undefined` when either total isn't a
+ * positive magnitude: a percentage across zero, or from zero, means
+ * nothing (and `percentChange` only takes non-negative amounts — an
+ * overdrawn account can make the total negative).
+ */
+export async function getNetWorthMonthChange(): Promise<number | undefined> {
+  const settings = await settingsRepo.getSettings()
+  const displayCurrency = settings.displayCurrency ?? settings.baseCurrency
+  const today = todayStamp()
+  const previousDate = monthRange(shiftMonth(currentMonthStamp(), -1)).end
+
+  const [rates, savings, holdings, assets, accountBalances] = await Promise.all([
+    exchangeRatesRepo.listExchangeRates(),
+    savingsHoldingsRepo.listSavingsHoldings(),
+    investmentsRepo.listInvestmentHoldings(),
+    investmentsRepo.listInvestmentAssets(),
+    getAccountBalancesAt([previousDate, today], { openedOnOrBefore: previousDate }),
+  ])
+  const assetById = new Map(assets.map((a) => [a.id, a]))
+
+  const [previous, current] = await Promise.all(
+    [previousDate, today].map((date) =>
+      valueSavingsAndInvestmentsAt(
+        date,
+        displayCurrency,
+        rates,
+        settings.rateProfile,
+        accountBalances.get(date) ?? [],
+        savings,
+        holdings,
+        assetById,
+      ),
+    ),
+  )
+  if (!previous || !current || isNegative(previous.total) || isNegative(current.total)) return undefined
+  return percentChange(previous.total, current.total)
+}
+
 export interface SavingsAndInvestmentsPoint {
   month: MonthStamp
   total: Money
-  byBucket: { savings: Money; investments: Money }
+  byBucket: ValuationResult['byBucket']
 }
 
 export interface SavingsAndInvestmentsHistory {
@@ -154,7 +206,8 @@ export interface SavingsAndInvestmentsHistory {
  *  de HOY de cada ahorro/posición, revaluada con el precio o tasa
  *  vigente en cada mes (ni SavingsHolding ni InvestmentHolding tienen
  *  historial propio — ver ADR "Evolución del patrimonio: cantidades de
- *  hoy, precios de cada mes" en docs/DECISIONS.md). Deliberadamente
+ *  hoy, precios de cada mes" en docs/DECISIONS.md). Las cuentas, en
+ *  cambio, sí tienen historial: usan su saldo real a esa fecha. Deliberadamente
  *  independiente de esa función de Reportes (no se comparte código):
  *  dos consumidores distintos del mismo dominio, con distinto alcance. */
 export async function getSavingsAndInvestmentsHistory(monthsBack = 6): Promise<SavingsAndInvestmentsHistory> {
@@ -162,11 +215,15 @@ export async function getSavingsAndInvestmentsHistory(monthsBack = 6): Promise<S
   const displayCurrency = settings.displayCurrency ?? settings.baseCurrency
   const currentMonth = currentMonthStamp()
 
-  const [rates, savings, holdings, assets] = await Promise.all([
+  const months = Array.from({ length: monthsBack }, (_, index) => shiftMonth(currentMonth, index - monthsBack + 1))
+  const asOfDates = months.map((month) => (month === currentMonth ? todayStamp() : monthRange(month).end))
+
+  const [rates, savings, holdings, assets, accountBalances] = await Promise.all([
     exchangeRatesRepo.listExchangeRates(),
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
+    getAccountBalancesAt(asOfDates),
   ])
   const assetById = new Map(assets.map((a) => [a.id, a]))
 
@@ -174,15 +231,15 @@ export async function getSavingsAndInvestmentsHistory(monthsBack = 6): Promise<S
   let missingRateCount = 0
   let missingPriceCount = 0
 
-  for (let i = monthsBack - 1; i >= 0; i--) {
-    const month = shiftMonth(currentMonth, -i)
-    const asOfDate = i === 0 ? todayStamp() : monthRange(month).end
+  for (const [index, month] of months.entries()) {
+    const asOfDate = asOfDates[index]!
 
     const result = await valueSavingsAndInvestmentsAt(
       asOfDate,
       displayCurrency,
       rates,
       settings.rateProfile,
+      accountBalances.get(asOfDate) ?? [],
       savings,
       holdings,
       assetById,
@@ -193,7 +250,7 @@ export async function getSavingsAndInvestmentsHistory(monthsBack = 6): Promise<S
     points.push({
       month,
       total: result.total,
-      byBucket: { savings: result.byBucket.savings, investments: result.byBucket.investments },
+      byBucket: result.byBucket,
     })
   }
 

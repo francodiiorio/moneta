@@ -13,6 +13,10 @@ import type { ExchangeRate, InvestmentAsset, SavingsHolding } from '@/domain/ent
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { add, money, type CurrencyCode, type Money, zero } from '@/domain/money'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
+// Cuentas (Etapa 8) suman al patrimonio — re-using another feature's
+// service is the established exception, see docs/DECISIONS.md "Un feature
+// puede importar el service.ts/hooks de otro, nunca sus componentes".
+import { getAccountBalancesAt } from '@/features/accounts/service'
 
 export interface MonthSummary {
   expense: Money
@@ -122,20 +126,23 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
 }
 
 /**
- * Values Ahorros + Inversiones (current amount/quantity — neither has any
- * historical record of its own, see docs/DECISIONS.md "Evolución del
- * patrimonio: cantidades de hoy, precios de cada mes") revalued at
- * `asOfDate`'s own exchange rates and asset prices, which DO have real
- * history. `savings`/`holdings`/`assetById`/`rates` are fetched once by
- * the caller (they don't vary per point) — only the asset price lookup
- * is genuinely date-dependent. No Cuentas bucket — ver ADR
- * "Simplificación: se elimina Cuentas, Ingresos y Transferencias".
+ * Values Cuentas + Ahorros + Inversiones. Ahorros/Inversiones use their
+ * current amount/quantity (neither has any historical record of its own,
+ * see docs/DECISIONS.md "Evolución del patrimonio: cantidades de hoy,
+ * precios de cada mes") revalued at `asOfDate`'s own exchange rates and
+ * asset prices, which DO have real history. Cuentas do have history:
+ * `accounts` is each open account's real balance at `asOfDate` (see
+ * features/accounts/service.ts:getAccountBalancesAt).
+ * `savings`/`holdings`/`assetById`/`rates` are fetched once by the caller
+ * (they don't vary per point) — only the asset price lookup is genuinely
+ * date-dependent.
  */
 async function netWorthAsOf(
   asOfDate: DateStamp,
   baseCurrency: CurrencyCode,
   rates: readonly ExchangeRate[],
   profile: string | undefined,
+  accounts: readonly Money[],
   savings: readonly SavingsHolding[],
   holdings: readonly { assetId: string; quantity: number }[],
   assetById: Map<string, InvestmentAsset>,
@@ -160,6 +167,7 @@ async function netWorthAsOf(
   })
 
   const result = valuateNetWorth({
+    accounts,
     savings,
     positions,
     rates,
@@ -206,14 +214,18 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
   let missingRateCount = 0
   let missingPriceCount = 0
 
-  for (let i = monthsBack - 1; i >= 0; i--) {
-    const month = shiftMonth(currentMonth, -i)
-    const asOfDate = i === 0 ? todayStamp() : monthRange(month).end
+  const months = Array.from({ length: monthsBack }, (_, index) => shiftMonth(currentMonth, index - monthsBack + 1))
+  const asOfDates = months.map((month) => (month === currentMonth ? todayStamp() : monthRange(month).end))
+  const accountBalances = await getAccountBalancesAt(asOfDates)
+
+  for (const [index, month] of months.entries()) {
+    const asOfDate = asOfDates[index]!
     const result = await netWorthAsOf(
       asOfDate,
       settings.baseCurrency,
       rates,
       settings.rateProfile,
+      accountBalances.get(asOfDate) ?? [],
       savings,
       holdings,
       assetById,
@@ -271,11 +283,11 @@ export interface ReportCategoryRow {
 export interface ReportNetWorth {
   asOfDate: DateStamp
   /** Same holdings, valued in each currency — the informe always shows
-   *  ahorro e inversiones in both pesos and dólares, regardless of
+   *  the patrimonio (cuentas, ahorros, inversiones) in both pesos and dólares, regardless of
    *  Settings.baseCurrency (that setting only governs the Gastos side of
    *  the report). */
-  ars: { total: Money; byBucket: { savings: Money; investments: Money } }
-  usd: { total: Money; byBucket: { savings: Money; investments: Money } }
+  ars: { total: Money; byBucket: ValuationResult['byBucket'] }
+  usd: { total: Money; byBucket: ValuationResult['byBucket'] }
   missingPriceCount: number
 }
 
@@ -289,14 +301,14 @@ export interface MonthlyReport {
   generatedOn: DateStamp
   summary: MonthSummary
   categories: ReportCategoryRow[]
-  /** Absent when nothing is tracked at all (no savings or investment
-   *  positions) — the report then has no net worth section. */
+  /** Absent when nothing is tracked at all (no open accounts, savings or
+   *  investment positions) — the report then has no net worth section. */
   netWorth?: ReportNetWorth
   missingRateCount: number
 }
 
 /** Composes a "photo" of a single month — gastos, gasto por categoría, y
- *  (cuando hay algo que valuar) una foto del ahorro e inversiones — para el
+ *  (cuando hay algo que valuar) una foto del patrimonio — para el
  *  informe mensual imprimible. Pure composition over already-tested functions; no
  *  new domain logic. Accepted cost: getMonthSummary and getExpenseByCategory
  *  each independently re-read settings/rates/the month's expenses, so this
@@ -309,7 +321,7 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   // DateStamps compare lexicographically — never value into the future.
   const coverageEnd = monthEnd > today ? today : monthEnd
 
-  const [settings, summary, expenses, rates, savings, holdings, assets] = await Promise.all([
+  const [settings, summary, expenses, rates, savings, holdings, assets, accountBalances] = await Promise.all([
     settingsRepo.getSettings(),
     getMonthSummary(month),
     getExpenseByCategory(month),
@@ -317,17 +329,19 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
+    getAccountBalancesAt([coverageEnd]),
   ])
+  const accounts = accountBalances.get(coverageEnd) ?? []
   const assetById = new Map(assets.map((a) => [a.id, a]))
   const { baseCurrency, rateProfile } = settings
 
-  // Ahorro e inversiones always reports in both ARS and USD (see
+  // The patrimonio always reports in both ARS and USD (see
   // ReportNetWorth) — same holdings/prices, just valued twice.
   const [valuationArs, valuationUsd] = await Promise.all([
-    netWorthAsOf(coverageEnd, 'ARS', rates, rateProfile, savings, holdings, assetById),
-    netWorthAsOf(coverageEnd, 'USD', rates, rateProfile, savings, holdings, assetById),
+    netWorthAsOf(coverageEnd, 'ARS', rates, rateProfile, accounts, savings, holdings, assetById),
+    netWorthAsOf(coverageEnd, 'USD', rates, rateProfile, accounts, savings, holdings, assetById),
   ])
-  const tracksNetWorth = savings.length > 0 || holdings.length > 0
+  const tracksNetWorth = accounts.length > 0 || savings.length > 0 || holdings.length > 0
 
   const totalExpense = summary.expense.amount
   const categories: ReportCategoryRow[] = expenses.items.map((item) => ({

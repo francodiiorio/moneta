@@ -31,7 +31,7 @@ afterEach(async () => {
 })
 
 async function setup() {
-  const category = await createCategory({ name: 'Alquiler' })
+  const category = await createCategory({ kind: 'expense', name: 'Alquiler' })
   return { category }
 }
 
@@ -266,7 +266,7 @@ describe('updateRecurringPlanFromForm', () => {
 describe('updateInstallmentPlanFromForm', () => {
   it('rewrites still-projected cuotas in place, leaving confirmed ones untouched', async () => {
     const { category } = await setup()
-    const otherCategory = await createCategory({ name: 'Tecnología' })
+    const otherCategory = await createCategory({ kind: 'expense', name: 'Tecnología' })
     const plan = await createInstallmentPlan(
       {
         description: 'Notebook',
@@ -476,6 +476,9 @@ describe('materializeDue after a backup merge', () => {
       investmentHoldings: [],
       assetPrices: [],
       investmentLots: [],
+      accounts: [],
+      incomes: [],
+      accountAdjustments: [],
     })
 
     // Without the watermark repair in mergeAllTables, lastMaterializedDate

@@ -8,7 +8,7 @@ afterEach(async () => {
 })
 
 async function setup() {
-  const category = await createCategory({ name: 'Compras' })
+  const category = await createCategory({ kind: 'expense', name: 'Compras' })
   return { category }
 }
 

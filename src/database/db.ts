@@ -1,10 +1,13 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type {
+  Account,
+  AccountAdjustment,
   AssetPrice,
   Budget,
   Category,
   ExchangeRate,
   Expense,
+  Income,
   InstallmentPlan,
   InvestmentAsset,
   InvestmentHolding,
@@ -65,6 +68,9 @@ export class MonetaDatabase extends Dexie {
   investmentHoldings!: EntityTable<InvestmentHolding, 'id'>
   assetPrices!: EntityTable<AssetPrice, 'id'>
   investmentLots!: EntityTable<InvestmentLot, 'id'>
+  accounts!: EntityTable<Account, 'id'>
+  incomes!: EntityTable<Income, 'id'>
+  accountAdjustments!: EntityTable<AccountAdjustment, 'id'>
 
   constructor(name = 'moneta') {
     super(name)
@@ -183,6 +189,28 @@ export class MonetaDatabase extends Dexie {
         if (incomeCategoryIds.length > 0) {
           await tx.table('categories').bulkDelete(incomeCategoryIds)
         }
+      })
+    // Etapa 8: vuelven Cuentas e Ingresos, como registros planos (sin
+    // partida doble) — ver ADR "Se reintroducen Cuentas, Ingresos y
+    // Transferencias" en docs/DECISIONS.md. `accounts` se recrea vacía (la
+    // de la versión 1 se borró en la 4, con sus datos). Categorías
+    // recuperan `kind`: toda categoría existente es de gasto, porque la
+    // versión 4 ya borró las de ingreso.
+    this.version(5)
+      .stores({
+        accounts: 'id, isArchived, order',
+        incomes: 'id, date, accountId, categoryId',
+        accountAdjustments: 'id, accountId, date',
+        categories: 'id, name, kind, parentId, isArchived, order',
+        expenses: 'id, date, categoryId, status, sourcePlanId, accountId, [status+date]',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<{ kind?: string }>('categories')
+          .toCollection()
+          .modify((category) => {
+            if (category.kind === undefined) category.kind = 'expense'
+          })
       })
   }
 }

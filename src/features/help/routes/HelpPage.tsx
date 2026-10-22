@@ -23,10 +23,12 @@ interface GuideSection {
 const SECTIONS: GuideSection[] = [
   {
     icon: ArrowLeftRight,
-    title: '1. Cargá gastos',
+    title: '1. Cargá gastos e ingresos',
     steps: [
-      'Desde "Movimientos" → "Nuevo gasto", indicá la descripción, la categoría, el monto y la moneda.',
-      'Podés crear una categoría nueva al vuelo mientras estás cargando un gasto.',
+      'En "Cuentas" creá tus cuentas (banco, efectivo, billetera virtual) con su moneda y el saldo que tenían a una fecha. Desde ahí, Moneta calcula el saldo solo.',
+      'Desde "Movimientos" → "Nuevo movimiento", elegí Gasto o Ingreso e indicá la descripción, el monto, la categoría y la cuenta. Un ingreso siempre entra a una cuenta; un gasto con débito sale de una, y uno con tarjeta de crédito se carga sin cuenta.',
+      'Si el saldo no coincide con el del banco, usá "Ajustar saldo" en la cuenta: se guarda la diferencia como un ajuste visible en Movimientos, sin tocar nada de lo cargado.',
+      'Podés crear una categoría nueva al vuelo mientras estás cargando un movimiento.',
     ],
     link: { to: '/movimientos', label: 'Ir a Movimientos' },
   },
@@ -60,20 +62,20 @@ const SECTIONS: GuideSection[] = [
     icon: Landmark,
     title: '5. Registrá tus ahorros e inversiones',
     steps: [
-      'En "Ahorro e Inversiones" → pestaña Ahorros, cargá plata que tenés guardada — efectivo, una caja de ahorro que no conciliás.',
+      'En "Patrimonio" → pestaña Ahorros, cargá plata quieta que no tiene movimientos — efectivo guardado, un plazo fijo. Si algo tiene movimientos seguido, mejor crealo como cuenta (no lo cargues en los dos lados).',
       'En la pestaña Inversiones, primero creá el activo (ej. SPY, un CEDEAR, Bitcoin) y después una posición con la cantidad que tenés. Cargá el precio a mano con "Cargar precio" — cada carga queda en el historial, nunca pisa la anterior. Para cripto, podés activar "Actualizar precio automáticamente" con el id de CoinGecko.',
       'En la pestaña Cotizaciones elegís qué referencia de dólar usar para valuar (oficial, blue, MEP, CCL, etc.) y podés prender la actualización automática — trae el dólar y el euro solos cada tanto, o los actualizás vos con "Actualizar ahora". Apagada por defecto: sin activarla, la app no consulta nada por internet.',
-      'La pestaña Resumen consolida ahorros + inversiones en la moneda que elijas (ARS, USD o EUR), sin modificar los importes originales.',
+      'La pestaña Resumen consolida cuentas + ahorros + inversiones en la moneda que elijas (ARS, USD o EUR), sin modificar los importes originales.',
       'Si falta una tasa de cambio o un precio para convertir algo, ese ítem queda afuera del total y aparece un aviso — nunca se inventa una conversión.',
     ],
-    link: { to: '/patrimonio', label: 'Ir a Ahorro e Inversiones' },
+    link: { to: '/patrimonio', label: 'Ir a Patrimonio' },
   },
   {
     icon: BarChart3,
     title: '6. Mirá tus reportes',
     steps: [
-      'El Dashboard resume el mes en curso: gastos y ahorro e inversiones, de un vistazo.',
-      '"Reportes" tiene el detalle: gasto por categoría y la evolución de tu patrimonio (ahorros e inversiones, convertidos a tu moneda base) en los últimos 6 meses.',
+      'El Dashboard resume el mes en curso: gastos y patrimonio, de un vistazo.',
+      '"Reportes" tiene el detalle: gasto por categoría y la evolución de tu patrimonio (cuentas, ahorros e inversiones, convertidos a tu moneda base) en los últimos 6 meses.',
     ],
     link: { to: '/reportes', label: 'Ir a Reportes' },
   },

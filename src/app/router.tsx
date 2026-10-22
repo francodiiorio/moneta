@@ -34,6 +34,13 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: 'cuentas',
+        lazy: async () => {
+          const { AccountsPage } = await import('@/features/accounts/routes/AccountsPage')
+          return { Component: AccountsPage }
+        },
+      },
+      {
         path: 'presupuestos',
         lazy: async () => {
           const { BudgetsPage } = await import('@/features/budgets/routes/BudgetsPage')
@@ -83,7 +90,7 @@ export const router = createBrowserRouter([
         },
       },
       {
-        // Absorbed into Ahorro e Inversiones → Cotizaciones (Etapa 6C) —
+        // Absorbed into Patrimonio → Cotizaciones (Etapa 6C) —
         // old bookmarks/links to this URL still land somewhere useful.
         path: 'ajustes/tasas',
         Component: () => <Navigate to="/patrimonio" replace />,

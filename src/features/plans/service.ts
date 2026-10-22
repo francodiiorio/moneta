@@ -364,4 +364,4 @@ export async function removeInstallmentPlan(id: string): Promise<void> {
   await installmentPlansRepo.deleteInstallmentPlan(id)
 }
 
-export const listExpenseCategories = categoriesRepo.listActiveCategories
+export const listExpenseCategories = () => categoriesRepo.listActiveCategories('expense')

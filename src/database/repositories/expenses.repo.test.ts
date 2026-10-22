@@ -18,7 +18,7 @@ afterEach(async () => {
 })
 
 async function setup() {
-  return createCategory({ name: 'Comida' })
+  return createCategory({ kind: 'expense', name: 'Comida' })
 }
 
 function input(categoryId: string, overrides: Partial<ExpenseInput> = {}): ExpenseInput {
@@ -184,5 +184,56 @@ describe('confirmDueProjected', () => {
     await confirmDueProjected('2026-08-15')
     const second = await confirmDueProjected('2026-08-15')
     expect(second).toBe(0)
+  })
+})
+
+describe('saveExpense — debit from an account (Etapa 8)', () => {
+  afterEach(async () => {
+    await db.accounts.clear()
+  })
+
+  async function account() {
+    const { createAccount } = await import('./accounts.repo')
+    return createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-08-01' })
+  }
+
+  it('stores the accountId', async () => {
+    const category = await setup()
+    const { id: accountId } = await account()
+    const id = await saveExpense(input(category.id, { accountId }))
+    expect((await db.expenses.get(id))?.accountId).toBe(accountId)
+  })
+
+  it('rejects a currency other than the account’s', async () => {
+    const category = await setup()
+    const { id: accountId } = await account()
+    await expect(saveExpense(input(category.id, { accountId, currency: 'USD' }))).rejects.toThrow(/es en ARS/)
+    expect(await db.expenses.count()).toBe(0)
+  })
+
+  it('rejects a date before the account opening date', async () => {
+    const category = await setup()
+    const { id: accountId } = await account()
+    await expect(saveExpense(input(category.id, { accountId, date: '2026-07-31' }))).rejects.toThrow(/saldo inicial/)
+  })
+
+  it('editing to drop the account removes accountId', async () => {
+    const category = await setup()
+    const { id: accountId } = await account()
+    const id = await saveExpense(input(category.id, { accountId }))
+    await saveExpense(input(category.id), id)
+    expect((await db.expenses.get(id))?.accountId).toBeUndefined()
+  })
+})
+
+describe('saveExpense — category kind', () => {
+  it('rejects an income category (backup import would refuse it later)', async () => {
+    const incomeCategory = await createCategory({ kind: 'income', name: 'Sueldo' })
+    await expect(saveExpense(input(incomeCategory.id))).rejects.toThrow(/no es una categoría de gasto/)
+    expect(await db.expenses.count()).toBe(0)
+  })
+
+  it('rejects a category that does not exist', async () => {
+    await expect(saveExpense(input('nope'))).rejects.toThrow(/Categoría no encontrada/)
   })
 })

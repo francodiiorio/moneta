@@ -5,6 +5,7 @@ import {
   CalendarSync,
   BarChart3,
   Landmark,
+  Wallet,
   Settings,
   type LucideIcon,
 } from 'lucide-react'
@@ -18,9 +19,10 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/movimientos', label: 'Movimientos', icon: ArrowLeftRight },
+  { to: '/cuentas', label: 'Cuentas', icon: Wallet },
   { to: '/presupuestos', label: 'Presupuestos', icon: PiggyBank },
   { to: '/planes', label: 'Planes', icon: CalendarSync },
-  { to: '/patrimonio', label: 'Ahorro e Inversiones', icon: Landmark },
+  { to: '/patrimonio', label: 'Patrimonio', icon: Landmark },
   { to: '/reportes', label: 'Reportes', icon: BarChart3 },
   { to: '/ajustes', label: 'Ajustes', icon: Settings },
 ]

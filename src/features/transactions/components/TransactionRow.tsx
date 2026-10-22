@@ -1,4 +1,4 @@
-import { MoreVertical, Receipt } from 'lucide-react'
+import { ArrowDownLeft, MoreVertical, Receipt, Scale } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,14 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
     <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
       {hasCategoryIdentity ? (
         <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} />
+      ) : item.kind === 'adjustment' ? (
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <Scale className="size-4.5" />
+        </div>
+      ) : item.kind === 'income' ? (
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-positive/10 text-positive">
+          <ArrowDownLeft className="size-4.5" />
+        </div>
       ) : (
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-negative/10 text-negative">
           <Receipt className="size-4.5" />
@@ -40,12 +48,14 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
             </Badge>
           )}
         </div>
-        <p className="truncate text-xs text-muted-foreground">{item.categoryLabel ?? '—'}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {[item.categoryLabel ?? '—', item.accountLabel].filter(Boolean).join(' · ')}
+        </p>
       </div>
 
       <div className="shrink-0 text-right">
         <p className="text-sm font-semibold">
-          <MoneyText value={item.amount} signColor />
+          <MoneyText value={item.amount} signColor={item.kind !== 'adjustment'} />
         </p>
         <p className="text-xs text-muted-foreground">{formatShortDate(item.date)}</p>
       </div>
@@ -57,7 +67,7 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={onEdit}>Editar</DropdownMenuItem>
+          {item.kind !== 'adjustment' && <DropdownMenuItem onSelect={onEdit}>Editar</DropdownMenuItem>}
           <DropdownMenuItem variant="destructive" onSelect={onDelete}>
             Eliminar
           </DropdownMenuItem>

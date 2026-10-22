@@ -3,6 +3,8 @@ import { ChevronLeft, Plus, Tag } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { categoryKindSchema } from '@/domain/entities'
 import { useCategories } from '../hooks/useCategories'
 import { useCategoriesUiStore } from '../store'
 import { CategoryFormDialog } from '../components/CategoryFormDialog'
@@ -10,9 +12,11 @@ import { CategoryTree } from '../components/CategoryTree'
 
 export function CategoriesPage() {
   const categories = useCategories()
-  const { dialogOpen, editingCategoryId, openCreateDialog, openEditDialog, closeDialog } = useCategoriesUiStore()
+  const { tab, setTab, dialogOpen, editingCategoryId, openCreateDialog, openEditDialog, closeDialog } =
+    useCategoriesUiStore()
 
   const editingCategory = categories?.find((c) => c.id === editingCategoryId)
+  const hasAnyForTab = categories?.some((c) => c.kind === tab)
 
   return (
     <div className="flex flex-col gap-4">
@@ -23,7 +27,7 @@ export function CategoriesPage() {
 
       <PageHeader
         title="Categorías"
-        description="Organizá tus gastos."
+        description="Organizá tus gastos e ingresos."
         actions={
           <Button onClick={openCreateDialog}>
             <Plus className="size-4" />
@@ -32,22 +36,36 @@ export function CategoriesPage() {
         }
       />
 
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          const parsed = categoryKindSchema.safeParse(v)
+          if (parsed.success) setTab(parsed.data)
+        }}
+      >
+        <TabsList>
+          <TabsTrigger value="expense">Gastos</TabsTrigger>
+          <TabsTrigger value="income">Ingresos</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {categories === undefined ? (
         <div className="h-40 animate-pulse rounded-xl bg-muted" />
-      ) : categories.length === 0 ? (
+      ) : !hasAnyForTab ? (
         <EmptyState
           icon={Tag}
           title="No hay categorías todavía"
-          description="Creá una para poder clasificar tus gastos."
+          description="Creá una para poder clasificar tus movimientos."
           action={<Button onClick={openCreateDialog}>Nueva categoría</Button>}
         />
       ) : (
-        <CategoryTree categories={categories} onEdit={openEditDialog} />
+        <CategoryTree kind={tab} categories={categories} onEdit={openEditDialog} />
       )}
 
       <CategoryFormDialog
         open={dialogOpen}
         category={editingCategory}
+        defaultKind={tab}
         onOpenChange={(open) => (open ? undefined : closeDialog())}
       />
     </div>

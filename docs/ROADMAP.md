@@ -199,6 +199,32 @@ por qué, y qué se evaluó y se descartó).
   (ver el ADR para el detalle feature por feature).
 - Ver `docs/DATA_MODEL.md` para el shape de `Expense` y el detalle de la migración v4.
 
+## Etapa 8 — Cuentas, Ingresos, Transferencias y tarjetas de crédito (en curso)
+
+Revierte en parte la Etapa 7, sin volver a la partida doble: todo son registros planos y
+el saldo de una cuenta es una función pura de dominio. Ver ADR "Se reintroducen Cuentas,
+Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
+`docs/DECISIONS.md`. Una versión de Dexie y de backup por fase.
+
+1. **Cuentas + Ingresos + Ajustes de saldo** (en curso) — `Account` (moneda fija, saldo
+   inicial a una fecha), `Income` (con cuenta y categoría de ingreso: vuelve
+   `Category.kind`), `AccountAdjustment`, `Expense.accountId` opcional (débito). Página
+   `/cuentas` con saldos; Movimientos carga gastos e ingresos; las cuentas vuelven a
+   sumar al patrimonio (Dashboard, Ahorro e Inversiones → "Patrimonio", Reportes).
+2. **Transferencias** — entre cuentas, incluidas las de distinta moneda (se guardan los
+   dos montos reales).
+3. **Cuenta de origen en compras de inversión** — `InvestmentLot.sourceAccountId`
+   opcional; la compra baja el saldo sin ser un gasto.
+4. **Tarjetas + resúmenes** — `CreditCard`, `CardStatement`, `Expense.cardId` +
+   `statementPeriod` (también en cuotas y recurrentes), calendario de cierres con
+   override por mes, vista `/tarjetas`, aviso de cierre/vencimiento en el Dashboard.
+5. **Pago de resumen desde cuentas** — por moneda, con la cotización usada si la cuenta
+   es de otra moneda. Sólo pago total.
+6. **CSV a cuenta o tarjeta + conciliación** contra el total real del banco.
+
+Pendiente de definir dentro de la etapa: "Ingresos" y "Balance neto" en Reportes y en
+el informe mensual.
+
 ## Backlog / no priorizado
 
 - ~~Code-splitting por ruta~~ (hecho) — `src/app/router.tsx` usa `lazy` de React Router

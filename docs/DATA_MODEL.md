@@ -17,8 +17,12 @@ ARS/USD). `$10,50` es `1050`. Ver "Reglas financieras" en `CLAUDE.md`.
 
 ### Category
 
-Un nivel de anidamiento (`parentId`). No tiene `kind` — Moneta sólo trackea gastos, así
-que no hace falta distinguir tipos de categoría.
+Un nivel de anidamiento (`parentId`). `kind: 'expense' | 'income'` — se eliminó en la
+Etapa 7 y volvió en la Etapa 8 junto con los ingresos. Un gasto sólo usa categorías
+`expense`, un ingreso sólo `income` (invariante de `incomes.repo.ts` y de la validación
+del backup); una subcategoría comparte el `kind` de su padre. Las categorías de ingreso
+de arranque ("Sueldo", "Otros ingresos") se siembran una sola vez si no hay ninguna
+(`seedIncomeDefaultsIfNone`, encadenado después de `seedDefaultsIfEmpty`).
 
 ### Expense
 
@@ -36,6 +40,7 @@ partida doble no tenía sentido, así que se reemplazó por esta entidad única.
   notes?, tags?,
   status: 'confirmed' | 'projected',
   sourcePlanId?, occurrenceIndex?,
+  accountId?,          // Etapa 8: sólo un gasto con débito
   createdAt, updatedAt,
 }
 ```
@@ -48,6 +53,50 @@ partida doble no tenía sentido, así que se reemplazó por esta entidad única.
   (`'projected'`) — sólo los `'confirmed'` cuentan en reportes y presupuestos.
 - `sourcePlanId` + `occurrenceIndex` linkean un gasto materializado al `RecurringPlan` o
   `InstallmentPlan` que lo generó.
+- `accountId` (Etapa 8) es opcional: un gasto con débito sale de esa cuenta y baja su
+  saldo; uno con tarjeta de crédito o sin especificar no toca ningún saldo. Si está, el
+  gasto tiene que estar en la moneda de la cuenta y no puede ser anterior a su
+  `openingDate`.
+
+### Account / Income / AccountAdjustment (Etapa 8)
+
+Vuelven como **registros planos, sin partida doble** — ver ADR "Se reintroducen Cuentas,
+Ingresos y Transferencias" en `docs/DECISIONS.md`.
+
+```ts
+Account {
+  id, name, type: 'bank' | 'cash' | 'wallet' | 'broker' | 'other',
+  currency,                 // fija: todo movimiento de la cuenta está en esta moneda
+  openingBalance,           // Minor con signo (puede ser un descubierto)
+  openingDate,              // el saldo inicial es al empezar este día
+  isArchived, order, notes?, createdAt, updatedAt,
+}
+Income {
+  id, date, amount /* > 0 */, currency, accountId /* obligatorio */, categoryId /* kind income */,
+  description, notes?, createdAt, updatedAt,
+}
+AccountAdjustment {
+  id, accountId, date, amount /* con signo, ≠ 0 */, currency, description?, createdAt, updatedAt,
+}
+```
+
+- **Saldo** = `openingBalance` + ingresos − gastos con débito (`confirmed`) ± ajustes, con
+  fecha entre `openingDate` y la fecha pedida. Una sola función pura:
+  `domain/accounts:accountBalanceAt`. Antes de `openingDate` el saldo es `undefined` (la
+  cuenta no existía), no cero — la evolución del patrimonio la deja afuera de esos meses.
+- **Invariantes** (repositories + `validateLedgerIntegrity` del import, misma regla en
+  `domain/accounts:movementAccountProblem`): todo movimiento está en la moneda de su
+  cuenta y no es anterior a su `openingDate`. Editar una cuenta no puede cambiarle la
+  moneda si ya tiene movimientos, ni mover `openingDate` después del primero.
+- **Borrar** una cuenta sólo se puede si no tiene movimientos; si tiene, se archiva. Una
+  cuenta archivada sigue sumando al patrimonio (archivar la saca de los selectores, no
+  hace desaparecer la plata).
+- **Ajustar saldo**: la UI pide el saldo real del banco a una fecha y guarda la diferencia
+  contra el calculado como un `AccountAdjustment` — nunca pisa un saldo. Los ajustes se
+  listan en Movimientos (se pueden borrar, no editar).
+- **Patrimonio** = Cuentas + Ahorros + Inversiones (`valuateNetWorth` recupera el bucket
+  `accounts`). A diferencia de ahorros e inversiones, las cuentas tienen historial real: la
+  evolución usa el saldo de cada cuenta a cada fin de mes.
 
 **Editar un gasto reemplaza el registro entero, no lo diffea.** `saveExpense()`
 (`src/database/repositories/expenses.repo.ts`) hace un `put()` completo con los campos
@@ -116,8 +165,10 @@ mecanismo especial).
 
 ### SavingsHolding
 
-Ahorros que no pasan por ningún registro de movimientos: plata que el usuario tiene pero
-no carga como gasto (efectivo, una caja de ahorro que no concilia). `amount` es el
+Ahorros que no pasan por ningún registro de movimientos: plata quieta de monto declarado
+(efectivo en casa, un plazo fijo que no se toca). Desde la Etapa 8 conviven con
+`Account`: una misma plata vive en un solo lado — si tiene movimientos frecuentes, es una
+cuenta. `amount` es el
 importe completo en `currency` — no hay concepto de historial de movimientos para un
 ahorro, es un valor que se edita directamente.
 
@@ -250,6 +301,20 @@ categories:        id, name, parentId, isArchived, order   (pierde el índice `k
 expenses:          id, date, categoryId, status, sourcePlanId, [status+date]
 ```
 
+**Versión 5** (Etapa 8 — vuelven Cuentas e Ingresos, sin partida doble. `accounts`,
+borrada en la versión 4 con sus datos, se recrea vacía; `incomes` y `accountAdjustments`
+son tablas nuevas. `categories` recupera el índice `kind` y su `.upgrade()` le pone
+`kind: 'expense'` a toda categoría existente — la versión 4 ya había borrado las de
+ingreso. `expenses` suma el índice `accountId`):
+
+```
+accounts:            id, isArchived, order
+incomes:             id, date, accountId, categoryId
+accountAdjustments:  id, accountId, date
+categories:          id, name, kind, parentId, isArchived, order
+expenses:            id, date, categoryId, status, sourcePlanId, accountId, [status+date]
+```
+
 Dexie omite del índice las claves `undefined`, así que `[status+date]` sólo contiene
 gastos con ambos campos seteados (siempre, en la práctica) y `sourcePlanId` sólo aquellos
 materializados por un plan — eso es lo que permite `db.expenses.where('sourcePlanId')...`
@@ -284,7 +349,7 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
 ```jsonc
 {
   "format": "moneta-backup",
-  "version": 4,
+  "version": 5,
   "exportedAt": "2026-08-23T14:03:11.000Z",
   "app": { "name": "moneta", "version": "0.0.0" },
   "checksum": "sha256 hex sobre `data` canonicalizado",
@@ -293,7 +358,8 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
     "recurringPlans": [], "installmentPlans": [], "budgets": [],
     "exchangeRates": [], "settings": {},
     "savingsHoldings": [], "investmentAssets": [], "investmentHoldings": [],
-    "assetPrices": [], "investmentLots": []
+    "assetPrices": [], "investmentLots": [],
+    "accounts": [], "incomes": [], "accountAdjustments": []
   }
 }
 ```
@@ -312,7 +378,12 @@ Reglas (ver `src/features/backups/`):
   normal de la app. La v4 (simplificación) migra un v3 igual que el `.upgrade()` de Dexie
   de la versión 4: reconstruye `expenses` a partir de las `Transaction`s de gasto,
   descarta cuentas/ingresos/transferencias, y filtra las categorías de ingreso
-  (`migrations/v3_to_v4.ts`).
+  (`migrations/v3_to_v4.ts`). La v5 (Etapa 8) migra un v4 de forma puramente aditiva: toda
+  categoría pasa a `kind: 'expense'` y `accounts`/`incomes`/`accountAdjustments` arrancan
+  vacíos (`migrations/v4_to_v5.ts`). Como `Category.kind` vuelve como campo
+  **obligatorio**, la forma de categoría de la v4 (sin `kind`) se congeló en
+  `schemas/legacy.ts` (`legacyCategoryV4Schema`) para que un `.finance` v4 real siga
+  validando igual.
 - Como una migración vieja (`schemas/v1.ts`, `v2.ts`, `v3.ts`) tiene que seguir validando
   un archivo `.finance` exactamente como lo hacía cuando esa versión era la última, esos
   schemas **no** pueden depender de los tipos de dominio actuales una vez que el dominio
@@ -330,9 +401,11 @@ Reglas (ver `src/features/backups/`):
 - `migrateToLatest()` corre la cadena hasta la versión más reciente y falla explícito si
   el archivo es de una versión más nueva que la app instalada (mensaje claro, no un
   crash).
-- Antes de escribir nada, el import corre `validateLedgerIntegrity()` sobre **todos**
-  los gastos del archivo — monto positivo y categoría no vacía, ya migrado a la última
-  versión. Sin partida doble no hay más invariante que verificar. Un backup corrupto o
+- Antes de escribir nada, el import corre `validateLedgerIntegrity()` sobre el archivo ya
+  migrado a la última versión: gastos e ingresos con monto positivo y categoría del tipo
+  correcto, ajustes distintos de cero, y todo movimiento de una cuenta (ingreso, gasto
+  con débito, ajuste) apuntando a una cuenta del archivo que lo acepte (misma moneda, no
+  antes de su `openingDate`). Un backup corrupto o
   editado a mano queda rechazado sin tocar la base actual.
 - El checksum se recalcula y se compara: si no coincide, se avisa pero no se bloquea el
   import (podría ser una edición manual legítima).

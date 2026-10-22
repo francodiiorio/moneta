@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import { ChevronLeft, ChevronRight, Plus, Receipt, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
@@ -7,7 +7,15 @@ import { es } from 'date-fns/locale'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,12 +29,18 @@ import {
 import { fromDateStamp, formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { useTransactions } from '../hooks/useTransactions'
 import { useAllCategories } from '../hooks/useAllCategories'
+import { useAccounts } from '../hooks/useAccounts'
 import { useTransactionsUiStore } from '../store'
 import { TransactionFormDialog } from '../components/TransactionFormDialog'
 import { TransactionRow } from '../components/TransactionRow'
-import { removeTransaction, type TransactionListItem } from '../service'
+import { isEditableTransaction, removeTransaction, type TransactionListItem } from '../service'
 
 const ALL = '__all__'
+
+const CATEGORY_GROUPS = [
+  { kind: 'expense', label: 'Gastos' },
+  { kind: 'income', label: 'Ingresos' },
+] as const
 
 function groupByDate(items: TransactionListItem[]): [string, TransactionListItem[]][] {
   const groups = new Map<string, TransactionListItem[]>()
@@ -46,12 +60,15 @@ function dateLabel(date: string): string {
 export function TransactionsPage() {
   const transactions = useTransactions()
   const categories = useAllCategories()
+  const accounts = useAccounts()
 
   const {
     month,
     categoryFilter,
+    accountFilter,
     setMonth,
     setCategoryFilter,
+    setAccountFilter,
     dialogOpen,
     editingTransactionId,
     openCreateDialog,
@@ -59,20 +76,36 @@ export function TransactionsPage() {
     closeDialog,
   } = useTransactionsUiStore()
 
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<TransactionListItem | null>(null)
 
-  const editingItem = transactions?.find((t) => t.id === editingTransactionId)
+  // "Ver movimientos" from Cuentas links here with ?cuenta=<id>: show only
+  // that account, clearing any category filter left over from before (it
+  // could otherwise hide everything), then drop the param so the filter
+  // stays a normal, editable filter.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const accountParam = searchParams.get('cuenta')
+  useEffect(() => {
+    if (!accountParam) return
+    setAccountFilter(accountParam)
+    setCategoryFilter(null)
+    setSearchParams({}, { replace: true })
+  }, [accountParam, setAccountFilter, setCategoryFilter, setSearchParams])
+
+  const editingItem = transactions?.filter(isEditableTransaction).find((t) => t.id === editingTransactionId)
   const groups = groupByDate(transactions ?? [])
 
+  const pendingDeleteNoun =
+    pendingDelete?.kind === 'income' ? 'ingreso' : pendingDelete?.kind === 'adjustment' ? 'ajuste de saldo' : 'gasto'
+
   async function handleDelete() {
-    if (!pendingDeleteId) return
+    if (!pendingDelete) return
     try {
-      await removeTransaction(pendingDeleteId)
-      toast.success('Gasto eliminado')
+      await removeTransaction(pendingDelete.id, pendingDelete.kind)
+      toast.success(`${pendingDeleteNoun.charAt(0).toUpperCase()}${pendingDeleteNoun.slice(1)} eliminado`)
     } catch {
-      toast.error('No se pudo eliminar el gasto')
+      toast.error(`No se pudo eliminar el ${pendingDeleteNoun}`)
     } finally {
-      setPendingDeleteId(null)
+      setPendingDelete(null)
     }
   }
 
@@ -80,7 +113,7 @@ export function TransactionsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Movimientos"
-        description="Tus gastos."
+        description="Tus gastos e ingresos."
         actions={
           <>
             <Button variant="outline" asChild>
@@ -91,7 +124,7 @@ export function TransactionsPage() {
             </Button>
             <Button onClick={() => openCreateDialog()}>
               <Plus className="size-4" />
-              Nuevo gasto
+              Nuevo movimiento
             </Button>
           </>
         }
@@ -116,13 +149,38 @@ export function TransactionsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL}>Todas las categorías</SelectItem>
-            {categories?.map((category) => (
-              <SelectItem key={category.id} value={category.id}>
-                {category.name}
-              </SelectItem>
-            ))}
+            {CATEGORY_GROUPS.map(({ kind, label }) => {
+              const ofKind = categories?.filter((c) => c.kind === kind) ?? []
+              if (ofKind.length === 0) return null
+              return (
+                <SelectGroup key={kind}>
+                  <SelectLabel>{label}</SelectLabel>
+                  {ofKind.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )
+            })}
           </SelectContent>
         </Select>
+
+        {accounts !== undefined && accounts.length > 0 && (
+          <Select value={accountFilter ?? ALL} onValueChange={(v) => setAccountFilter(v === ALL ? null : v)}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Todas las cuentas" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>Todas las cuentas</SelectItem>
+              {accounts.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  {account.isArchived ? `${account.name} (archivada)` : account.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {transactions === undefined ? (
@@ -134,9 +192,9 @@ export function TransactionsPage() {
       ) : groups.length === 0 ? (
         <EmptyState
           icon={Receipt}
-          title="No hay gastos este mes"
-          description="Registrá un gasto para empezar."
-          action={<Button onClick={() => openCreateDialog()}>Nuevo gasto</Button>}
+          title="No hay movimientos este mes"
+          description="Registrá un gasto o un ingreso para empezar."
+          action={<Button onClick={() => openCreateDialog()}>Nuevo movimiento</Button>}
         />
       ) : (
         <div className="flex flex-col gap-4">
@@ -149,7 +207,7 @@ export function TransactionsPage() {
                     key={item.id}
                     item={item}
                     onEdit={() => openEditDialog(item.id)}
-                    onDelete={() => setPendingDeleteId(item.id)}
+                    onDelete={() => setPendingDelete(item)}
                   />
                 ))}
               </div>
@@ -164,10 +222,10 @@ export function TransactionsPage() {
         onOpenChange={(open) => (open ? undefined : closeDialog())}
       />
 
-      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar este gasto?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar este {pendingDeleteNoun}?</AlertDialogTitle>
             <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

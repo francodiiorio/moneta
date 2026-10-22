@@ -8,9 +8,16 @@ const minorAmount = z.number().int()
 const quantityScaled = z.number().int().nonnegative()
 const id = z.string().min(1)
 
+// Vuelve en la Etapa 8 junto con Income (ver ADR "Se reintroducen Cuentas,
+// Ingresos y Transferencias" en docs/DECISIONS.md): un gasto sólo puede
+// usar una categoría 'expense', un ingreso sólo una 'income'.
+export const categoryKindSchema = z.enum(['expense', 'income'])
+export type CategoryKind = z.infer<typeof categoryKindSchema>
+
 export const categorySchema = z.object({
   id,
   name: z.string().min(1),
+  kind: categoryKindSchema,
   parentId: id.optional(),
   color: z.string().optional(),
   icon: z.string().optional(),
@@ -24,10 +31,12 @@ export type Category = z.infer<typeof categorySchema>
 export const expenseStatusSchema = z.enum(['confirmed', 'projected'])
 
 // Un gasto es un registro simple — fecha, monto, moneda, categoría — sin
-// partida doble ni cuenta: ver ADR "Simplificación: se elimina Cuentas,
-// Ingresos y Transferencias" en docs/DECISIONS.md. `status` sigue
-// haciendo falta para un recurrente/cuota que todavía no venció
-// (`'projected'`) — sólo los `'confirmed'` cuentan en reportes/presupuestos.
+// partida doble: ver ADR "Simplificación: se elimina Cuentas, Ingresos y
+// Transferencias" en docs/DECISIONS.md. `status` sigue haciendo falta para
+// un recurrente/cuota que todavía no venció (`'projected'`) — sólo los
+// `'confirmed'` cuentan en reportes/presupuestos. `accountId` (Etapa 8) es
+// opcional: sólo un gasto con débito sale de una cuenta; uno con tarjeta de
+// crédito o sin especificar no toca ningún saldo.
 export const expenseSchema = z.object({
   id,
   date: dateStamp,
@@ -40,10 +49,63 @@ export const expenseSchema = z.object({
   status: expenseStatusSchema,
   sourcePlanId: id.optional(),
   occurrenceIndex: z.number().int().nonnegative().optional(),
+  accountId: id.optional(),
   createdAt: isoInstant,
   updatedAt: isoInstant,
 })
 export type Expense = z.infer<typeof expenseSchema>
+
+export const accountTypeSchema = z.enum(['bank', 'cash', 'wallet', 'broker', 'other'])
+export type AccountType = z.infer<typeof accountTypeSchema>
+
+// Moneda fija: todo movimiento que toca la cuenta está en esta moneda
+// (invariante de los repositories). `openingBalance` es el saldo al inicio
+// de `openingDate` — puede ser negativo (un descubierto). Ningún movimiento
+// puede tener fecha anterior a `openingDate`. Ver domain/accounts.
+export const accountSchema = z.object({
+  id,
+  name: z.string().min(1),
+  type: accountTypeSchema,
+  currency: currencyCode,
+  openingBalance: minorAmount,
+  openingDate: dateStamp,
+  isArchived: z.boolean(),
+  order: z.number(),
+  notes: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type Account = z.infer<typeof accountSchema>
+
+// Imagen espejo de Expense, con `accountId` obligatorio: un ingreso siempre
+// entra a alguna cuenta (el efectivo es una cuenta más).
+export const incomeSchema = z.object({
+  id,
+  date: dateStamp,
+  amount: minorAmount.positive(),
+  currency: currencyCode,
+  accountId: id,
+  categoryId: id,
+  description: z.string().min(1),
+  notes: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type Income = z.infer<typeof incomeSchema>
+
+// Diferencia con signo para conciliar el saldo calculado contra el real
+// (intereses, centavos). Nunca cero: un ajuste nulo no aporta nada.
+export const accountAdjustmentSchema = z.object({
+  id,
+  accountId: id,
+  date: dateStamp,
+  amount: minorAmount.refine((n) => n !== 0, 'Un ajuste no puede ser cero'),
+  currency: currencyCode,
+  description: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type AccountAdjustment = z.infer<typeof accountAdjustmentSchema>
 
 export const recurrenceFrequencySchema = z.enum(['daily', 'weekly', 'monthly', 'yearly'])
 

@@ -105,8 +105,9 @@ export function ReportsPage() {
               <>
                 <NetWorthChart points={netWorthHistory.points} />
                 <p className="text-xs text-muted-foreground">
-                  Ahorros e inversiones: cantidad actual, valuada al precio y tipo de cambio de cada
-                  mes — no reflejan cuánto tenías cargado en ese momento.
+                  Cuentas: saldo real a fin de cada mes. Ahorros e inversiones: cantidad actual,
+                  valuada al precio y tipo de cambio de cada mes — no reflejan cuánto tenías cargado
+                  en ese momento.
                 </p>
               </>
             )}

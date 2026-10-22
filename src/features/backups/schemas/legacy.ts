@@ -172,3 +172,41 @@ export const legacyInvestmentLotSchema = z.object({
   updatedAt: isoInstant,
 })
 export type LegacyInvestmentLot = z.infer<typeof legacyInvestmentLotSchema>
+
+/** `Category` as `schemas/v4.ts` shipped it: no `kind` — the Etapa 7
+ *  simplification had removed income categories altogether. Frozen when
+ *  Etapa 8 brought `kind` back as a required field (see ADR "Se
+ *  reintroducen Cuentas, Ingresos y Transferencias"), so a real v4 file
+ *  keeps validating exactly as it did. */
+export const legacyCategoryV4Schema = z.object({
+  id,
+  name: z.string().min(1),
+  parentId: id.optional(),
+  color: z.string().optional(),
+  icon: z.string().optional(),
+  order: z.number(),
+  isArchived: z.boolean(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type LegacyCategoryV4 = z.infer<typeof legacyCategoryV4Schema>
+
+/** `Expense` as `schemas/v4.ts` shipped it: no `accountId` (Etapa 8 added
+ *  it as optional). Frozen so a stray `accountId` in a v4 file is still
+ *  stripped, exactly as before, instead of now being validated. */
+export const legacyExpenseV4Schema = z.object({
+  id,
+  date: dateStamp,
+  amount: minorAmount.positive(),
+  currency: currencyCode,
+  categoryId: id,
+  description: z.string().min(1),
+  notes: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  status: legacyTransactionStatusSchema,
+  sourcePlanId: id.optional(),
+  occurrenceIndex: z.number().int().nonnegative().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type LegacyExpenseV4 = z.infer<typeof legacyExpenseV4Schema>

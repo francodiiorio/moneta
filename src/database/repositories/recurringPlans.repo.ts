@@ -104,7 +104,7 @@ export async function materializePlan(
   throughDate: DateStamp,
 ): Promise<void> {
   if (entries.length === 0) return
-  await db.transaction('rw', db.recurringPlans, db.expenses, async () => {
+  await db.transaction('rw', db.recurringPlans, db.expenses, db.categories, async () => {
     for (const entry of entries) {
       await saveExpense(entry)
     }

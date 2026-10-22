@@ -14,7 +14,7 @@ interface MoneyTrendChartProps {
   emptyMessage?: string
   /** Shows a labeled Y axis (grouped thousands, no currency symbol) and
    *  switches the grid to a dashed line — the Dashboard's two trend charts
-   *  opt into this "detailed axis" look; Ahorro e Inversiones keeps the
+   *  opt into this "detailed axis" look; Patrimonio keeps the
    *  original minimal one (default false) unchanged. */
   showYAxis?: boolean
 }

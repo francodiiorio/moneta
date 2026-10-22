@@ -1,4 +1,4 @@
-import type { Category, Expense, ExpenseTemplate, InstallmentPlan, InvestmentLot, RecurringPlan } from '@/domain/entities'
+import type { Expense, ExpenseTemplate, InstallmentPlan, InvestmentLot, RecurringPlan } from '@/domain/entities'
 import type { BackupDataV3 } from '../schemas/v3'
 import type { BackupDataV4 } from '../schemas/v4'
 
@@ -65,7 +65,7 @@ export function migrateV3ToV4(data: BackupDataV3): BackupDataV4 {
     })
   }
 
-  const categories: Category[] = data.categories
+  const categories: BackupDataV4['categories'] = data.categories
     .filter((c) => c.kind !== 'income')
     .map((c) => ({
       id: c.id,

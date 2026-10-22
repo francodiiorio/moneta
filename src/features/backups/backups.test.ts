@@ -20,6 +20,9 @@ afterEach(async () => {
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
     db.investmentLots.clear(),
+    db.accounts.clear(),
+    db.incomes.clear(),
+    db.accountAdjustments.clear(),
   ])
 })
 
@@ -29,12 +32,61 @@ async function seedFullDatabase() {
   const category = {
     id: generateId(),
     name: 'Comida',
+    kind: 'expense' as const,
     order: 0,
     isArchived: false,
     createdAt: now,
     updatedAt: now,
   }
   await db.categories.add(category)
+
+  const incomeCategory = {
+    id: generateId(),
+    name: 'Sueldo',
+    kind: 'income' as const,
+    order: 1,
+    isArchived: false,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.categories.add(incomeCategory)
+
+  const account = {
+    id: generateId(),
+    name: 'Galicia pesos',
+    type: 'bank' as const,
+    currency: 'ARS',
+    openingBalance: 100_000_00,
+    openingDate: '2026-08-01',
+    isArchived: false,
+    order: 0,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.accounts.add(account)
+
+  await db.incomes.add({
+    id: generateId(),
+    date: '2026-08-05',
+    amount: 900_000_00,
+    currency: 'ARS',
+    accountId: account.id,
+    categoryId: incomeCategory.id,
+    description: 'Sueldo agosto',
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  await db.accountAdjustments.add({
+    id: generateId(),
+    accountId: account.id,
+    date: '2026-08-31',
+    amount: -1_50,
+    currency: 'ARS',
+    description: 'Comisión',
+    createdAt: now,
+    updatedAt: now,
+  })
 
   const expense = {
     id: generateId(),
@@ -44,6 +96,7 @@ async function seedFullDatabase() {
     categoryId: category.id,
     description: 'Supermercado',
     status: 'confirmed' as const,
+    accountId: account.id,
     createdAt: now,
     updatedAt: now,
   }
@@ -155,7 +208,7 @@ async function seedFullDatabase() {
     schemaVersion: 1,
   })
 
-  return { category, expense }
+  return { category, incomeCategory, expense }
 }
 
 function sortById<T extends { id: string }>(items: T[]): T[] {
@@ -175,6 +228,9 @@ async function snapshotAllTables() {
     investmentHoldings: sortById(await db.investmentHoldings.toArray()),
     assetPrices: sortById(await db.assetPrices.toArray()),
     investmentLots: sortById(await db.investmentLots.toArray()),
+    accounts: sortById(await db.accounts.toArray()),
+    incomes: sortById(await db.incomes.toArray()),
+    accountAdjustments: sortById(await db.accountAdjustments.toArray()),
     settings: await db.settings.get('singleton'),
   }
 }
@@ -193,6 +249,9 @@ async function clearAllTables() {
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
     db.investmentLots.clear(),
+    db.accounts.clear(),
+    db.incomes.clear(),
+    db.accountAdjustments.clear(),
   ])
 }
 
@@ -363,7 +422,7 @@ describe('backup round-trip — merge', () => {
     const result = await importBackup(file, { mode: 'merge' })
     expect(result.checksumMatched).toBe(true)
     expect(result.merged).toEqual({
-      categories: { added: 1, skipped: 0 },
+      categories: { added: 2, skipped: 0 },
       expenses: { added: 1, skipped: 0 },
       recurringPlans: { added: 1, skipped: 0 },
       installmentPlans: { added: 1, skipped: 0 },
@@ -374,10 +433,15 @@ describe('backup round-trip — merge', () => {
       investmentHoldings: { added: 1, skipped: 0 },
       assetPrices: { added: 1, skipped: 0 },
       investmentLots: { added: 1, skipped: 0 },
+      accounts: { added: 1, skipped: 0 },
+      incomes: { added: 1, skipped: 0 },
+      accountAdjustments: { added: 1, skipped: 0 },
     })
 
     const categoryIds = (await db.categories.toArray()).map((c) => c.id).sort()
-    expect(categoryIds).toEqual([deviceA.category.id, deviceB.category.id].sort())
+    expect(categoryIds).toEqual(
+      [deviceA.category.id, deviceA.incomeCategory.id, deviceB.category.id, deviceB.incomeCategory.id].sort(),
+    )
     const expenseIds = (await db.expenses.toArray()).map((e) => e.id).sort()
     expect(expenseIds).toEqual([deviceA.expense.id, deviceB.expense.id].sort())
     // Local settings (from deviceB's seed) were never touched by the merge.
@@ -390,12 +454,12 @@ describe('backup round-trip — merge', () => {
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
 
     const first = await importBackup(file, { mode: 'merge' })
-    expect(first.merged?.categories).toEqual({ added: 0, skipped: 1 }) // same device, ids already exist
+    expect(first.merged?.categories).toEqual({ added: 0, skipped: 2 }) // same device, ids already exist
 
     const countBefore = await db.expenses.count()
     const second = await importBackup(file, { mode: 'merge' })
     expect(second.merged).toEqual({
-      categories: { added: 0, skipped: 1 },
+      categories: { added: 0, skipped: 2 },
       expenses: { added: 0, skipped: 1 },
       recurringPlans: { added: 0, skipped: 1 },
       installmentPlans: { added: 0, skipped: 1 },
@@ -406,6 +470,9 @@ describe('backup round-trip — merge', () => {
       investmentHoldings: { added: 0, skipped: 1 },
       assetPrices: { added: 0, skipped: 1 },
       investmentLots: { added: 0, skipped: 1 },
+      accounts: { added: 0, skipped: 1 },
+      incomes: { added: 0, skipped: 1 },
+      accountAdjustments: { added: 0, skipped: 1 },
     })
     expect(await db.expenses.count()).toBe(countBefore)
   })
@@ -587,5 +654,168 @@ describe('migration — v1 through v4', () => {
     const expenses = await db.expenses.toArray()
     expect(expenses).toHaveLength(1)
     expect(expenses[0]).toMatchObject({ amount: 1500, currency: 'ARS' })
+  })
+})
+
+function v4Payload() {
+  const now = '2026-09-10T12:00:00.000Z'
+  return {
+    format: 'moneta-backup' as const,
+    version: 4 as const,
+    exportedAt: now,
+    app: { name: 'moneta', version: '0.0.0' },
+    checksum: 'irrelevant-for-this-test',
+    data: {
+      // A real v4 file: categories have no `kind`.
+      categories: [{ id: 'cat1', name: 'Comida', order: 0, isArchived: false, createdAt: now, updatedAt: now }],
+      expenses: [
+        {
+          id: 'e1',
+          date: '2026-09-01',
+          amount: 1500,
+          currency: 'ARS',
+          categoryId: 'cat1',
+          description: 'Super',
+          status: 'confirmed' as const,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      recurringPlans: [],
+      installmentPlans: [],
+      budgets: [],
+      exchangeRates: [],
+      savingsHoldings: [],
+      investmentAssets: [],
+      investmentHoldings: [],
+      assetPrices: [],
+      investmentLots: [],
+    },
+  }
+}
+
+describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
+  it('a v4 file still validates as it did (categories without kind) and every category becomes a gasto category', () => {
+    const migrated = migrateToLatest(v4Payload())
+
+    expect(migrated.categories).toEqual([expect.objectContaining({ id: 'cat1', kind: 'expense' })])
+    expect(migrated.expenses).toHaveLength(1)
+    expect(migrated.expenses[0]?.accountId).toBeUndefined()
+    expect(migrated.accounts).toEqual([])
+    expect(migrated.incomes).toEqual([])
+    expect(migrated.accountAdjustments).toEqual([])
+  })
+
+  it('importing a v4 .finance file lands its categories with kind expense in Dexie', async () => {
+    const file = new File([JSON.stringify(v4Payload())], 'old-v4.finance', { type: 'application/json' })
+
+    await importBackup(file)
+
+    expect(await db.categories.get('cat1')).toMatchObject({ kind: 'expense' })
+    expect(await db.expenses.count()).toBe(1)
+  })
+
+  it('exports as version 5', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    expect(payload.version).toBe(5)
+    expect(payload.data.accounts).toHaveLength(1)
+    expect(payload.data.incomes).toHaveLength(1)
+    expect(payload.data.accountAdjustments).toHaveLength(1)
+  })
+})
+
+describe('import validation — cuentas e ingresos', () => {
+  async function exportedPayload() {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    return payload
+  }
+
+  async function importPayload(payload: unknown) {
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    return importBackup(file)
+  }
+
+  it('rejects an ingreso pointing at an account that is not in the file, without touching the database', async () => {
+    const payload = await exportedPayload()
+    payload.data.incomes[0]!.accountId = 'missing-account'
+    await expect(importPayload(payload)).rejects.toThrow(/no existe/)
+    expect(await db.categories.count()).toBe(0)
+  })
+
+  it('rejects an ingreso that uses a gasto category', async () => {
+    const payload = await exportedPayload()
+    const expenseCategory = payload.data.categories.find((c) => c.kind === 'expense')!
+    payload.data.incomes[0]!.categoryId = expenseCategory.id
+    await expect(importPayload(payload)).rejects.toThrow(/no es de ingreso/)
+  })
+
+  it('rejects a gasto that uses an ingreso category', async () => {
+    const payload = await exportedPayload()
+    const incomeCategory = payload.data.categories.find((c) => c.kind === 'income')!
+    payload.data.expenses[0]!.categoryId = incomeCategory.id
+    await expect(importPayload(payload)).rejects.toThrow(/categoría de ingreso/)
+  })
+
+  it('rejects a debit gasto dated before its account opening date', async () => {
+    const payload = await exportedPayload()
+    payload.data.expenses[0]!.date = '2026-07-31'
+    await expect(importPayload(payload)).rejects.toThrow(/saldo inicial/)
+  })
+
+  it('rejects an ingreso in a currency other than its account', async () => {
+    const payload = await exportedPayload()
+    payload.data.incomes[0]!.currency = 'USD'
+    await expect(importPayload(payload)).rejects.toThrow(/es en ARS/)
+  })
+})
+
+describe('backup — hallazgos de la revisión de la Fase 1', () => {
+  it('a v4 file with a correct checksum still imports as checksumMatched (hashed before migrating)', async () => {
+    const { computeChecksum } = await import('./checksum')
+    const payload = v4Payload()
+    payload.checksum = await computeChecksum(payload.data)
+    const file = new File([JSON.stringify(payload)], 'v4.finance', { type: 'application/json' })
+    const result = await importBackup(file)
+    expect(result.checksumMatched).toBe(true)
+  })
+
+  it('a stray accountId in a v4 expense is stripped, exactly as before v5 existed', () => {
+    const payload = v4Payload()
+    const expense = { ...payload.data.expenses[0]!, accountId: 'ghost' }
+    const migrated = migrateToLatest({ ...payload, data: { ...payload.data, expenses: [expense] } })
+    expect(migrated.expenses[0]?.accountId).toBeUndefined()
+  })
+
+  it('merge rolls back entirely when an incoming ingreso does not fit the LOCAL copy of its account', async () => {
+    const seeded = await seedFullDatabase()
+    const exported = await exportBackup()
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+
+    // Same account id on this device, but since switched to USD (allowed
+    // locally while it had no movements here).
+    const accountId = (await db.accounts.toArray())[0]!.id
+    await clearAllTables()
+    const now = new Date().toISOString()
+    await db.accounts.add({
+      id: accountId,
+      name: 'Galicia (ahora en dólares)',
+      type: 'bank',
+      currency: 'USD',
+      openingBalance: 0,
+      openingDate: '2026-08-01',
+      isArchived: false,
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await expect(importBackup(file, { mode: 'merge' })).rejects.toThrow(/es en USD/)
+    // Nothing from the file landed — Dexie rolled the whole merge back.
+    expect(await db.incomes.count()).toBe(0)
+    expect(await db.categories.get(seeded.category.id)).toBeUndefined()
+    expect(await db.accounts.count()).toBe(1)
   })
 })

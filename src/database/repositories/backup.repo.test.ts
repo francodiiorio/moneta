@@ -19,6 +19,9 @@ afterEach(async () => {
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
     db.investmentLots.clear(),
+    db.accounts.clear(),
+    db.incomes.clear(),
+    db.accountAdjustments.clear(),
   ])
 })
 
@@ -35,6 +38,9 @@ function emptyData(overrides: Partial<AllTablesData> = {}): AllTablesData {
     investmentHoldings: [],
     assetPrices: [],
     investmentLots: [],
+    accounts: [],
+    incomes: [],
+    accountAdjustments: [],
     ...overrides,
   }
 }
@@ -44,6 +50,7 @@ function category(overrides: Partial<Category> = {}): Category {
   return {
     id: generateId(),
     name: 'Categoría',
+    kind: 'expense',
     order: 0,
     isArchived: false,
     createdAt: now,
@@ -70,7 +77,7 @@ function expense(overrides: Partial<Expense> = {}): Expense {
 
 describe('mergeAllTables', () => {
   it('adds a disjoint dataset entirely', async () => {
-    const localCategory = await createCategory({ name: 'Local' })
+    const localCategory = await createCategory({ kind: 'expense', name: 'Local' })
 
     const incomingExpense = expense({ description: 'Remoto' })
     const incomingCategory = category({ name: 'Remoto' })
@@ -86,7 +93,7 @@ describe('mergeAllTables', () => {
   })
 
   it('never overwrites an entity that already exists locally, even with different content', async () => {
-    const local = await createCategory({ name: 'Nombre original' })
+    const local = await createCategory({ kind: 'expense', name: 'Nombre original' })
     const collidingCopy = category({ ...local, name: 'Nombre del archivo (viejo)' })
 
     const summary = await mergeAllTables(emptyData({ categories: [collidingCopy] }))
@@ -150,7 +157,7 @@ describe('mergeAllTables', () => {
   })
 
   it('repairs a RecurringPlan watermark to the latest merged-in occurrence date', async () => {
-    const cat = await createCategory({ name: 'Alquiler' })
+    const cat = await createCategory({ kind: 'expense', name: 'Alquiler' })
     const now = new Date().toISOString()
     const plan: RecurringPlan = {
       id: generateId(),
@@ -174,7 +181,7 @@ describe('mergeAllTables', () => {
   })
 
   it('does not touch the watermark of a plan with no local expenses after merge', async () => {
-    const cat = await createCategory({ name: 'Alquiler' })
+    const cat = await createCategory({ kind: 'expense', name: 'Alquiler' })
     const now = new Date().toISOString()
     const plan: RecurringPlan = {
       id: generateId(),
@@ -193,7 +200,7 @@ describe('mergeAllTables', () => {
   })
 
   it('round-trips through readAllTables: merging what was just read changes nothing', async () => {
-    await createCategory({ name: 'Comida' })
+    await createCategory({ kind: 'expense', name: 'Comida' })
     const data = await readAllTables()
     const before = await db.categories.count()
 
@@ -204,7 +211,7 @@ describe('mergeAllTables', () => {
   })
 
   it('merging a completely empty dataset is a clean no-op', async () => {
-    await createCategory({ name: 'Comida' })
+    await createCategory({ kind: 'expense', name: 'Comida' })
     const before = await db.categories.count()
 
     const summary = await mergeAllTables(emptyData())
@@ -221,6 +228,9 @@ describe('mergeAllTables', () => {
       investmentHoldings: { added: 0, skipped: 0 },
       assetPrices: { added: 0, skipped: 0 },
       investmentLots: { added: 0, skipped: 0 },
+      accounts: { added: 0, skipped: 0 },
+      incomes: { added: 0, skipped: 0 },
+      accountAdjustments: { added: 0, skipped: 0 },
     })
     expect(await db.categories.count()).toBe(before)
   })
@@ -248,7 +258,7 @@ describe('mergeAllTables', () => {
     // materializeDue() on its own afterwards — same sourcePlanId +
     // occurrenceIndex per occurrence, but different expense ids
     // (generateId() is random, not derived from the occurrence).
-    const cat = await createCategory({ name: 'Alquiler' })
+    const cat = await createCategory({ kind: 'expense', name: 'Alquiler' })
     const plan: RecurringPlan = {
       id: generateId(),
       template: { description: 'Alquiler', categoryId: cat.id, amount: 100_000, currency: 'ARS' },
@@ -296,7 +306,7 @@ describe('mergeAllTables', () => {
     // produce for its own March, but a different index. Dedup has to key
     // on `date`, not `occurrenceIndex`, or this becomes a real double
     // charge once both backups get merged onto a third device.
-    const cat = await createCategory({ name: 'Alquiler' })
+    const cat = await createCategory({ kind: 'expense', name: 'Alquiler' })
     const plan: RecurringPlan = {
       id: generateId(),
       template: { description: 'Alquiler', categoryId: cat.id, amount: 100_000, currency: 'ARS' },

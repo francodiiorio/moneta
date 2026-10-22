@@ -1035,6 +1035,11 @@ activo seleccionado.
 
 ## Simplificación: se elimina Cuentas, Ingresos y Transferencias
 
+> **Revertida en parte.** Cuentas, Ingresos y Transferencias vuelven como registros
+> planos (sin partida doble) en la Etapa 8 — ver "Se reintroducen Cuentas, Ingresos y
+> Transferencias — sin partida doble; tarjetas con resúmenes" al final de este
+> documento. Lo que se decidió acá sobre la partida doble sigue vigente.
+
 **Decisión:** Moneta deja de trackear ingresos, cuentas y transferencias. De acá en más
 sólo registra **Gastos, Ahorros/Inversiones y Presupuestos**. `Account`, `Transaction` y
 `Posting` (el ledger de partida doble completo, base arquitectónica del proyecto desde
@@ -1129,3 +1134,84 @@ Ningún color nuevo: todo el rediseño usa los tokens que ya existían
 temas de `src/app/color-themes.ts` sin tocar `styles.css` por este cambio (más allá de
 borrar el hack de "leyenda oculta hasta hover" que el nuevo layout de la torta volvió
 innecesario).
+
+## Se reintroducen Cuentas, Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes
+
+> Revierte en parte "Simplificación: se elimina Cuentas, Ingresos y Transferencias"
+> (arriba). La partida doble **no** vuelve: todo sigue siendo registros planos.
+
+**Problema:** el usuario quiere registrar los cierres de sus tarjetas de crédito (saber
+cuándo cierra cada una y cuánto hay que pagar ese mes) y pagar cada resumen desde una
+cuenta. Pagar "desde una cuenta" sólo significa algo si la cuenta tiene saldo, y un saldo
+sólo se sostiene si se registra lo que entra (ingresos) y lo que se mueve entre cuentas
+(transferencias). Sin eso, el saldo sólo puede bajar y queda inútil en semanas.
+
+**Alternativas evaluadas:**
+- *Sólo registrar "desde dónde" se pagó, sin saldo.* Lo más simple, pero no responde la
+  pregunta de fondo ("¿me alcanza la cuenta para pagar la tarjeta?").
+- *Descontar el pago de un `SavingsHolding`.* Sin ingresos, el monto se desfasa y hay que
+  corregirlo a mano cada vez.
+- *Checkpoints de saldo declarado* ("hoy tengo $X") en vez de ingresos. Descartado por el
+  usuario: prefiere volver a cargar ingresos y transferencias, para que el saldo se
+  calcule solo y todo quede "más transparente".
+- *Volver al ledger de partida doble (`Transaction`+`Posting`).* Descartado: la Etapa 7
+  mostró que el costo de los builders/postings no se pagaba para un solo usuario. Con
+  registros planos, "saldo de una cuenta" es una sola función pura que suma los
+  movimientos que la tocan — la ventaja que justificaba la partida doble (una sola query
+  de balance) se consigue igual, sin forzar cada formulario a traducir a postings.
+
+**Decisión:** registros planos, cada uno con su propia tabla, y una función de dominio
+(`domain/accounts`) que calcula el saldo de una cuenta a una fecha:
+
+```
+saldo(D) = saldo inicial
+         + ingresos (≤ D)
+         − gastos con débito de esa cuenta (confirmados, ≤ D)
+         ± ajustes (≤ D)
+         − transferencias que salen + transferencias que entran        (Fase 2)
+         − compras de inversión con esa cuenta de origen               (Fase 3)
+         − pagos de resúmenes de tarjeta desde esa cuenta              (Fase 5)
+```
+
+- `Account` tiene **una sola moneda** fija. Todo movimiento que la toca está en esa
+  moneda (invariante del repository); una transferencia entre monedas guarda los **dos**
+  montos reales (`fromAmount`/`toAmount`), nunca una tasa para recalcular uno del otro.
+- `Account.openingBalance` es el saldo **al inicio** de `openingDate`. Un movimiento con
+  fecha anterior a `openingDate` se rechaza (no se ignora en silencio): la cuenta no
+  existía para Moneta todavía. Para la evolución del patrimonio, una cuenta cuenta recién
+  desde su `openingDate`.
+- Un ingreso es la imagen espejo de un gasto: monto positivo, moneda, categoría (de tipo
+  ingreso — vuelve `Category.kind`), pero con `accountId` **obligatorio** — un ingreso
+  siempre entra a algún lado (el efectivo es una cuenta más).
+- `Expense.accountId` es **opcional**: un gasto con débito/transferencia sale de una
+  cuenta; uno con tarjeta de crédito no (lo paga el resumen, Fase 4/5); uno sin
+  especificar sigue igual que hoy.
+- `AccountAdjustment` es una diferencia con signo para conciliar contra el banco
+  (intereses, centavos). La UI pide "el saldo real" y guarda la diferencia — nunca pisa
+  un saldo.
+- **Pagar un resumen de tarjeta nunca crea un `Expense`**: cada compra ya se contó como
+  gasto en su fecha; el pago sólo debita la cuenta. Lo mismo para una compra de
+  inversión: convierte efectivo en otro activo, no es consumo, así que no pasa por
+  categorías ni presupuestos — a diferencia del `kind: 'investment'` + categoría
+  archivada fija del ledger viejo, con registros planos no hace falta ningún truco.
+- **Patrimonio** = Cuentas + Ahorros + Inversiones, otra vez. `SavingsHolding` sigue
+  existiendo, igual que antes de la Etapa 7: plata quieta de monto declarado (efectivo en
+  casa, un plazo fijo que no se toca). Regla de uso para no duplicar: una misma plata
+  vive en un solo lado; si algo tiene movimientos frecuentes, es una `Account`.
+
+**Tarjetas de crédito (Fase 4/5):** `CreditCard` (día de cierre/vencimiento por
+defecto) + `CardStatement` por período (`YYYY-MM`) con `closeDate`/`dueDate`
+editables — en Argentina el cierre cambia cada mes según el calendario del banco. Cada
+gasto con tarjeta guarda su `statementPeriod` (no se deriva cada vez): una cuota *i* cae
+directo en el período de compra + *i*, una presentación tardía se mueve a mano, y un
+resumen ya cerrado no cambia si después se edita una fecha. El total de un resumen es
+por moneda (un resumen argentino trae saldo en ARS y en USD por separado). Sólo pago
+total, sin pago mínimo ni arrastre de saldo. Los avisos de cierre/vencimiento se
+muestran dentro de la app (Dashboard): sin backend no hay push programado posible.
+
+**Presupuestos y reportes de gasto** siguen por fecha de compra, no de pago del
+resumen: el resumen es una vista de flujo de caja, no reemplaza al presupuesto.
+
+**Costo aceptado:** varias tablas nuevas y una versión de Dexie/backup por fase. Los
+ingresos y transferencias borrados en la Etapa 7 no vuelven solos (la migración v3→v4
+los descartó); recuperarlos de un `.finance` v1–v3 viejo sería un trabajo aparte.

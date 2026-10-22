@@ -16,8 +16,30 @@ export const expenseFormSchema = z.object({
   categoryId: z.string().min(1, 'Elegí una categoría'),
   currency: z.string().min(3).max(8),
   amount: amountString,
+  /** '' or absent = no account (credit card, or unspecified). */
+  accountId: z.string().optional(),
 })
 export type ExpenseFormValues = z.infer<typeof expenseFormSchema>
+
+export const incomeFormSchema = expenseFormSchema.extend({
+  accountId: z.string().min(1, 'Elegí la cuenta donde entró'),
+})
+export type IncomeFormValues = z.infer<typeof incomeFormSchema>
+
+export const movementKindSchema = z.enum(['expense', 'income'])
+export type MovementKind = z.infer<typeof movementKindSchema>
+
+/** The Movimientos dialog's own shape: one form for both kinds, so
+ *  switching Gasto/Ingreso keeps what was already typed. An ingreso
+ *  always needs an account; a gasto never does. */
+export const movementFormSchema = expenseFormSchema
+  .extend({ kind: movementKindSchema, accountId: z.string() })
+  .superRefine((values, ctx) => {
+    if (values.kind === 'income' && !values.accountId) {
+      ctx.addIssue({ code: 'custom', path: ['accountId'], message: 'Elegí la cuenta donde entró' })
+    }
+  })
+export type MovementFormValues = z.infer<typeof movementFormSchema>
 
 export const newCategoryFormSchema = z.object({
   name: z.string().min(1, 'El nombre es obligatorio').max(60),

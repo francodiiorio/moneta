@@ -22,8 +22,11 @@ export function App() {
     // — the export/import backup flow is the real safety net.
     void navigator.storage?.persist?.()
     // Only inserts a starter set of categories if none exist yet — never
-    // duplicates, never overwrites what the user already created.
-    void categoriesRepo.seedDefaultsIfEmpty()
+    // duplicates, never overwrites what the user already created. Chained,
+    // not parallel: the income seed must run after the expense one, or on
+    // an empty database it would make seedDefaultsIfEmpty see a non-empty
+    // table and skip the expense categories entirely.
+    void categoriesRepo.seedDefaultsIfEmpty().then(() => categoriesRepo.seedIncomeDefaultsIfNone())
 
     if (!materializedThisLoad) {
       materializedThisLoad = true
@@ -52,7 +55,7 @@ export function App() {
     if (!quotesRefreshedThisLoad) {
       quotesRefreshedThisLoad = true
       // Opt-in and silent: never runs unless the user turned it on
-      // (Ahorro e Inversiones → Cotizaciones), and never shows a toast on its own
+      // (Patrimonio → Cotizaciones), and never shows a toast on its own
       // — a failure here shouldn't interrupt opening the app, and the
       // Cotizaciones tab already surfaces "última actualización"
       // reactively for whoever cares to look.

@@ -10,7 +10,7 @@ afterEach(async () => {
 
 describe('saveExpense', () => {
   it('rejects a zero or negative amount', async () => {
-    const category = await createCategory({ name: 'Comida' })
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
 
     const values: ExpenseFormValues = {
       date: '2026-08-23',
@@ -24,7 +24,7 @@ describe('saveExpense', () => {
   })
 
   it('persists a confirmed expense with the parsed amount', async () => {
-    const category = await createCategory({ name: 'Comida' })
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
 
     await saveExpense({
       date: '2026-08-23',
@@ -45,7 +45,7 @@ describe('saveExpense', () => {
   })
 
   it('editing overwrites the existing expense instead of creating a new one', async () => {
-    const category = await createCategory({ name: 'Comida' })
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
     await saveExpense({
       date: '2026-08-23',
       description: 'Supermercado',
@@ -69,7 +69,7 @@ describe('saveExpense', () => {
 
 describe('listTransactionsForMonth', () => {
   it('excludes expenses outside the requested month', async () => {
-    const category = await createCategory({ name: 'Comida' })
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
     await saveExpense({ date: '2026-08-23', description: 'Super', categoryId: category.id, currency: 'ARS', amount: '500' })
 
     expect(await listTransactionsForMonth('2026-07')).toHaveLength(0)
@@ -77,8 +77,8 @@ describe('listTransactionsForMonth', () => {
   })
 
   it('filters by categoryId', async () => {
-    const a = await createCategory({ name: 'Comida' })
-    const b = await createCategory({ name: 'Transporte' })
+    const a = await createCategory({ kind: 'expense', name: 'Comida' })
+    const b = await createCategory({ kind: 'expense', name: 'Transporte' })
     await saveExpense({ date: '2026-08-23', description: 'Super', categoryId: a.id, currency: 'ARS', amount: '500' })
     await saveExpense({ date: '2026-08-24', description: 'Colectivo', categoryId: b.id, currency: 'ARS', amount: '100' })
 
@@ -88,12 +88,12 @@ describe('listTransactionsForMonth', () => {
   })
 
   it('hides an archived category from the picker but keeps its name on past expenses', async () => {
-    const category = await createCategory({ name: 'Comida' })
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
     await saveExpense({ date: '2026-08-23', description: 'Supermercado', categoryId: category.id, currency: 'ARS', amount: '500' })
 
     await setCategoryArchived(category.id, true)
 
-    const pickerOptions = await listCategories()
+    const pickerOptions = await listCategories('expense')
     expect(pickerOptions.find((c) => c.id === category.id)).toBeUndefined()
 
     const [item] = await listTransactionsForMonth('2026-08')
@@ -101,8 +101,8 @@ describe('listTransactionsForMonth', () => {
   })
 
   it('carries a category\'s color/icon, omitting them when unset', async () => {
-    const withIdentity = await createCategory({ name: 'Comida', color: '#ef4444', icon: 'utensils' })
-    const withoutIdentity = await createCategory({ name: 'Otros' })
+    const withIdentity = await createCategory({ kind: 'expense', name: 'Comida', color: '#ef4444', icon: 'utensils' })
+    const withoutIdentity = await createCategory({ kind: 'expense', name: 'Otros' })
 
     await saveExpense({ date: '2026-08-01', description: 'Super', categoryId: withIdentity.id, currency: 'ARS', amount: '500' })
     await saveExpense({ date: '2026-08-02', description: 'Otro', categoryId: withoutIdentity.id, currency: 'ARS', amount: '300' })
@@ -115,5 +115,101 @@ describe('listTransactionsForMonth', () => {
     expect(withIdentityItem?.categoryIcon).toBe('utensils')
     expect(withoutIdentityItem?.categoryColor).toBeUndefined()
     expect(withoutIdentityItem?.categoryIcon).toBeUndefined()
+  })
+})
+
+describe('ingresos y cuentas en Movimientos (Etapa 8)', () => {
+  afterEach(async () => {
+    await Promise.all([db.accounts.clear(), db.incomes.clear()])
+  })
+
+  async function seedAccount(currency = 'ARS') {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    return createAccount({ name: 'Galicia', type: 'bank', currency, openingBalance: 0, openingDate: '2026-08-01' })
+  }
+
+  it('saveMovement routes an ingreso to incomes and lists it positive, next to gastos', async () => {
+    const { saveMovement } = await import('./service')
+    const account = await seedAccount()
+    const incomeCategory = await createCategory({ kind: 'income', name: 'Sueldo' })
+    const expenseCategory = await createCategory({ kind: 'expense', name: 'Comida' })
+
+    await saveMovement({
+      kind: 'income',
+      date: '2026-08-05',
+      description: 'Sueldo',
+      categoryId: incomeCategory.id,
+      currency: 'ARS',
+      amount: '1000',
+      accountId: account.id,
+    })
+    await saveMovement({
+      kind: 'expense',
+      date: '2026-08-06',
+      description: 'Super',
+      categoryId: expenseCategory.id,
+      currency: 'ARS',
+      amount: '200',
+      accountId: '',
+    })
+
+    const items = await listTransactionsForMonth('2026-08')
+    expect(items.map((i) => [i.kind, i.description, i.amount.amount, i.accountLabel])).toEqual([
+      ['expense', 'Super', -200_00, undefined],
+      ['income', 'Sueldo', 1000_00, 'Galicia'],
+    ])
+    const [expense] = await db.expenses.toArray()
+    expect(expense?.accountId).toBeUndefined()
+  })
+
+  it('filters by account', async () => {
+    const { saveMovement } = await import('./service')
+    const account = await seedAccount()
+    const expenseCategory = await createCategory({ kind: 'expense', name: 'Comida' })
+    const base = { kind: 'expense' as const, date: '2026-08-06', categoryId: expenseCategory.id, currency: 'ARS', amount: '200' }
+    await saveMovement({ ...base, description: 'Con débito', accountId: account.id })
+    await saveMovement({ ...base, description: 'Sin cuenta', accountId: '' })
+
+    const items = await listTransactionsForMonth('2026-08', { accountId: account.id })
+    expect(items.map((i) => i.description)).toEqual(['Con débito'])
+  })
+
+  it('removeTransaction deletes from the right table by kind', async () => {
+    const { saveMovement, removeTransaction } = await import('./service')
+    const account = await seedAccount()
+    const incomeCategory = await createCategory({ kind: 'income', name: 'Sueldo' })
+    await saveMovement({
+      kind: 'income',
+      date: '2026-08-05',
+      description: 'Sueldo',
+      categoryId: incomeCategory.id,
+      currency: 'ARS',
+      amount: '1000',
+      accountId: account.id,
+    })
+    const [item] = await listTransactionsForMonth('2026-08')
+    await removeTransaction(item!.id, item!.kind)
+    expect(await db.incomes.count()).toBe(0)
+  })
+})
+
+describe('ajustes de saldo en Movimientos', () => {
+  afterEach(async () => {
+    await Promise.all([db.accounts.clear(), db.accountAdjustments.clear()])
+  })
+
+  it('lists an adjustment (signed, no category) and deletes it', async () => {
+    const { removeTransaction } = await import('./service')
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const { createAdjustment } = await import('@/database/repositories/accountAdjustments.repo')
+    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-08-01' })
+    await createAdjustment({ accountId: account.id, date: '2026-08-10', amount: -150, currency: 'ARS' })
+
+    const [item] = await listTransactionsForMonth('2026-08')
+    expect(item).toMatchObject({ kind: 'adjustment', description: 'Ajuste de saldo', accountLabel: 'Galicia' })
+    expect(item?.amount.amount).toBe(-150)
+
+    await removeTransaction(item!.id, item!.kind)
+    expect(await db.accountAdjustments.count()).toBe(0)
   })
 })
