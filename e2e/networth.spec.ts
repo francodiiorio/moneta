@@ -49,6 +49,11 @@ test('creates an investment asset, a position and a price, and sees the valued t
   await expect(page.getByText('Sin precio cargado')).toBeVisible()
 
   await page.getByTitle('Cargar precio').click()
+  // The hint shows how the typed price will be read before saving — "1.085"
+  // is es-AR thousands, not 1,085 (see ADR "Montos: el punto es separador
+  // de miles").
+  await page.getByLabel(/Precio/).fill('1.085')
+  await expect(page.getByText(/Se guarda como USD\s1[.,]085[.,]00/)).toBeVisible()
   await page.getByLabel(/Precio/).fill('100')
   await page.getByRole('button', { name: 'Guardar' }).click()
 

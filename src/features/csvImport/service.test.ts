@@ -49,6 +49,13 @@ describe('buildPreview — single amount column', () => {
     expect(preview[0]?.status).toBe('new')
   })
 
+  it('reads an es-AR amount with dot thousands and no decimals ("15.000") as fifteen thousand', () => {
+    const rows = [['fecha', 'descripcion', 'monto'], ['23/08/2026', 'Alquiler', '15.000'], ['24/08/2026', 'Luz', '12.345,67']]
+    const preview = buildPreview(rows, singleAmountMapping, 'ARS', new Set())
+    expect(preview[0]).toMatchObject({ amount: { amount: 1_500_000, currency: 'ARS' } })
+    expect(preview[1]).toMatchObject({ amount: { amount: 1_234_567, currency: 'ARS' } })
+  })
+
   it('flags an unparseable amount cell as invalid', () => {
     const rows = [['fecha', 'descripcion', 'monto'], ['23/08/2026', 'Super', 'n/a']]
     const preview = buildPreview(rows, singleAmountMapping, 'ARS', new Set())

@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { ParsedAmountHint } from '@/components/ParsedAmountHint'
 import { Button } from '@/components/ui/button'
 import type { InvestmentAsset } from '@/domain/entities'
 import { DateField } from '@/components/DateField'
@@ -65,6 +66,7 @@ export function InvestmentPriceDialog({ asset, onOpenChange }: InvestmentPriceDi
                     <FormControl>
                       <Input inputMode="decimal" placeholder="0,00" {...field} />
                     </FormControl>
+                    <ParsedAmountHint value={field.value} currency={asset?.currency} />
                     <FormMessage />
                   </FormItem>
                 )}

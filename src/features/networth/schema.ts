@@ -68,9 +68,11 @@ export const NO_PROFILE = 'none'
  * Parses a locale-loose decimal string (accepts "1200", "1200.50",
  * "1.200,50" or "1,200.50") into a plain float. The decimal separator is
  * assumed to be whichever of "," or "." appears last; any earlier
- * occurrence is a thousands separator and gets stripped — mirrors
- * domain/money/money.ts:parseAmount's algorithm, but returns a bare
- * ratio (not Money) since an exchange rate isn't a monetary amount.
+ * occurrence is a thousands separator and gets stripped. Deliberately
+ * NOT parseAmount's es-AR thousands rule: "1.085" (EUR/USD) is a real
+ * rate, so a lone dot stays a decimal here — see ADR "Montos: el punto es
+ * separador de miles". Returns a bare ratio (not Money) since an exchange
+ * rate isn't a monetary amount.
  */
 function parseRateNumber(value: string): number {
   const cleaned = value.trim().replace(/[^\d.,-]/g, '')

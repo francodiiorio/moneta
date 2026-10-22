@@ -101,13 +101,71 @@ describe('parseAmount', () => {
     expect(parseAmount('10,5', 'ARS')).toEqual(money(1050, 'ARS'))
   })
 
+  // es-AR: el punto es separador de miles. Antes "900.000" se leía como
+  // 900,00 (el último separador se tomaba siempre como decimal).
+  describe('es-AR thousands with a dot', () => {
+    it.each([
+      ['900.000', 900_000_00],
+      ['1.500', 1_500_00],
+      ['15.000', 15_000_00],
+      ['1.000.000', 1_000_000_00],
+      ['-1.500', -1_500_00],
+      ['$ 900.000', 900_000_00],
+    ])('"%s" is a whole amount with thousands grouping', (input, expected) => {
+      expect(parseAmount(input, 'ARS')).toEqual(money(expected, 'ARS'))
+    })
+
+    it.each([
+      ['1.5', 1_50],
+      ['10.25', 10_25],
+      ['1234.567', 1_234_56], // 4-digit integer part: never a thousands group, so a decimal (truncated)
+      ['0.500', 50], // leading zero: "0.500" is never "quinientos"
+      ['.500', 50],
+      ['1.000.50', 1_000_50], // malformed grouping: falls back to "last separator is the decimal"
+    ])('"%s" keeps the dot as the decimal separator', (input, expected) => {
+      expect(parseAmount(input, 'ARS')).toEqual(money(expected, 'ARS'))
+    })
+
+    it.each([
+      ['1,5', 1_50],
+      ['1,500', 1_50], // a single comma is always the decimal (es-AR), truncated past 2 decimals
+      ['1,000,000', 1_000_000_00], // several commas only make sense as grouping
+      ['1.050,50', 1_050_50],
+      ['1,050.50', 1_050_50],
+    ])('"%s" — commas and mixed separators', (input, expected) => {
+      expect(parseAmount(input, 'ARS')).toEqual(money(expected, 'ARS'))
+    })
+
+    it('accepts a trailing minus (some bank exports write "1.500,00-") as negative', () => {
+      expect(parseAmount('1.500,00-', 'ARS')).toEqual(money(-1_500_00, 'ARS'))
+    })
+
+    it.each(['--1.500', '1-500', '-1.500-', '1..000', '1,,5', '1.,5'])(
+      'rejects malformed "%s" instead of guessing',
+      (input) => {
+        expect(() => parseAmount(input, 'ARS')).toThrow(/Monto inválido/)
+      },
+    )
+
+    it('rejects an amount too large to be an exact integer', () => {
+      expect(() => parseAmount('100.000.000.000.000', 'ARS')).toThrow(/demasiado grande/)
+    })
+
+    it('round-trips what formatMoney shows when editing (always two decimals)', () => {
+      for (const amount of [0, 5, 1_500_00, 900_000_00, 1_234_567_89]) {
+        const shown = formatMoney(money(amount, 'ARS')).replace(/[^\d,.-]/g, '')
+        expect(parseAmount(shown, 'ARS')).toEqual(money(amount, 'ARS'))
+      }
+    })
+  })
+
   // Regression: parseAmount is for user-typed text, not a raw JS number.
-  // String(aVerySmallNumber) can produce scientific notation, which
-  // parseAmount's decimal-separator heuristic silently misreads instead
-  // of failing — this is exactly why moneyFromNumber exists below, for
+  // String(aVerySmallNumber) can produce scientific notation; this used to
+  // be silently misread as 1,27 and now fails loud (the "-" in "1.2e-7"
+  // is in the middle). moneyFromNumber below is still the right tool for
   // any caller (e.g. an API response) that has a real number, not text.
-  it('documents the scientific-notation trap: do not feed a raw number through String() into this', () => {
-    expect(parseAmount(String(1.2e-7), 'USD')).toEqual(money(127, 'USD')) // wrong on purpose, see moneyFromNumber
+  it('rejects scientific notation instead of misreading it — use moneyFromNumber for a raw number', () => {
+    expect(() => parseAmount(String(1.2e-7), 'USD')).toThrow(/Monto inválido/)
   })
 })
 

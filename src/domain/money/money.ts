@@ -77,21 +77,63 @@ export function applyRate(amount: Minor, rate: number): Minor {
   return minor(roundHalfUp(amount * rate))
 }
 
+/** `true` when `parts` (a number split on one separator) read as
+ *  thousands grouping: a 1–3 digit leading group without a leading zero,
+ *  then only full 3-digit groups ("900.000", "1.000.000"). */
+function isThousandsGrouping(parts: readonly string[]): boolean {
+  const [head, ...groups] = parts
+  return /^[1-9]\d{0,2}$/.test(head ?? '') && groups.length > 0 && groups.every((g) => /^\d{3}$/.test(g))
+}
+
 /**
- * Parses a locale-loose decimal string (accepts "1050", "1050.50",
- * "1.050,50" or "1,050.50") into Money. The decimal separator is
- * assumed to be whichever of "," or "." appears last; digits are
- * truncated (not rounded) past the currency's decimal places.
+ * Index of the decimal separator in an unsigned, already-cleaned amount,
+ * or -1 when every separator is thousands grouping. Follows es-AR (the
+ * app's locale: "." groups thousands, "," is the decimal) while still
+ * accepting a dot-decimal where it can't be anything else:
+ * - both "," and "." present → the last one is the decimal ("1.050,50",
+ *   "1,050.50");
+ * - one separator kind, repeated → grouping if it groups properly
+ *   ("1.000.000", "1,000,000"), else the last one is the decimal;
+ * - a single "." → grouping only if it groups properly ("900.000",
+ *   "1.500"), otherwise a decimal ("1.5", "10.25", "0.500");
+ * - a single "," → always the decimal ("1,5", "1,500" = 1,50).
+ * See ADR "Montos: el punto es separador de miles" in docs/DECISIONS.md.
+ */
+function decimalSeparatorIndex(unsigned: string): number {
+  const lastComma = unsigned.lastIndexOf(',')
+  const lastDot = unsigned.lastIndexOf('.')
+  if (lastComma === -1 && lastDot === -1) return -1
+  if (lastComma !== -1 && lastDot !== -1) return Math.max(lastComma, lastDot)
+
+  const separator = lastDot !== -1 ? '.' : ','
+  const parts = unsigned.split(separator)
+  const groupsAsThousands = parts.length > 2 || separator === '.'
+  if (groupsAsThousands && isThousandsGrouping(parts)) return -1
+  return unsigned.lastIndexOf(separator)
+}
+
+/**
+ * Parses a user-typed amount ("1050", "900.000", "1.050,50", "1,050.50",
+ * "10.25") into Money — see `decimalSeparatorIndex` for which separator
+ * is the decimal. Digits are truncated (not rounded) past the currency's
+ * decimal places.
  */
 export function parseAmount(input: string, currency: CurrencyCode): Money {
   const info = getCurrency(currency)
   const cleaned = input.trim().replace(/[^\d.,-]/g, '')
   invariant(cleaned.length > 0, `Cannot parse amount from "${input}"`)
 
-  const isNegative = cleaned.startsWith('-')
-  const unsigned = isNegative ? cleaned.slice(1) : cleaned
+  // One sign at most, leading or trailing (some bank exports write
+  // "1.500,00-"); anything else — "--1.500", "1-500" — is malformed, and
+  // guessing a sign for a money amount is worse than refusing it.
+  const minusCount = (cleaned.match(/-/g) ?? []).length
+  const isNegative = minusCount === 1 && (cleaned.startsWith('-') || cleaned.endsWith('-'))
+  invariant(minusCount === 0 || isNegative, `Monto inválido: "${input}"`)
+  const unsigned = cleaned.replace('-', '')
+  // "1..000" or "1.,5": no reading of that is the one the user meant.
+  invariant(!/[.,]{2}/.test(unsigned), `Monto inválido: "${input}"`)
 
-  const decimalIndex = Math.max(unsigned.lastIndexOf(','), unsigned.lastIndexOf('.'))
+  const decimalIndex = decimalSeparatorIndex(unsigned)
   const integerPart =
     decimalIndex === -1 ? unsigned : unsigned.slice(0, decimalIndex).replace(/[.,]/g, '')
   const fractionPart =
@@ -101,6 +143,9 @@ export function parseAmount(input: string, currency: CurrencyCode): Money {
   const digits = (integerPart.replace(/[.,]/g, '') || '0') + paddedFraction
   const amount = Number.parseInt(digits, 10)
   invariant(Number.isFinite(amount), `Cannot parse amount from "${input}"`)
+  // Past 2^53 a `number` can't hold every integer: the stored Minor would
+  // silently differ from what was typed.
+  invariant(Number.isSafeInteger(amount), `Monto demasiado grande: "${input}"`)
 
   return money(isNegative ? -amount : amount, currency)
 }
@@ -110,8 +155,8 @@ export function parseAmount(input: string, currency: CurrencyCode): Money {
  * parsed from an API's JSON response) into Money, rounding half-up.
  * Never use `parseAmount` for this: it's built for locale-loose text a
  * user typed, and `String(aVerySmallNumber)` can produce scientific
- * notation ("1.2e-7") that `parseAmount`'s decimal-separator parsing
- * silently mangles into a wildly wrong amount instead of failing loud.
+ * notation ("1.2e-7") that `parseAmount` rejects (or, without a minus
+ * sign in it, would misread).
  * This function skips string round-tripping entirely.
  */
 export function moneyFromNumber(value: number, currency: CurrencyCode): Money {

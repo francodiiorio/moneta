@@ -1215,3 +1215,43 @@ resumen: el resumen es una vista de flujo de caja, no reemplaza al presupuesto.
 **Costo aceptado:** varias tablas nuevas y una versión de Dexie/backup por fase. Los
 ingresos y transferencias borrados en la Etapa 7 no vuelven solos (la migración v3→v4
 los descartó); recuperarlos de un `.finance` v1–v3 viejo sería un trabajo aparte.
+
+## Montos: el punto es separador de miles (es-AR), con tolerancia al punto decimal
+
+**Problema:** `parseAmount` tomaba siempre el último "," o "." como separador decimal, así
+que "900.000" (novecientos mil, como lo escribe cualquiera en Argentina) se guardaba como
+$900,00, y "1.500" como $1,50 — sin error, en un gasto, ingreso, saldo o presupuesto. Lo
+encontramos cargando un ingreso real en la Etapa 8.
+
+**Decisión:** la app es es-AR: "." agrupa miles y "," es el decimal. Pero se sigue
+aceptando un punto decimal donde no puede ser otra cosa (`decimalSeparatorIndex` en
+`domain/money/money.ts`):
+- "," y "." juntos → el último es el decimal ("1.050,50", "1,050.50"), igual que antes.
+- un mismo separador repetido → miles si agrupa bien ("1.000.000", "1,000,000").
+- un solo "." → miles sólo si agrupa bien: 1–3 dígitos sin cero adelante + exactamente
+  3 dígitos ("900.000", "1.500"); si no, es decimal ("1.5", "10.25", "0.500", "1234.567").
+- un solo "," → siempre decimal ("1,5"; "1,500" = 1,50 truncado).
+
+**Descartado:** rechazar la entrada ambigua con un error de validación — más fricción para
+el caso más común ("1.500") sin ganar nada: la única lectura de "1.500" como 1,50 sería
+alguien tipeando 3 decimales en pesos. Tampoco un parámetro de locale: hay un solo usuario
+y un solo locale.
+
+**Alcance:** sólo `parseAmount` (montos que el usuario tipea o que vienen de un CSV de
+banco, donde "15.000" también es quince mil). `parseQuantity` (cantidades de un activo) y
+`parseRateNumber` (tasas de cambio) mantienen "el último separador es el decimal": ahí
+"1.500" BTC o una tasa EUR/USD de "1.085" son decimales legítimos.
+
+**Costo aceptado:** un CSV en formato inglés con un monto de exactamente 3 decimales y
+parte entera de 1–3 dígitos ("12.345" = 12,345 dólares) ahora se lee como 12.345 — no se
+vio ningún extracto así; los bancos exportan 2 decimales. Lo mismo para el precio o costo
+de un activo tipeado con punto decimal y 3 decimales ("1.085" USD → USD 1.085,00): ahí un
+error así infla la posición ×1000, así que esos dos campos muestran debajo "Se guarda como
+…" (`components/ParsedAmountHint.tsx`) antes de guardar.
+
+**De paso, `parseAmount` dejó de adivinar con entradas mal formadas:** un solo "-" al
+principio o al final ("1.500,00-", como exportan algunos bancos), nunca en el medio ni
+duplicado; nada de separadores seguidos ("1..000"); y un monto que no entra exacto en un
+`number` (> 2^53 unidades menores) se rechaza. Antes "--1.500" daba +1,50 y
+`String(1.2e-7)` daba 1,27 — en silencio. En el import de CSV esas celdas pasan a
+mostrarse como filas inválidas en la vista previa.

@@ -20,9 +20,12 @@ export function quantity(scaled: number): Quantity {
   return scaled as Quantity
 }
 
-/** Parses a locale-loose decimal string (same separator rules as
- *  `parseAmount`) into a `Quantity`. Digits past 8 decimal places are
- *  truncated, not rounded. */
+/** Parses a locale-loose decimal string into a `Quantity`: whichever of
+ *  "," or "." appears last is the decimal separator. Deliberately NOT
+ *  `parseAmount`'s es-AR thousands rule — "1.500" of a crypto is
+ *  legitimately 1,5 units, not 1500 (see ADR "Montos: el punto es
+ *  separador de miles"). Digits past 8 decimal places are truncated, not
+ *  rounded. */
 export function parseQuantity(input: string): Quantity {
   const cleaned = input.trim().replace(/[^\d.,-]/g, '')
   invariant(cleaned.length > 0, `Cannot parse quantity from "${input}"`)
@@ -42,9 +45,8 @@ export function parseQuantity(input: string): Quantity {
 
 /** Formats a `Quantity` for display only — trims trailing zeros past the
  *  decimal point, never feeds the result back into storage or math.
- *  `useGrouping: false` is load-bearing: `parseQuantity` (like
- *  `parseAmount`) treats the *last* "," or "." in the string as the
- *  decimal separator. An integer of 1000+ formatted *with* thousands
+ *  `useGrouping: false` is load-bearing: `parseQuantity` treats the
+ *  *last* "," or "." in the string as the decimal separator. An integer of 1000+ formatted *with* thousands
  *  grouping (e.g. "1.000") has no real decimal separator at all, so a
  *  round-trip through parseQuantity would misread the grouping dot as
  *  one and silently divide the value by 1000 — exactly the kind of

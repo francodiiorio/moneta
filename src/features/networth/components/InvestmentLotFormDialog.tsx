@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { ParsedAmountHint } from '@/components/ParsedAmountHint'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DateField } from '@/components/DateField'
@@ -156,6 +157,7 @@ export function InvestmentLotFormDialog({
                     <FormControl>
                       <Input inputMode="decimal" placeholder="0,00" {...field} />
                     </FormControl>
+                    <ParsedAmountHint value={field.value ?? ''} currency={selectedAsset?.currency} />
                     <FormMessage />
                   </FormItem>
                 )}

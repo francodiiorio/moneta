@@ -80,3 +80,16 @@ test('un patrimonio negativo (cuenta en descubierto) no rompe el Dashboard', asy
   await expect(page.getByText(/-\$\s?5[.,]000,00/).first()).toBeVisible()
 })
 
+// Regression: "15.000" (quince mil, es-AR) used to be saved as $15,00 —
+// parseAmount took the last separator as the decimal one, always.
+test('un monto con punto de miles se guarda completo', async ({ page }) => {
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByLabel('Descripción').fill('Alquiler')
+  await page.getByLabel('Monto').fill('15.000')
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Vivienda' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText(/15[.,]000,00/)).toBeVisible()
+})
