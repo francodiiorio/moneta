@@ -177,3 +177,42 @@ test('una transferencia entre cuentas de la misma moneda pide un solo monto', as
   await expect(page.getByText(/^\$\s?700,00$/)).toBeVisible()
   await expect(page.getByText(/^\$\s?1[.,]300,00$/)).toBeVisible()
 })
+
+// Etapa 8, Fase 3: una compra de inversión pagada desde una cuenta baja su
+// saldo (no es un gasto) y queda visible en Movimientos.
+test('una compra con cuenta de origen debita la cuenta y aparece en Movimientos', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Comitente')
+  await page.getByLabel('Saldo inicial').fill('500.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/patrimonio')
+  await page.getByRole('tab', { name: 'Inversiones' }).click()
+  await page.getByRole('button', { name: 'Nuevo activo' }).click()
+  await page.getByLabel('Nombre').fill('Apple CEDEAR')
+  await page.getByLabel('Símbolo').fill('AAPL')
+  await page.getByLabel('Moneda').click()
+  await page.getByRole('option', { name: 'ARS' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nueva posición' }).click()
+  await page.getByLabel('Activo', { exact: true }).click()
+  await page.getByRole('option', { name: /AAPL/ }).click()
+  await page.getByLabel('Cantidad').fill('10')
+  await page.getByLabel(/Cuenta de origen/).click()
+  await page.getByRole('option', { name: /Comitente/ }).click()
+  await page.getByLabel(/Se debitó/).fill('150.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/cuentas')
+  await expect(page.getByText(/350[.,]000,00/)).toBeVisible()
+
+  await page.goto('/movimientos')
+  await expect(page.getByText('Compra de AAPL')).toBeVisible()
+  await expect(page.getByText('Compra de inversión · Comitente')).toBeVisible()
+})

@@ -81,7 +81,8 @@ AccountAdjustment {
 ```
 
 - **Saldo** = `openingBalance` + ingresos − gastos con débito (`confirmed`) ± transferencias
-  ± ajustes, con fecha entre `openingDate` y la fecha pedida. Una sola función pura:
+  − compras de inversión con esa cuenta de origen ± ajustes, con fecha entre `openingDate` y
+  la fecha pedida. Una sola función pura:
   `domain/accounts:accountBalanceAt`. Antes de `openingDate` el saldo es `undefined` (la
   cuenta no existía), no cero — la evolución del patrimonio la deja afuera de esos meses.
 - **Invariantes** (repositories + `validateLedgerIntegrity` del import, misma regla en
@@ -103,6 +104,15 @@ AccountAdjustment {
   lado encaja en su cuenta (moneda, `openingDate`), y entre cuentas de la misma moneda
   `fromAmount === toAmount`. Las monedas las pone el repository desde las cuentas, nunca
   el formulario. No es gasto ni ingreso: no entra en presupuestos ni reportes de gasto.
+- **Compra de inversión con cuenta de origen** (Fase 3): `InvestmentLot` suma
+  `sourceAccountId` + `sourceAmount` + `sourceCurrency`, los tres o ninguno (refine en
+  `investmentLotSchema`). `sourceAmount` es lo que realmente salió de la cuenta, en SU
+  moneda y con comisiones — no se deriva de cantidad × costo (un activo en USD se puede
+  pagar con pesos). Para el saldo es un movimiento `−sourceAmount` en la fecha del lote;
+  nunca es un gasto. El repository toma la moneda de la cuenta, valida la fecha contra su
+  `openingDate` en cada escritura (también al mover sólo la fecha) y acepta `source: null`
+  para quitarla. Borrar el lote — o la posición, que borra todos sus lotes — devuelve el
+  débito a la cuenta.
 - **Patrimonio** = Cuentas + Ahorros + Inversiones (`valuateNetWorth` recupera el bucket
   `accounts`). A diferencia de ahorros e inversiones, las cuentas tienen historial real: la
   evolución usa el saldo de cada cuenta a cada fin de mes.
@@ -331,6 +341,13 @@ expenses:            id, date, categoryId, status, sourcePlanId, accountId, [sta
 transfers:           id, date, fromAccountId, toAccountId
 ```
 
+**Versión 7** (Etapa 8, Fase 3 — cuenta de origen en compras de inversión; sólo suma un
+índice, sin `.upgrade()`: ningún lote existente tiene cuenta):
+
+```
+investmentLots:      id, assetId, date, sourceAccountId
+```
+
 Dexie omite del índice las claves `undefined`, así que `[status+date]` sólo contiene
 gastos con ambos campos seteados (siempre, en la práctica) y `sourcePlanId` sólo aquellos
 materializados por un plan — eso es lo que permite `db.expenses.where('sourcePlanId')...`
@@ -365,7 +382,7 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
 ```jsonc
 {
   "format": "moneta-backup",
-  "version": 6,
+  "version": 7,
   "exportedAt": "2026-08-23T14:03:11.000Z",
   "app": { "name": "moneta", "version": "0.0.0" },
   "checksum": "sha256 hex sobre `data` canonicalizado",
@@ -400,7 +417,11 @@ Reglas (ver `src/features/backups/`):
   **obligatorio**, la forma de categoría de la v4 (sin `kind`) se congeló en
   `schemas/legacy.ts` (`legacyCategoryV4Schema`) para que un `.finance` v4 real siga
   validando igual. La v6 (Etapa 8, Fase 2) sólo suma `transfers` (vacío al migrar un v5,
-  `migrations/v5_to_v6.ts`); ninguna entidad de la v5 cambia de forma.
+  `migrations/v5_to_v6.ts`); ninguna entidad de la v5 cambia de forma. La v7 (Fase 3) suma
+  la cuenta de origen opcional a `InvestmentLot`; como su schema pasó a tener un `refine`
+  y campos nuevos, la forma del lote de v4–v6 quedó congelada en
+  `legacyInvestmentLotV4Schema` (`schemas/legacy.ts`). `migrations/v6_to_v7.ts` deja cada
+  lote igual (ninguno debitaba una cuenta).
 - Como una migración vieja (`schemas/v1.ts`, `v2.ts`, `v3.ts`) tiene que seguir validando
   un archivo `.finance` exactamente como lo hacía cuando esa versión era la última, esos
   schemas **no** pueden depender de los tipos de dominio actuales una vez que el dominio

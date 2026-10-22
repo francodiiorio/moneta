@@ -308,3 +308,45 @@ describe('removeTransaction — transferencia', () => {
     expect(await db.transfers.count()).toBe(0)
   })
 })
+
+describe('compras de inversión con cuenta de origen en Movimientos (Fase 3)', () => {
+  afterEach(async () => {
+    await Promise.all([db.accounts.clear(), db.investmentAssets.clear(), db.investmentHoldings.clear(), db.investmentLots.clear()])
+  })
+
+  it('lists a sourced purchase as a read-only debit of its account, and skips one without account', async () => {
+    const { removeTransaction, isEditableTransaction } = await import('./service')
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const { createInvestmentAsset } = await import('@/database/repositories/investments.repo')
+    const { createInvestmentLot } = await import('@/database/repositories/investmentLots.repo')
+    const account = await createAccount({ name: 'Comitente', type: 'broker', currency: 'ARS', openingBalance: 0, openingDate: '2026-08-01' })
+    const asset = await createInvestmentAsset({ name: 'Apple', symbol: 'AAPL', type: 'cedear', currency: 'ARS', priceMode: 'manual' })
+    await createInvestmentLot({
+      assetId: asset.id,
+      quantity: 1_000_000_000,
+      currency: 'ARS',
+      date: '2026-08-12',
+      source: { accountId: account.id, amount: 150_000_00, expectedCurrency: 'ARS' },
+    })
+    await createInvestmentLot({ assetId: asset.id, quantity: 100_000_000, currency: 'ARS', date: '2026-08-13' })
+
+    const items = await listTransactionsForMonth('2026-08')
+    expect(items).toHaveLength(1)
+    const [item] = items
+    expect(item).toMatchObject({
+      kind: 'investment',
+      description: 'Compra de AAPL',
+      categoryLabel: 'Compra de inversión',
+      accountLabel: 'Comitente',
+      signed: true,
+      amount: { amount: -150_000_00, currency: 'ARS' },
+    })
+    expect(isEditableTransaction(item!)).toBe(false)
+    await expect(removeTransaction(item!.id, item!.kind)).rejects.toThrow(/Patrimonio/)
+
+    // Shows up when filtering by its account; not under another one, nor under a category.
+    expect(await listTransactionsForMonth('2026-08', { accountId: account.id })).toHaveLength(1)
+    expect(await listTransactionsForMonth('2026-08', { accountId: 'other' })).toHaveLength(0)
+    expect(await listTransactionsForMonth('2026-07')).toHaveLength(0)
+  })
+})

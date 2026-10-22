@@ -210,3 +210,21 @@ export const legacyExpenseV4Schema = z.object({
   updatedAt: isoInstant,
 })
 export type LegacyExpenseV4 = z.infer<typeof legacyExpenseV4Schema>
+
+/** `InvestmentLot` as `schemas/v4.ts`, `v5.ts` and `v6.ts` shipped it: no
+ *  source account (Etapa 8, Fase 3 added `sourceAccountId`/`sourceAmount`/
+ *  `sourceCurrency` plus a refine tying them together). Frozen so those
+ *  versions keep validating — and stripping unknown keys — exactly as
+ *  before. */
+export const legacyInvestmentLotV4Schema = z.object({
+  id,
+  assetId: id,
+  quantity: quantityScaled,
+  costPerUnit: minorAmount.optional(),
+  currency: currencyCode,
+  date: dateStamp,
+  notes: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type LegacyInvestmentLotV4 = z.infer<typeof legacyInvestmentLotV4Schema>

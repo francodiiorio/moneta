@@ -191,7 +191,7 @@ describe('createInvestmentAssetFromForm', () => {
 describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
   it('parses quantity and costPerUnit in the asset currency, and the holding aggregate matches a single lot exactly', async () => {
     const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
-    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '5', costPerUnit: '600', date: '2026-01-01' })
+    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '5', costPerUnit: '600', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
 
     expect(lot.quantity).toBe(500_000_000) // 5.00000000 scaled
     expect(lot.costPerUnit).toBe(60_000) // "600" parsed as major units -> 600.00 USD
@@ -199,7 +199,7 @@ describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
     const [holding] = await listInvestmentHoldings()
     expect(holding).toMatchObject({ assetId: asset.id, quantity: 500_000_000, averageCost: 60_000 })
 
-    await updateInvestmentLotFromForm(lot.id, { quantity: '7', costPerUnit: '', date: '2026-01-01' })
+    await updateInvestmentLotFromForm(lot.id, { quantity: '7', costPerUnit: '', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
     const [updatedHolding] = await listInvestmentHoldings()
     expect(updatedHolding?.quantity).toBe(700_000_000)
     // Clearing "Costo por unidad" must actually clear it, not just leave
@@ -210,13 +210,13 @@ describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
   it('resolves costPerUnit against the lot\'s real asset currency, ignoring a mismatched assetId if one were passed', async () => {
     const usdAsset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
     const eurAsset = await createInvestmentAssetFromForm({ name: 'Bono EUR', type: 'bond', currency: 'EUR', autoPrice: false })
-    const lot = await createInvestmentLotFromForm({ assetId: usdAsset.id, quantity: '1', date: '2026-01-01' })
+    const lot = await createInvestmentLotFromForm({ assetId: usdAsset.id, quantity: '1', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
 
     // A caller passing a different asset's id can't smuggle the wrong
     // currency in — updateInvestmentLotFromForm's signature doesn't even
     // accept assetId, so this can't compile with one; verifying the
     // currency used is still the lot's real (USD) one.
-    await updateInvestmentLotFromForm(lot.id, { quantity: '1', costPerUnit: '600', date: '2026-01-01' })
+    await updateInvestmentLotFromForm(lot.id, { quantity: '1', costPerUnit: '600', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
     const [holding] = await listInvestmentHoldings()
     expect(holding?.averageCost).toBe(60_000) // 600.00 USD, not EUR — resolved from the lot, not eurAsset
     expect(eurAsset.currency).toBe('EUR') // sanity: the mismatched asset really is a different currency
@@ -224,13 +224,13 @@ describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
 
   it('rejects a lot for a non-existent asset', async () => {
     await expect(
-      createInvestmentLotFromForm({ assetId: 'missing', quantity: '1', date: '2026-01-01' }),
+      createInvestmentLotFromForm({ assetId: 'missing', quantity: '1', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' }),
     ).rejects.toThrow(/no encontrado/)
   })
 
   it('omits costPerUnit when left blank, and the holding aggregate has no averageCost either', async () => {
     const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD', autoPrice: false })
-    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '1', date: '2026-01-01' })
+    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '1', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
     expect('costPerUnit' in lot).toBe(false)
 
     const [holding] = await listInvestmentHoldings()
@@ -618,5 +618,62 @@ describe('getNetWorthMonthChange', () => {
       await createAccount({ name: 'Descubierto', type: 'bank', currency: 'ARS', openingBalance: -1_000, openingDate: '2026-07-01' })
       expect(await getNetWorthMonthChange()).toBeUndefined()
     })
+  })
+})
+
+describe('compra con cuenta de origen (Fase 3)', () => {
+  it('debits the account in ITS currency, and editing without an account removes the debit', async () => {
+    const { createInvestmentLotFromForm, updateInvestmentLotFromForm } = await import('./service')
+    const { getAccountBalancesAt } = await import('@/features/accounts/service')
+    const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
+    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 5_000_000_00, openingDate: '2026-01-01' })
+
+    const lot = await createInvestmentLotFromForm({
+      assetId: asset.id,
+      quantity: '5',
+      costPerUnit: '650',
+      date: '2026-01-10',
+      sourceAccountId: account.id,
+      sourceAmount: '4.062.500',
+    })
+    expect(lot).toMatchObject({ sourceAmount: 4_062_500_00, sourceCurrency: 'ARS', currency: 'USD' })
+    expect((await getAccountBalancesAt(['2026-01-31'])).get('2026-01-31')).toEqual([money(937_500_00, 'ARS')])
+
+    await updateInvestmentLotFromForm(lot.id, { quantity: '5', costPerUnit: '650', date: '2026-01-10', sourceAccountId: '', sourceAmount: '' })
+    expect((await getAccountBalancesAt(['2026-01-31'])).get('2026-01-31')).toEqual([money(5_000_000_00, 'ARS')])
+  })
+})
+
+describe('historia del patrimonio con compras pagadas desde una cuenta (revisión Fase 3)', () => {
+  it('a purchase paid from an account is not counted twice before its date (cash + position)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
+    try {
+      const { createInvestmentLot } = await import('@/database/repositories/investmentLots.repo')
+      await updateSettings({ baseCurrency: 'ARS' })
+      const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'ARS', priceMode: 'manual' })
+      await createAssetPrice({ assetId: asset.id, price: 650_00, currency: 'ARS', date: '2026-01-01', source: 'manual' })
+      const account = await createAccount({ name: 'Caja', type: 'bank', currency: 'ARS', openingBalance: 10_000_00, openingDate: '2026-01-01' })
+      await createInvestmentLot({ assetId: asset.id, quantity: 10 * QUANTITY_SCALE, currency: 'ARS', date: '2026-02-01' })
+      await createInvestmentLot({
+        assetId: asset.id,
+        quantity: 5 * QUANTITY_SCALE,
+        currency: 'ARS',
+        date: '2026-10-09',
+        source: { accountId: account.id, amount: 3_260_00, expectedCurrency: 'ARS' },
+      })
+
+      const { points } = await getSavingsAndInvestmentsHistory(2) // Sep, Oct(today)
+      expect(points.map((p) => [p.month, p.total.amount])).toEqual([
+        ['2026-09', 10_000_00 + 10 * 650_00], // the 5 SPY bought in October aren't counted yet: their money is still in Caja
+        ['2026-10', 6_740_00 + 15 * 650_00],
+      ])
+
+      const { getNetWorthMonthChange } = await import('./service')
+      const change = await getNetWorthMonthChange()
+      expect(change).toBeCloseTo(-0.06, 1) // −10 ARS of 16.500: basically flat, not a fake −16%
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

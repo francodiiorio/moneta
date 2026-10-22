@@ -1,4 +1,5 @@
-import { ArrowDownLeft, ArrowLeftRight, MoreVertical, Receipt, Scale } from 'lucide-react'
+import { Link } from 'react-router'
+import { ArrowDownLeft, ArrowLeftRight, Landmark, MoreVertical, Receipt, Scale } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,10 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
     <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
       {hasCategoryIdentity ? (
         <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} />
+      ) : item.kind === 'investment' ? (
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <Landmark className="size-4.5" />
+        </div>
       ) : item.kind === 'transfer' ? (
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
           <ArrowLeftRight className="size-4.5" />
@@ -76,10 +81,20 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {item.kind !== 'adjustment' && <DropdownMenuItem onSelect={onEdit}>Editar</DropdownMenuItem>}
-          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-            Eliminar
-          </DropdownMenuItem>
+          {item.kind === 'investment' ? (
+            // Created and edited in Patrimonio (it changes a position too) —
+            // listed here only so the account's balance change is visible.
+            <DropdownMenuItem asChild>
+              <Link to="/patrimonio?tab=inversiones">Ver en Patrimonio</Link>
+            </DropdownMenuItem>
+          ) : (
+            <>
+              {item.kind !== 'adjustment' && <DropdownMenuItem onSelect={onEdit}>Editar</DropdownMenuItem>}
+              <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                Eliminar
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

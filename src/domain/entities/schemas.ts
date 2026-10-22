@@ -316,17 +316,34 @@ export type InvestmentHolding = z.infer<typeof investmentHoldingSchema>
 // InvestmentHolding es la suma de sus lotes; nunca al revés. costPerUnit
 // es opcional con el mismo criterio que InvestmentHolding.averageCost
 // tenía antes: si no se cargó costo, no se inventa uno.
-export const investmentLotSchema = z.object({
-  id,
-  assetId: id,
-  quantity: quantityScaled,
-  costPerUnit: minorAmount.optional(),
-  currency: currencyCode,
-  date: dateStamp,
-  notes: z.string().optional(),
-  createdAt: isoInstant,
-  updatedAt: isoInstant,
-})
+//
+// Cuenta de origen (Etapa 8, Fase 3): `sourceAccountId` + `sourceAmount`
+// + `sourceCurrency`, los tres o ninguno. `sourceAmount` es lo que
+// realmente se debitó de la cuenta, en SU moneda, comisiones incluidas —
+// no se deriva de quantity × costPerUnit (pueden diferir en moneda y en
+// comisiones). Comprar una inversión no es un gasto: sólo baja el saldo
+// de la cuenta, nunca pasa por categorías ni presupuestos.
+export const investmentLotSchema = z
+  .object({
+    id,
+    assetId: id,
+    quantity: quantityScaled,
+    costPerUnit: minorAmount.optional(),
+    currency: currencyCode,
+    date: dateStamp,
+    notes: z.string().optional(),
+    sourceAccountId: id.optional(),
+    sourceAmount: minorAmount.positive().optional(),
+    sourceCurrency: currencyCode.optional(),
+    createdAt: isoInstant,
+    updatedAt: isoInstant,
+  })
+  .refine(
+    (lot) =>
+      (lot.sourceAccountId === undefined) === (lot.sourceAmount === undefined) &&
+      (lot.sourceAmount === undefined) === (lot.sourceCurrency === undefined),
+    { message: 'Cuenta de origen, monto debitado y su moneda van juntos', path: ['sourceAccountId'] },
+  )
 export type InvestmentLot = z.infer<typeof investmentLotSchema>
 
 export const assetPriceSchema = z.object({

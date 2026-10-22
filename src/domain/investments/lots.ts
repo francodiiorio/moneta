@@ -1,6 +1,8 @@
 import { divideHalfUp, isSafeBigInt, QUANTITY_SCALE, quantity, valuePosition, type Quantity } from '@/domain/decimal'
 import { minor, sumMoney, type Minor, type Money } from '@/domain/money'
 import { invariant } from '@/lib/invariant'
+import type { InvestmentLot } from '@/domain/entities'
+import type { DateStamp } from '@/lib/dates'
 
 export interface LotInput {
   quantity: Quantity
@@ -52,4 +54,37 @@ export function aggregateLots(lots: readonly LotInput[]): LotAggregate {
   const averageCost = minor(Number(averageCostBig))
 
   return { quantity: quantity(totalQuantity), averageCost }
+}
+
+export interface HoldingQuantity {
+  assetId: string
+  quantity: number
+}
+
+/**
+ * Each holding's quantity as the net worth history should value it at
+ * `date`: today's quantity, minus purchases PAID FROM AN ACCOUNT after
+ * `date`. Those purchases' money is still in the account's balance at
+ * `date` (account balances do have history), so counting the position
+ * they became as well would count the same money twice — a fake drop in
+ * every month with a purchase. Purchases without a source account keep
+ * the "cantidades de hoy" rule (see ADR "Evolución del patrimonio"): their
+ * money was never in any tracked account.
+ */
+export function holdingsAsOf(
+  holdings: readonly HoldingQuantity[],
+  sourcedLots: readonly Pick<InvestmentLot, 'assetId' | 'quantity' | 'date' | 'sourceAccountId'>[],
+  date: DateStamp,
+): HoldingQuantity[] {
+  const laterByAsset = new Map<string, number>()
+  for (const lot of sourcedLots) {
+    if (lot.sourceAccountId === undefined || lot.date <= date) continue
+    laterByAsset.set(lot.assetId, (laterByAsset.get(lot.assetId) ?? 0) + lot.quantity)
+  }
+  return holdings.map((holding) => {
+    const later = laterByAsset.get(holding.assetId) ?? 0
+    // A holding is the sum of its lots, so this can't go negative — the
+    // clamp only guards data that somehow broke that invariant.
+    return { assetId: holding.assetId, quantity: quantity(Math.max(0, holding.quantity - later)) }
+  })
 }

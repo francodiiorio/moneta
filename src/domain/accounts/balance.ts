@@ -1,4 +1,4 @@
-import type { Account, AccountAdjustment, Expense, Income, Transfer } from '@/domain/entities'
+import type { Account, AccountAdjustment, Expense, Income, InvestmentLot, Transfer } from '@/domain/entities'
 import { add, getCurrency, money, negate, sub, type Money } from '@/domain/money'
 import { formatFullDate, type DateStamp } from '@/lib/dates'
 
@@ -16,6 +16,9 @@ export interface AccountMovementSources {
   expenses: readonly Expense[]
   adjustments: readonly AccountAdjustment[]
   transfers: readonly Transfer[]
+  /** Only lots with a source account move a balance; the rest are
+   *  ignored. */
+  investmentLots: readonly InvestmentLot[]
 }
 
 /** Flattens every record that touches an account into signed movements.
@@ -23,8 +26,9 @@ export interface AccountMovementSources {
  *  one hasn't happened yet (same rule reports/budgets follow), and one
  *  without `accountId` (credit card, or unspecified) never touched an
  *  account. A transfer is two movements: its `fromAmount` leaves one
- *  account, its `toAmount` enters the other. Investment purchases and card
- *  payments join here in later phases of Etapa 8 (see docs/ROADMAP.md). */
+ *  account, its `toAmount` enters the other. An investment purchase with a
+ *  source account takes its `sourceAmount` out of it. Card payments join
+ *  here in a later phase of Etapa 8 (see docs/ROADMAP.md). */
 export function toAccountMovements(sources: AccountMovementSources): AccountMovement[] {
   const movements: AccountMovement[] = []
   for (const income of sources.incomes) {
@@ -55,6 +59,14 @@ export function toAccountMovements(sources: AccountMovementSources): AccountMove
       accountId: transfer.toAccountId,
       date: transfer.date,
       amount: money(transfer.toAmount, transfer.toCurrency),
+    })
+  }
+  for (const lot of sources.investmentLots) {
+    if (lot.sourceAccountId === undefined || lot.sourceAmount === undefined || lot.sourceCurrency === undefined) continue
+    movements.push({
+      accountId: lot.sourceAccountId,
+      date: lot.date,
+      amount: negate(money(lot.sourceAmount, lot.sourceCurrency)),
     })
   }
   return movements

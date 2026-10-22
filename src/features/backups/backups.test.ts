@@ -204,7 +204,12 @@ async function seedFullDatabase() {
     quantity: 500_000_000,
     costPerUnit: 65_000_00,
     currency: 'USD',
-    date: '2026-07-20',
+    date: '2026-08-20',
+    // Paid from the USD account (Etapa 8, Fase 3) — the round-trip has to
+    // carry the source-account fields too.
+    sourceAccountId: usdAccount.id,
+    sourceAmount: 100_00,
+    sourceCurrency: 'USD',
     createdAt: now,
     updatedAt: now,
   })
@@ -749,14 +754,15 @@ describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
     expect(await db.expenses.count()).toBe(1)
   })
 
-  it('exports as version 6', async () => {
+  it('exports as version 7', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
-    expect(payload.version).toBe(6)
+    expect(payload.version).toBe(7)
     expect(payload.data.accounts).toHaveLength(2)
     expect(payload.data.incomes).toHaveLength(1)
     expect(payload.data.accountAdjustments).toHaveLength(1)
     expect(payload.data.transfers).toHaveLength(1)
+    expect(payload.data.investmentLots[0]?.sourceAccountId).toBeDefined()
   })
 })
 
@@ -882,5 +888,94 @@ describe('transferencias en el backup (Fase 2)', () => {
     const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
     await expect(importBackup(file)).rejects.toThrow(/distintas/)
     expect(await db.accounts.count()).toBe(0)
+  })
+})
+
+describe('compras de inversión con cuenta de origen en el backup (Fase 3)', () => {
+  it('a v6 file migrates to v7 with every lot unchanged (no source account)', () => {
+    const v6 = {
+      ...v4Payload(),
+      version: 6 as const,
+      data: {
+        ...v4Payload().data,
+        categories: v4Payload().data.categories.map((c) => ({ ...c, kind: 'expense' as const })),
+        accounts: [],
+        incomes: [],
+        accountAdjustments: [],
+        transfers: [],
+      },
+    }
+    expect(migrateToLatest(v6).investmentLots).toEqual([])
+  })
+
+  it('rejects a lot paid from an account that does not exist in the file', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.investmentLots[0]!.sourceAccountId = 'ghost'
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/Compra de inversión.*no existe/)
+  })
+
+  it('rejects a lot with a source account but no amount (fields go together)', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    delete payload.data.investmentLots[0]!.sourceAmount
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/van juntos/)
+  })
+})
+
+describe('revisión de la Fase 3 — backups', () => {
+  it('a real v6 lot migrates unchanged, and a stray sourceAccountId in it is stripped (never debits)', () => {
+    const now = '2026-09-10T12:00:00.000Z'
+    const v6 = {
+      ...v4Payload(),
+      version: 6 as const,
+      data: {
+        ...v4Payload().data,
+        categories: v4Payload().data.categories.map((c) => ({ ...c, kind: 'expense' as const })),
+        investmentAssets: [
+          { id: 'spy', name: 'SPY', type: 'etf' as const, currency: 'USD', priceMode: 'manual' as const, createdAt: now, updatedAt: now },
+        ],
+        investmentHoldings: [{ id: 'h1', assetId: 'spy', quantity: 100_000_000, createdAt: now, updatedAt: now }],
+        investmentLots: [
+          { id: 'l1', assetId: 'spy', quantity: 100_000_000, currency: 'USD', date: '2026-09-01', sourceAccountId: 'ghost', createdAt: now, updatedAt: now },
+        ],
+        accounts: [],
+        incomes: [],
+        accountAdjustments: [],
+        transfers: [],
+      },
+    }
+    const [lot] = migrateToLatest(v6).investmentLots
+    expect(lot).toMatchObject({ id: 'l1', quantity: 100_000_000, date: '2026-09-01' })
+    expect(lot?.sourceAccountId).toBeUndefined()
+  })
+
+  it('merge rolls back when an incoming sourced purchase does not fit the LOCAL copy of its account', async () => {
+    await seedFullDatabase()
+    const exported = await exportBackup()
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+    const usdId = (await db.accounts.toArray()).find((a) => a.name === 'Caja USD')!.id
+
+    await clearAllTables()
+    const now = new Date().toISOString()
+    // Same id locally, but in pesos: the incoming USD debit can't land here.
+    await db.accounts.add({
+      id: usdId,
+      name: 'Caja (ahora en pesos)',
+      type: 'bank',
+      currency: 'ARS',
+      openingBalance: 0,
+      openingDate: '2026-01-01',
+      isArchived: false,
+      order: 0,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await expect(importBackup(file, { mode: 'merge' })).rejects.toThrow(/es en ARS/)
+    expect(await db.investmentLots.count()).toBe(0)
   })
 })

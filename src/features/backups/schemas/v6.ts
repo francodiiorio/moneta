@@ -11,13 +11,13 @@ import {
   installmentPlanSchema,
   investmentAssetSchema,
   investmentHoldingSchema,
-  investmentLotSchema,
   recurringPlanSchema,
   savingsHoldingSchema,
   settingsSchema,
   transferSchema,
 } from '@/domain/entities'
 import { BACKUP_FORMAT } from './v1'
+import { legacyInvestmentLotV4Schema } from './legacy'
 
 /**
  * Never edit this schema once it has shipped in a released version —
@@ -46,7 +46,7 @@ export const backupV6Schema = z.object({
     investmentAssets: z.array(investmentAssetSchema),
     investmentHoldings: z.array(investmentHoldingSchema),
     assetPrices: z.array(assetPriceSchema),
-    investmentLots: z.array(investmentLotSchema),
+    investmentLots: z.array(legacyInvestmentLotV4Schema),
     accounts: z.array(accountSchema),
     incomes: z.array(incomeSchema),
     accountAdjustments: z.array(accountAdjustmentSchema),

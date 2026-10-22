@@ -110,7 +110,7 @@ export function TransferForm({ item, onSaved, onCancel }: TransferFormProps) {
       }
     }
     try {
-      await saveTransferFromForm(values, item?.id)
+      await saveTransferFromForm(values, item?.id, from && to ? { from: from.currency, to: to.currency } : undefined)
       toast.success(item ? 'Transferencia actualizada' : 'Transferencia creada')
       onSaved()
     } catch (error) {

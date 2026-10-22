@@ -215,8 +215,11 @@ Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
    guardan los dos montos reales; la cotización implícita se muestra, nunca se guarda).
    Pestaña "Transferencia" en el diálogo de Movimientos; en la lista, sin signo salvo
    filtrando por una de sus cuentas. Dexie v6 + backup v6.
-3. **Cuenta de origen en compras de inversión** — `InvestmentLot.sourceAccountId`
-   opcional; la compra baja el saldo sin ser un gasto.
+3. **Cuenta de origen en compras de inversión** (hecho) — `InvestmentLot.sourceAccountId`
+   + `sourceAmount` + `sourceCurrency` opcionales (lo que realmente se debitó, en la moneda
+   de la cuenta, comisiones incluidas); la compra baja el saldo sin ser un gasto y se
+   lista, de sólo lectura, en Movimientos. Borrar la compra o la posición devuelve el
+   débito. Dexie v7 (índice) + backup v7 (forma del lote v4–v6 congelada).
 4. **Tarjetas + resúmenes** — `CreditCard`, `CardStatement`, `Expense.cardId` +
    `statementPeriod` (también en cuotas y recurrentes), calendario de cierres con
    override por mes, vista `/tarjetas`, aviso de cierre/vencimiento en el Dashboard.

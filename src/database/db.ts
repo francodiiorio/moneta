@@ -220,6 +220,12 @@ export class MonetaDatabase extends Dexie {
     this.version(6).stores({
       transfers: 'id, date, fromAccountId, toAccountId',
     })
+    // Etapa 8, Fase 3: cuenta de origen opcional en una compra de
+    // inversión. Sólo suma un índice — los lotes existentes no tienen
+    // cuenta, y Dexie deja afuera del índice las claves `undefined`.
+    this.version(7).stores({
+      investmentLots: 'id, assetId, date, sourceAccountId',
+    })
   }
 }
 

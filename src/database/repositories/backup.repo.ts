@@ -221,6 +221,7 @@ async function assertMergedMovementsFit(added: {
   expenses: readonly Expense[]
   adjustments: readonly AccountAdjustment[]
   transfers: readonly Transfer[]
+  investmentLots: readonly InvestmentLot[]
 }): Promise<void> {
   const accountById = new Map((await db.accounts.toArray()).map((a) => [a.id, a]))
   const categoryKindById = new Map((await db.categories.toArray()).map((c) => [c.id, c.kind]))
@@ -248,6 +249,14 @@ async function assertMergedMovementsFit(added: {
   }
   for (const adjustment of added.adjustments) {
     check(`Ajuste de saldo (${adjustment.id})`, adjustment.accountId, adjustment)
+  }
+  for (const lot of added.investmentLots) {
+    const present = [lot.sourceAccountId, lot.sourceAmount, lot.sourceCurrency].filter((v) => v !== undefined).length
+    if (present !== 0 && present !== 3) {
+      throw new Error(`Compra de inversión (${lot.id}): cuenta de origen, monto y moneda van juntos`)
+    }
+    if (lot.sourceAccountId === undefined || lot.sourceAmount === undefined || lot.sourceCurrency === undefined) continue
+    check(`Compra de inversión (${lot.id})`, lot.sourceAccountId, { date: lot.date, currency: lot.sourceCurrency })
   }
   for (const transfer of added.transfers) {
     const label = `Transferencia "${transfer.description}" (${transfer.id})`
@@ -368,6 +377,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       expenses: newExpenses,
       adjustments: accountAdjustments.added,
       transfers: transfers.added,
+      investmentLots: investmentLots.added,
     })
     const expenses: MergeCounts = {
       added: newExpenses.length,

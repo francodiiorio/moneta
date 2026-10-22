@@ -1,4 +1,5 @@
 import {
+  accountsRepo,
   assetPricesRepo,
   exchangeRatesRepo,
   investmentLotsRepo,
@@ -7,11 +8,12 @@ import {
   settingsRepo,
 } from '@/database/repositories'
 import { quantity, parseQuantity, valuePosition } from '@/domain/decimal'
+import { holdingsAsOf } from '@/domain/investments'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { convert, MissingRateError } from '@/domain/currency'
 import { isNegative, money, parseAmount, percentChange, sub, type CurrencyCode, type Money } from '@/domain/money'
 import { AUTO_PRICE_ASSET_TYPES } from '@/domain/entities'
-import type { AssetPrice, ExchangeRate, InvestmentAsset, InvestmentHolding, SavingsHolding } from '@/domain/entities'
+import type { AssetPrice, ExchangeRate, InvestmentAsset, InvestmentHolding, InvestmentLot, SavingsHolding } from '@/domain/entities'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 // Cuentas (Etapa 8) suman al patrimonio — re-using another feature's
@@ -92,12 +94,13 @@ async function valueSavingsAndInvestmentsAt(
   savings: readonly SavingsHolding[],
   holdings: readonly { assetId: string; quantity: number }[],
   assetById: Map<string, InvestmentAsset>,
+  sourcedLots: readonly InvestmentLot[],
 ): Promise<ValuationResult> {
   const latestPrices = await assetPricesRepo.latestAssetPrices(
     [...assetById.keys()],
     asOfDate,
   )
-  const positions: ValuationPosition[] = holdings.map((holding) => {
+  const positions: ValuationPosition[] = holdingsAsOf(holdings, sourcedLots, asOfDate).map((holding) => {
     const asset = assetById.get(holding.assetId)
     const priceRow = asset ? latestPrices.get(asset.id) : undefined
     return {
@@ -122,12 +125,13 @@ export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode)
   const displayCurrency = overrideDisplayCurrency ?? settings.displayCurrency ?? settings.baseCurrency
   const date = todayStamp()
 
-  const [savings, holdings, assets, rates, accountBalances] = await Promise.all([
+  const [savings, holdings, assets, rates, accountBalances, sourcedLots] = await Promise.all([
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
     exchangeRatesRepo.listExchangeRates(),
     getAccountBalancesAt([date]),
+    investmentLotsRepo.listLotsWithSource(),
   ])
   const assetById = new Map(assets.map((a) => [a.id, a]))
 
@@ -140,6 +144,7 @@ export async function getNetWorthSummary(overrideDisplayCurrency?: CurrencyCode)
     savings,
     holdings,
     assetById,
+    sourcedLots,
   )
 
   return { ...result, displayCurrency }
@@ -161,12 +166,13 @@ export async function getNetWorthMonthChange(): Promise<number | undefined> {
   const today = todayStamp()
   const previousDate = monthRange(shiftMonth(currentMonthStamp(), -1)).end
 
-  const [rates, savings, holdings, assets, accountBalances] = await Promise.all([
+  const [rates, savings, holdings, assets, accountBalances, sourcedLots] = await Promise.all([
     exchangeRatesRepo.listExchangeRates(),
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
     getAccountBalancesAt([previousDate, today], { openedOnOrBefore: previousDate }),
+    investmentLotsRepo.listLotsWithSource(),
   ])
   const assetById = new Map(assets.map((a) => [a.id, a]))
 
@@ -181,6 +187,7 @@ export async function getNetWorthMonthChange(): Promise<number | undefined> {
         savings,
         holdings,
         assetById,
+        sourcedLots,
       ),
     ),
   )
@@ -218,12 +225,13 @@ export async function getSavingsAndInvestmentsHistory(monthsBack = 6): Promise<S
   const months = Array.from({ length: monthsBack }, (_, index) => shiftMonth(currentMonth, index - monthsBack + 1))
   const asOfDates = months.map((month) => (month === currentMonth ? todayStamp() : monthRange(month).end))
 
-  const [rates, savings, holdings, assets, accountBalances] = await Promise.all([
+  const [rates, savings, holdings, assets, accountBalances, sourcedLots] = await Promise.all([
     exchangeRatesRepo.listExchangeRates(),
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
     getAccountBalancesAt(asOfDates),
+    investmentLotsRepo.listLotsWithSource(),
   ])
   const assetById = new Map(assets.map((a) => [a.id, a]))
 
@@ -243,6 +251,7 @@ export async function getSavingsAndInvestmentsHistory(monthsBack = 6): Promise<S
       savings,
       holdings,
       assetById,
+      sourcedLots,
     )
 
     missingRateCount += result.missingRateCount
@@ -323,21 +332,48 @@ function parseLotFields(quantityInput: string, costPerUnitInput: string | undefi
   return { quantity: parseQuantity(quantityInput), costPerUnit }
 }
 
+/** Every account, archived included — the picker offers only active ones,
+ *  but editing a purchase paid from an archived account must keep it. */
+export async function listAccountsForLots() {
+  return accountsRepo.listAccounts()
+}
+
+/** The source account of a purchase, from the form: `null` when none was
+ *  chosen. The debited amount is parsed in the ACCOUNT's currency (it can
+ *  differ from the asset's — pesos paying a USD asset) — specifically the
+ *  one the form showed next to the field (`displayedCurrency`), which goes
+ *  along so the repository can reject the write if the account's currency
+ *  changed since (another tab, an account with no movements yet). */
+async function sourceFromForm(
+  values: Pick<InvestmentLotFormValues, 'sourceAccountId' | 'sourceAmount'>,
+  displayedCurrency: string | undefined,
+) {
+  if (!values.sourceAccountId) return null
+  const account = await accountsRepo.getAccount(values.sourceAccountId)
+  invariant(account, `Cuenta no encontrada: ${values.sourceAccountId}`)
+  const currency = displayedCurrency ?? account.currency
+  const amount = parseAmount(values.sourceAmount, currency).amount
+  invariant(amount > 0, 'Ingresá cuánto se debitó de la cuenta')
+  return { accountId: account.id, amount, expectedCurrency: currency }
+}
+
 /** Records a purchase. `InvestmentHolding` (the position's cached
  *  quantity/averageCost, everything else in the app reads) is never
  *  written here directly — `investmentLotsRepo.createInvestmentLot`
  *  recomputes it from every lot for the asset, inside the same
  *  transaction as this write. Ver ADR "Tracking de inversiones por
  *  lote" en docs/DECISIONS.md. */
-export async function createInvestmentLotFromForm(values: InvestmentLotFormValues) {
+export async function createInvestmentLotFromForm(values: InvestmentLotFormValues, displayedSourceCurrency?: string) {
   const asset = await requireAsset(values.assetId)
   const { quantity, costPerUnit } = parseLotFields(values.quantity, values.costPerUnit, asset.currency)
+  const source = await sourceFromForm(values, displayedSourceCurrency)
   return investmentLotsRepo.createInvestmentLot({
     assetId: values.assetId,
     currency: asset.currency,
     date: values.date,
     quantity,
     ...(costPerUnit !== undefined && { costPerUnit }),
+    ...(source !== null && { source }),
   })
 }
 
@@ -354,13 +390,22 @@ export async function createInvestmentLotFromForm(values: InvestmentLotFormValue
  *  `UpdateInvestmentLotInput`'s tri-state. */
 export async function updateInvestmentLotFromForm(
   id: string,
-  values: Pick<InvestmentLotFormValues, 'quantity' | 'costPerUnit' | 'date'>,
+  values: Pick<InvestmentLotFormValues, 'quantity' | 'costPerUnit' | 'date' | 'sourceAccountId' | 'sourceAmount'>,
+  displayedSourceCurrency?: string,
 ) {
   const lot = await investmentLotsRepo.getInvestmentLot(id)
   invariant(lot, `Compra no encontrada: ${id}`)
   const asset = await requireAsset(lot.assetId)
   const { quantity, costPerUnit } = parseLotFields(values.quantity, values.costPerUnit, asset.currency)
-  return investmentLotsRepo.updateInvestmentLot(id, { date: values.date, quantity, costPerUnit: costPerUnit ?? null })
+  // Same "full desired state" rule as costPerUnit: no account chosen means
+  // "this purchase no longer debits any account" (source: null).
+  const source = await sourceFromForm(values, displayedSourceCurrency)
+  return investmentLotsRepo.updateInvestmentLot(id, {
+    date: values.date,
+    quantity,
+    costPerUnit: costPerUnit ?? null,
+    source,
+  })
 }
 
 export async function createManualPriceFromForm(

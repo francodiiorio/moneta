@@ -45,6 +45,12 @@ const DELETE_COPY: Record<TransactionKind, { title: string; deleted: string; fai
     deleted: 'Transferencia eliminada',
     failed: 'No se pudo eliminar la transferencia',
   },
+  // Never shown: an investment purchase has no delete action here.
+  investment: {
+    title: '¿Eliminar esta compra?',
+    deleted: 'Compra eliminada',
+    failed: 'No se pudo eliminar la compra',
+  },
   adjustment: {
     title: '¿Eliminar este ajuste de saldo?',
     deleted: 'Ajuste de saldo eliminado',

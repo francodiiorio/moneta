@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { quantity, QUANTITY_SCALE } from '@/domain/decimal'
 import { money } from '@/domain/money'
-import { aggregateLots } from './lots'
+import { aggregateLots, holdingsAsOf } from './lots'
 
 describe('aggregateLots', () => {
   it('is empty for no lots', () => {
@@ -79,5 +79,33 @@ describe('aggregateLots', () => {
   it('rejects an average cost that genuinely overflows the safe integer range', () => {
     const lot = { quantity: quantity(1), costPerUnit: money(1e16, 'USD') }
     expect(() => aggregateLots([lot])).toThrow(/overflow/)
+  })
+})
+
+describe('holdingsAsOf', () => {
+  const holdings = [{ assetId: 'spy', quantity: 15 * QUANTITY_SCALE }]
+  const lot = (date: string, qty: number, sourceAccountId?: string) => ({
+    assetId: 'spy',
+    quantity: qty * QUANTITY_SCALE,
+    date,
+    ...(sourceAccountId !== undefined && { sourceAccountId }),
+  })
+
+  it('subtracts purchases paid from an account after the date — their money is still in the account then', () => {
+    expect(holdingsAsOf(holdings, [lot('2026-10-09', 5, 'usd')], '2026-09-30')).toEqual([
+      { assetId: 'spy', quantity: 10 * QUANTITY_SCALE },
+    ])
+  })
+
+  it('keeps them from the purchase date on (inclusive)', () => {
+    expect(holdingsAsOf(holdings, [lot('2026-10-09', 5, 'usd')], '2026-10-09')).toEqual(holdings)
+  })
+
+  it('ignores purchases without a source account (today’s quantity rule)', () => {
+    expect(holdingsAsOf(holdings, [lot('2026-10-09', 5)], '2026-09-30')).toEqual(holdings)
+  })
+
+  it('only touches the purchase’s own asset', () => {
+    expect(holdingsAsOf(holdings, [{ ...lot('2026-10-09', 5, 'usd'), assetId: 'qqq' }], '2026-09-30')).toEqual(holdings)
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AccountAdjustment, Expense, Income, Transfer } from '@/domain/entities'
+import type { AccountAdjustment, Expense, Income, InvestmentLot, Transfer } from '@/domain/entities'
 import { money } from '@/domain/money'
 import {
   accountBalanceAt,
@@ -70,7 +70,7 @@ describe('toAccountMovements', () => {
       incomes: [income()],
       expenses: [expense()],
       adjustments: [adjustment({ amount: -150 }), adjustment({ id: 'adj2', amount: 75 })],
-      transfers: [],
+      transfers: [], investmentLots: [],
     })
     expect(movements.map((m) => m.amount.amount)).toEqual([50_000, -20_000, -150, 75])
   })
@@ -78,7 +78,7 @@ describe('toAccountMovements', () => {
   it('skips expenses without an account (credit card / unspecified)', () => {
     const withoutAccount = expense()
     delete withoutAccount.accountId
-    const movements = toAccountMovements({ incomes: [], expenses: [withoutAccount], adjustments: [], transfers: [] })
+    const movements = toAccountMovements({ incomes: [], expenses: [withoutAccount], adjustments: [], transfers: [], investmentLots: [] })
     expect(movements).toEqual([])
   })
 
@@ -87,7 +87,7 @@ describe('toAccountMovements', () => {
       incomes: [],
       expenses: [expense({ status: 'projected' })],
       adjustments: [],
-      transfers: [],
+      transfers: [], investmentLots: [],
     })
     expect(movements).toEqual([])
   })
@@ -182,7 +182,7 @@ function transfer(overrides: Partial<Transfer> = {}): Transfer {
 
 describe('transfers', () => {
   it('a transfer is two movements: fromAmount leaves one account, toAmount enters the other', () => {
-    const movements = toAccountMovements({ incomes: [], expenses: [], adjustments: [], transfers: [transfer()] })
+    const movements = toAccountMovements({ incomes: [], expenses: [], adjustments: [], transfers: [transfer()], investmentLots: [] })
     expect(movements).toEqual([
       { accountId: 'a1', date: '2026-10-08', amount: money(-1_250_000_00, 'ARS') },
       { accountId: 'a2', date: '2026-10-08', amount: money(1_000_00, 'USD') },
@@ -197,6 +197,7 @@ describe('transfers', () => {
       expenses: [],
       adjustments: [],
       transfers: [transfer({ fromAmount: 30_000, toAmount: 30_000, toCurrency: 'ARS' })],
+      investmentLots: [],
     })
     expect(accountBalanceAt(a1, movements, '2026-10-31')).toEqual(money(70_000, 'ARS'))
     expect(accountBalanceAt(a2, movements, '2026-10-31')).toEqual(money(30_000, 'ARS'))
@@ -243,5 +244,37 @@ describe('transferImpliedRate', () => {
   it('reads the same way when selling dollars', () => {
     const selling = transfer({ fromAmount: 1_000_00, fromCurrency: 'USD', toAmount: 1_200_000_00, toCurrency: 'ARS' })
     expect(transferImpliedRate(selling)).toEqual({ base: 'USD', quote: 'ARS', rate: 1200 })
+  })
+})
+
+describe('investment purchases with a source account (Fase 3)', () => {
+  function lot(overrides: Partial<InvestmentLot> = {}): InvestmentLot {
+    return {
+      id: 'l1',
+      assetId: 'spy',
+      quantity: 500_000_000,
+      costPerUnit: 650_00,
+      currency: 'USD',
+      date: '2026-10-09',
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    }
+  }
+
+  it('debits sourceAmount (in the account currency) on the purchase date', () => {
+    const movements = toAccountMovements({
+      incomes: [],
+      expenses: [],
+      adjustments: [],
+      transfers: [],
+      investmentLots: [lot({ sourceAccountId: 'a1', sourceAmount: 3_260_00, sourceCurrency: 'USD' })],
+    })
+    expect(movements).toEqual([{ accountId: 'a1', date: '2026-10-09', amount: money(-3_260_00, 'USD') }])
+  })
+
+  it('ignores a purchase without a source account', () => {
+    const movements = toAccountMovements({ incomes: [], expenses: [], adjustments: [], transfers: [], investmentLots: [lot()] })
+    expect(movements).toEqual([])
   })
 })

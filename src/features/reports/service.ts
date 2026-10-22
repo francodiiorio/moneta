@@ -3,13 +3,15 @@ import {
   categoriesRepo,
   exchangeRatesRepo,
   expensesRepo,
+  investmentLotsRepo,
   investmentsRepo,
   savingsHoldingsRepo,
   settingsRepo,
 } from '@/database/repositories'
 import { quantity } from '@/domain/decimal'
 import { convert, MissingRateError } from '@/domain/currency'
-import type { ExchangeRate, InvestmentAsset, SavingsHolding } from '@/domain/entities'
+import type { ExchangeRate, InvestmentAsset, InvestmentLot, SavingsHolding } from '@/domain/entities'
+import { holdingsAsOf } from '@/domain/investments'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { add, money, type CurrencyCode, type Money, zero } from '@/domain/money'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
@@ -146,6 +148,7 @@ async function netWorthAsOf(
   savings: readonly SavingsHolding[],
   holdings: readonly { assetId: string; quantity: number }[],
   assetById: Map<string, InvestmentAsset>,
+  sourcedLots: readonly InvestmentLot[],
 ): Promise<{
   netWorth: Money
   byBucket: ValuationResult['byBucket']
@@ -157,7 +160,7 @@ async function netWorthAsOf(
     asOfDate,
   )
 
-  const positions: ValuationPosition[] = holdings.map((holding) => {
+  const positions: ValuationPosition[] = holdingsAsOf(holdings, sourcedLots, asOfDate).map((holding) => {
     const asset = assetById.get(holding.assetId)
     const priceRow = asset ? latestPrices.get(asset.id) : undefined
     return {
@@ -202,11 +205,12 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
   const settings = await settingsRepo.getSettings()
   const currentMonth = currentMonthStamp()
 
-  const [rates, savings, holdings, assets] = await Promise.all([
+  const [rates, savings, holdings, assets, sourcedLots] = await Promise.all([
     exchangeRatesRepo.listExchangeRates(),
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
+    investmentLotsRepo.listLotsWithSource(),
   ])
   const assetById = new Map(assets.map((a) => [a.id, a]))
 
@@ -229,6 +233,7 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
       savings,
       holdings,
       assetById,
+      sourcedLots,
     )
     missingRateCount += result.missingRateCount
     missingPriceCount += result.missingPriceCount
@@ -321,7 +326,7 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   // DateStamps compare lexicographically — never value into the future.
   const coverageEnd = monthEnd > today ? today : monthEnd
 
-  const [settings, summary, expenses, rates, savings, holdings, assets, accountBalances] = await Promise.all([
+  const [settings, summary, expenses, rates, savings, holdings, assets, accountBalances, sourcedLots] = await Promise.all([
     settingsRepo.getSettings(),
     getMonthSummary(month),
     getExpenseByCategory(month),
@@ -330,6 +335,7 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
     getAccountBalancesAt([coverageEnd]),
+    investmentLotsRepo.listLotsWithSource(),
   ])
   const accounts = accountBalances.get(coverageEnd) ?? []
   const assetById = new Map(assets.map((a) => [a.id, a]))
@@ -338,8 +344,8 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   // The patrimonio always reports in both ARS and USD (see
   // ReportNetWorth) — same holdings/prices, just valued twice.
   const [valuationArs, valuationUsd] = await Promise.all([
-    netWorthAsOf(coverageEnd, 'ARS', rates, rateProfile, accounts, savings, holdings, assetById),
-    netWorthAsOf(coverageEnd, 'USD', rates, rateProfile, accounts, savings, holdings, assetById),
+    netWorthAsOf(coverageEnd, 'ARS', rates, rateProfile, accounts, savings, holdings, assetById, sourcedLots),
+    netWorthAsOf(coverageEnd, 'USD', rates, rateProfile, accounts, savings, holdings, assetById, sourcedLots),
   ])
   const tracksNetWorth = accounts.length > 0 || savings.length > 0 || holdings.length > 0
 

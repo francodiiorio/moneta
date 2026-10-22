@@ -499,6 +499,11 @@ cerrar sin elegir). Hoy no importa porque ningún formulario usa `mode: 'onBlur'
 
 ## Evolución del patrimonio: cantidades de hoy, precios de cada mes
 
+> **Matizada en la Etapa 8:** las cuentas usan su saldo real de cada mes, y una compra de
+> inversión pagada desde una cuenta no cuenta antes de su fecha (ver "Cuenta de origen en
+> compras de inversión" al final de este documento) — si no, esa plata aparecería dos
+> veces: en la cuenta y en la posición.
+
 **Decisión:** el gráfico "Evolución del patrimonio" de Reportes (`getNetWorthHistory`)
 suma Cuentas + Ahorros + Inversiones en cada punto histórico. Cuentas usa el balance real
 de esa fecha (reconstruible desde el ledger, `accountsRepo.listAccountsWithBalances(asOfDate)`).
@@ -912,6 +917,10 @@ general del repo de invariantes ruidosos sobre corrección silenciosa.
 
 ## Una compra de inversión no es un gasto: `kind: 'investment'` + cuenta de origen opcional
 
+> **Reemplazada** por "Cuenta de origen en compras de inversión (Etapa 8, Fase 3)" al final
+> de este documento: la idea vuelve, pero como campos planos del lote, sin `kind` ni
+> categoría fija, editable y en la moneda de la cuenta.
+
 > **Obsoleta.** Esta feature completa (el quinto `kind: 'investment'` y la "Cuenta de
 > origen" opcional al cargar una compra) se revirtió por completo al eliminar Cuentas —
 > ver "Simplificación: se elimina Cuentas, Ingresos y Transferencias" al final de este
@@ -1268,3 +1277,32 @@ montos de la transferencia se guardan tal como fueron.
 **Por qué no guardarla:** guardar la tasa y derivar un monto del otro obligaría a redondear,
 y el redondeo podría inventar o perder un centavo respecto de lo que realmente movió el
 banco. Ver ADR "Se reintroducen Cuentas, Ingresos y Transferencias".
+
+## Cuenta de origen en compras de inversión (Etapa 8, Fase 3)
+
+**Decisión:** `InvestmentLot` suma `sourceAccountId` + `sourceAmount` + `sourceCurrency`
+(los tres o ninguno). `sourceAmount` es lo que realmente salió de la cuenta, en **su**
+moneda y con comisiones — no se deriva de cantidad × costo, que está en la moneda del
+activo (se puede pagar un activo en USD con pesos). Para el saldo es un débito en la fecha
+de la compra; nunca es un gasto, así que no pasa por categorías ni presupuestos — con
+registros planos no hace falta el `kind: 'investment'` + categoría archivada del ledger
+viejo (ADR reemplazada, arriba).
+
+- **Editable:** la cuenta y el monto se cambian o se quitan (`source: null`) desde el
+  formulario de la compra; cada escritura revalida la cuenta (moneda, `openingDate`),
+  también si sólo cambia la fecha.
+- **Visible:** en Movimientos la compra aparece de sólo lectura ("Ver en Patrimonio"), para
+  que el saldo de una cuenta nunca cambie sin una fila que lo explique.
+- **Borrar:** borrar una compra puntual devuelve su débito (la compra no ocurrió). Borrar
+  una **posición** con compras pagadas desde una cuenta está **bloqueado**: es lo que uno
+  hace al vender, cuando la plata ya volvió por otro lado (el ingreso de la venta), y
+  devolver además los débitos inflaría el saldo. El usuario decide compra por compra.
+- **Evolución del patrimonio:** antes de la fecha de una compra pagada desde una cuenta, la
+  cantidad de esa compra no se valúa (`domain/investments:holdingsAsOf`): su plata todavía
+  está en el saldo de la cuenta. Las compras sin cuenta siguen con "cantidades de hoy".
+- **Moneda esperada:** el formulario manda la moneda que mostraba junto al monto; el
+  repository rechaza la escritura si la cuenta cambió de moneda mientras tanto (mismo
+  criterio que las transferencias).
+
+**Costo aceptado:** agregarle cuenta de origen a una compra vieja cuyo débito ya se había
+reflejado a mano (un ajuste o un gasto con débito) lo cuenta dos veces — la Ayuda lo avisa.

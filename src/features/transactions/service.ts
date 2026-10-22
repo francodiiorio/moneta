@@ -4,6 +4,8 @@ import {
   categoriesRepo,
   expensesRepo,
   incomesRepo,
+  investmentLotsRepo,
+  investmentsRepo,
   transfersRepo,
 } from '@/database/repositories'
 import type { Account, Category, CategoryKind, Expense } from '@/domain/entities'
@@ -18,13 +20,15 @@ export interface TransactionFilters {
 }
 
 /** What a Movimientos row can be: what the form creates (gasto, ingreso,
- *  transferencia), plus an "Ajustar saldo" adjustment — listed so every
- *  change to an account balance is visible (and undoable) here, but
- *  created only from Cuentas and never edited, only deleted. */
-export type TransactionKind = MovementKind | 'transfer' | 'adjustment'
+ *  transferencia), plus two things listed so every change to an account
+ *  balance is visible here: an "Ajustar saldo" adjustment (created from
+ *  Cuentas, only deleted here) and an investment purchase paid from an
+ *  account (created and edited in Patrimonio, read-only here). */
+export type TransactionKind = MovementKind | 'transfer' | 'adjustment' | 'investment'
 
 export const ADJUSTMENT_LABEL = 'Ajuste de saldo'
 export const TRANSFER_LABEL = 'Transferencia'
+export const INVESTMENT_LABEL = 'Compra de inversión'
 
 /** Both sides of a transfer row, as stored — what the edit form needs. */
 export interface TransferDetails {
@@ -70,7 +74,7 @@ export interface TransactionListItem {
 export type EditableTransactionItem = TransactionListItem & { kind: MovementKind | 'transfer' }
 
 export function isEditableTransaction(item: TransactionListItem): item is EditableTransactionItem {
-  return item.kind !== 'adjustment'
+  return item.kind !== 'adjustment' && item.kind !== 'investment'
 }
 
 /** Gastos, ingresos, transferencias and saldo adjustments of `month`,
@@ -86,11 +90,13 @@ export async function listTransactionsForMonth(
   filters: TransactionFilters = {},
 ): Promise<TransactionListItem[]> {
   const { start, end } = monthRange(month)
-  const [expenses, incomes, adjustments, transfers, categories, accounts] = await Promise.all([
+  const [expenses, incomes, adjustments, transfers, lots, assets, categories, accounts] = await Promise.all([
     expensesRepo.listExpensesInRange(start, end),
     incomesRepo.listIncomesInRange(start, end),
     accountAdjustmentsRepo.listAdjustmentsInRange(start, end),
     transfersRepo.listTransfersInRange(start, end),
+    investmentLotsRepo.listLotsWithSourceInRange(start, end),
+    investmentsRepo.listInvestmentAssets(),
     categoriesRepo.listCategories(),
     accountsRepo.listAccounts(),
   ])
@@ -177,6 +183,26 @@ export async function listTransactionsForMonth(
         },
       }
     }),
+    ...lots.flatMap((lot) => {
+      if (lot.sourceAccountId === undefined || lot.sourceAmount === undefined || lot.sourceCurrency === undefined) {
+        return []
+      }
+      const asset = assets.find((a) => a.id === lot.assetId)
+      return [
+        {
+          id: lot.id,
+          kind: 'investment' as const,
+          date: lot.date,
+          createdAt: lot.createdAt,
+          description: `Compra de ${asset?.symbol ?? asset?.name ?? 'un activo'}`,
+          status: 'confirmed' as const,
+          amount: negate(money(lot.sourceAmount, lot.sourceCurrency)),
+          signed: true,
+          ...decorate('', lot.sourceAccountId),
+          categoryLabel: INVESTMENT_LABEL,
+        },
+      ]
+    }),
   ]
 
   return items
@@ -234,7 +260,14 @@ export async function saveMovement(values: MovementFormValues, existingId?: stri
  *  are read here, never trusted from the form. Between two accounts of
  *  the same currency only one amount is asked for, so it's used on both
  *  sides (and the repository re-checks they match). */
-export async function saveTransferFromForm(values: TransferFormValues, existingId?: string): Promise<void> {
+export async function saveTransferFromForm(
+  values: TransferFormValues,
+  existingId?: string,
+  /** The currencies the form showed for each side — what the user typed
+   *  the amounts in. The repository rejects the write if an account's
+   *  currency changed since (see transfers.repo.ts). */
+  displayed?: { from: string; to: string },
+): Promise<void> {
   const [from, to] = await Promise.all([
     accountsRepo.getAccount(values.fromAccountId),
     accountsRepo.getAccount(values.toAccountId),
@@ -242,10 +275,12 @@ export async function saveTransferFromForm(values: TransferFormValues, existingI
   invariant(from, `Cuenta no encontrada: ${values.fromAccountId}`)
   invariant(to, `Cuenta no encontrada: ${values.toAccountId}`)
 
-  const fromAmount = parseAmount(values.fromAmount, from.currency).amount
-  const sameCurrency = from.currency === to.currency
-  invariant(sameCurrency || values.toAmount.trim() !== '', `Ingresá cuánto entró en ${to.currency}`)
-  const toAmount = sameCurrency ? fromAmount : parseAmount(values.toAmount, to.currency).amount
+  const fromCurrency = displayed?.from ?? from.currency
+  const toCurrency = displayed?.to ?? to.currency
+  const fromAmount = parseAmount(values.fromAmount, fromCurrency).amount
+  const sameCurrency = fromCurrency === toCurrency
+  invariant(sameCurrency || values.toAmount.trim() !== '', `Ingresá cuánto entró en ${toCurrency}`)
+  const toAmount = sameCurrency ? fromAmount : parseAmount(values.toAmount, toCurrency).amount
   invariant(fromAmount > 0 && toAmount > 0, 'Los montos tienen que ser mayores a cero')
 
   await transfersRepo.saveTransfer(
@@ -256,8 +291,8 @@ export async function saveTransferFromForm(values: TransferFormValues, existingI
       fromAmount,
       toAmount,
       description: values.description.trim() || TRANSFER_LABEL,
-      expectedFromCurrency: from.currency,
-      expectedToCurrency: to.currency,
+      expectedFromCurrency: fromCurrency,
+      expectedToCurrency: toCurrency,
     },
     existingId,
   )
@@ -268,6 +303,8 @@ export async function removeTransaction(id: string, kind: TransactionKind): Prom
     await incomesRepo.deleteIncome(id)
   } else if (kind === 'transfer') {
     await transfersRepo.deleteTransfer(id)
+  } else if (kind === 'investment') {
+    invariant(false, 'Una compra de inversión se edita o borra desde Patrimonio')
   } else if (kind === 'adjustment') {
     await accountAdjustmentsRepo.deleteAdjustment(id)
   } else {

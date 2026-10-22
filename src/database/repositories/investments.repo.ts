@@ -158,11 +158,27 @@ export async function updateInvestmentHolding(id: string, patch: UpdateInvestmen
  *  tendría sentido dejar lotes huérfanos apuntando a un holding que ya
  *  no existe, y la posición se reconstruiría sola desde ellos la
  *  próxima vez que se recalculara el agregado. Ver ADR "Tracking de
- *  inversiones por lote" en docs/DECISIONS.md. */
+ *  inversiones por lote" en docs/DECISIONS.md.
+ *
+ *  Bloqueado si alguna compra se pagó desde una cuenta (Etapa 8, Fase 3):
+ *  borrarla devolvería ese débito al saldo de la cuenta, y lo natural es
+ *  borrar la posición justo al venderla — cuando la plata ya volvió por
+ *  otro lado (el ingreso de la venta) y devolverla otra vez inflaría el
+ *  saldo. El usuario tiene que decidir explícitamente qué pasa con cada
+ *  débito (quitar la cuenta de origen de la compra, o borrar la compra). */
 export async function deleteInvestmentHolding(id: string): Promise<void> {
   await db.transaction('rw', db.investmentHoldings, db.investmentLots, async () => {
     const holding = await db.investmentHoldings.get(id)
     if (!holding) return
+    const sourced = await db.investmentLots
+      .where('assetId')
+      .equals(holding.assetId)
+      .filter((lot) => lot.sourceAccountId !== undefined)
+      .count()
+    invariant(
+      sourced === 0,
+      'Esta posición tiene compras pagadas desde una cuenta: borrarla devolvería esa plata al saldo. Si la vendiste, cargá el ingreso de la venta y quitale la cuenta de origen a esas compras (o borralas una por una) antes de borrar la posición.',
+    )
     await db.investmentLots.where('assetId').equals(holding.assetId).delete()
     await db.investmentHoldings.delete(id)
   })

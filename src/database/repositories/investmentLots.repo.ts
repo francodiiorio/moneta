@@ -1,11 +1,25 @@
+import Dexie from 'dexie'
 import { db } from '../db'
 import type { InvestmentHolding, InvestmentLot } from '@/domain/entities'
 import { aggregateLots } from '@/domain/investments'
 import { quantity } from '@/domain/decimal'
+import { movementAccountProblem } from '@/domain/accounts'
 import { money, type CurrencyCode } from '@/domain/money'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import type { DateStamp } from '@/lib/dates'
+
+/** The account a purchase was paid from (Etapa 8, Fase 3). `amount` is
+ *  what was actually debited, in the account's own currency, positive.
+ *  `expectedCurrency` is the currency the caller parsed `amount` in —
+ *  checked against the account inside the write transaction, same reason
+ *  as transfers.repo.ts: a bare integer means a different amount if the
+ *  account's currency changed in between. */
+export interface LotSourceInput {
+  accountId: string
+  amount: number
+  expectedCurrency: string
+}
 
 export interface CreateInvestmentLotInput {
   assetId: string
@@ -14,6 +28,7 @@ export interface CreateInvestmentLotInput {
   currency: CurrencyCode
   date: DateStamp
   notes?: string
+  source?: LotSourceInput
 }
 
 /** `costPerUnit: null` clears it explicitly; omitted leaves it untouched;
@@ -23,10 +38,63 @@ export interface CreateInvestmentLotInput {
  *  `updateInvestmentLot` below. */
 export type UpdateInvestmentLotInput = Partial<Pick<InvestmentLot, 'quantity' | 'date' | 'notes'>> & {
   costPerUnit?: InvestmentLot['costPerUnit'] | null
+  /** Same tri-state as `costPerUnit`: `null` removes the source account
+   *  (the purchase stops debiting it), omitted leaves it as is. */
+  source?: LotSourceInput | null
+}
+
+/** Sets or clears the source-account fields of `lot` in place, after
+ *  checking the account accepts a debit on `lot.date` (same currency
+ *  rules as any account movement). Must run inside a transaction that
+ *  covers `db.accounts`. Re-run on every write that keeps a source, even
+ *  one that only moves the date: the new date could fall before the
+ *  account's opening date. */
+async function applySource(lot: InvestmentLot, source: LotSourceInput | null): Promise<void> {
+  if (source === null) {
+    delete lot.sourceAccountId
+    delete lot.sourceAmount
+    delete lot.sourceCurrency
+    return
+  }
+  invariant(Number.isInteger(source.amount) && source.amount > 0, 'El monto debitado tiene que ser mayor a cero')
+  const account = await db.accounts.get(source.accountId)
+  invariant(account, `Cuenta no encontrada: ${source.accountId}`)
+  invariant(
+    account.currency === source.expectedCurrency,
+    'La moneda de la cuenta cambió mientras cargabas la compra — volvé a intentarlo',
+  )
+  const problem = movementAccountProblem(account, { date: lot.date, currency: account.currency })
+  invariant(problem === undefined, problem ?? '')
+  lot.sourceAccountId = account.id
+  lot.sourceAmount = source.amount
+  lot.sourceCurrency = account.currency
+}
+
+function currentSource(lot: InvestmentLot): LotSourceInput | null {
+  if (lot.sourceAccountId === undefined || lot.sourceAmount === undefined || lot.sourceCurrency === undefined) {
+    return null
+  }
+  return { accountId: lot.sourceAccountId, amount: lot.sourceAmount, expectedCurrency: lot.sourceCurrency }
 }
 
 export async function listInvestmentLots(assetId: string): Promise<InvestmentLot[]> {
   return db.investmentLots.where('assetId').equals(assetId).sortBy('date')
+}
+
+/** Every purchase paid from an account — the net worth history needs
+ *  them to avoid valuing money twice (see domain/investments:holdingsAsOf). */
+export async function listLotsWithSource(): Promise<InvestmentLot[]> {
+  return db.investmentLots.where('sourceAccountId').above(Dexie.minKey).toArray()
+}
+
+/** Purchases in `[startDate, endDate]` that were paid from an account —
+ *  the ones that move a balance, listed in Movimientos. */
+export async function listLotsWithSourceInRange(startDate: string, endDate: string): Promise<InvestmentLot[]> {
+  return db.investmentLots
+    .where('date')
+    .between(startDate, endDate, true, true)
+    .filter((lot) => lot.sourceAccountId !== undefined)
+    .toArray()
 }
 
 export async function getInvestmentLot(id: string): Promise<InvestmentLot | undefined> {
@@ -73,7 +141,8 @@ async function recomputeHoldingAggregate(assetId: string): Promise<void> {
 }
 
 export async function createInvestmentLot(input: CreateInvestmentLotInput): Promise<InvestmentLot> {
-  return db.transaction('rw', db.investmentAssets, db.investmentHoldings, db.investmentLots, async () => {
+  const tables = [db.investmentAssets, db.investmentHoldings, db.investmentLots, db.accounts]
+  return db.transaction('rw', tables, async () => {
     const asset = await db.investmentAssets.get(input.assetId)
     invariant(asset, `Activo no encontrado: ${input.assetId}`)
     // Defense in depth, same reasoning as investments.repo.ts's own
@@ -95,6 +164,7 @@ export async function createInvestmentLot(input: CreateInvestmentLotInput): Prom
       ...(input.costPerUnit !== undefined && { costPerUnit: input.costPerUnit }),
       ...(input.notes !== undefined && { notes: input.notes }),
     }
+    if (input.source !== undefined) await applySource(lot, input.source)
     await db.investmentLots.add(lot)
     await recomputeHoldingAggregate(input.assetId)
     return lot
@@ -108,7 +178,7 @@ export async function createInvestmentLot(input: CreateInvestmentLotInput): Prom
  *  from the patch, it leaves the old value in place. `patch.costPerUnit`
  *  is therefore tri-state — see `UpdateInvestmentLotInput`. */
 export async function updateInvestmentLot(id: string, patch: UpdateInvestmentLotInput): Promise<void> {
-  await db.transaction('rw', db.investmentHoldings, db.investmentLots, async () => {
+  await db.transaction('rw', db.investmentHoldings, db.investmentLots, db.accounts, async () => {
     const lot = await db.investmentLots.get(id)
     invariant(lot, `Compra no encontrada: ${id}`)
     if (patch.quantity !== undefined) quantity(patch.quantity)
@@ -125,6 +195,7 @@ export async function updateInvestmentLot(id: string, patch: UpdateInvestmentLot
     } else if (patch.costPerUnit !== undefined) {
       updated.costPerUnit = patch.costPerUnit
     }
+    await applySource(updated, patch.source !== undefined ? patch.source : currentSource(lot))
 
     await db.investmentLots.put(updated)
     await recomputeHoldingAggregate(lot.assetId)

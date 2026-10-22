@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { LineChart, PiggyBank, Plus, TrendingUp } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
@@ -82,6 +83,17 @@ export function NetWorthPage() {
     openRateDialog,
     closeRateDialog,
   } = useNetWorthUiStore()
+  // Links from elsewhere (a purchase row in Movimientos) open a tab with
+  // ?tab=inversiones; the param is dropped once applied so the tabs stay
+  // normal UI state.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  useEffect(() => {
+    if (tabParam !== 'inversiones') return
+    setTab('investments')
+    setSearchParams({}, { replace: true })
+  }, [tabParam, setTab, setSearchParams])
+
   const savings = useSavingsHoldings()
   const summary = useNetWorthSummary()
   const history = useSavingsAndInvestmentsHistory()
@@ -123,8 +135,8 @@ export function NetWorthPage() {
         await deleteExchangeRate(pendingDelete.id)
         toast.success('Tasa eliminada')
       }
-    } catch {
-      toast.error('No se pudo eliminar')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo eliminar')
     } finally {
       setPendingDelete(null)
     }
@@ -409,7 +421,11 @@ export function NetWorthPage() {
                     ? '¿Eliminar este activo?'
                     : '¿Eliminar esta tasa?'}
             </AlertDialogTitle>
-            <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {pendingDelete?.kind === 'holding'
+                ? 'Se borran todas sus compras. Si alguna se pagó desde una cuenta, primero vas a tener que quitarle la cuenta de origen o borrarla. Esta acción no se puede deshacer.'
+                : 'Esta acción no se puede deshacer.'}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>

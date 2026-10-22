@@ -19,6 +19,7 @@ import { money } from '@/domain/money'
 import { formatFullDate } from '@/lib/dates'
 import type { InvestmentAsset, InvestmentLot } from '@/domain/entities'
 import { useInvestmentLots } from '../hooks/useInvestmentLots'
+import { useLotAccounts } from '../hooks/useLotAccounts'
 import { deleteInvestmentLot } from '../service'
 import { InvestmentLotFormDialog } from './InvestmentLotFormDialog'
 
@@ -34,6 +35,7 @@ interface InvestmentLotsDialogProps {
  *  (InvestmentLot), nunca algo que se edite directo. Ver ADR "Tracking
  *  de inversiones por lote" en docs/DECISIONS.md. */
 export function InvestmentLotsDialog({ asset, assets, onOpenChange }: InvestmentLotsDialogProps) {
+  const accounts = useLotAccounts()
   const lots = useInvestmentLots(asset?.id)
   const [lotDialogOpen, setLotDialogOpen] = useState(false)
   const [editingLot, setEditingLot] = useState<InvestmentLot | undefined>(undefined)
@@ -91,6 +93,14 @@ export function InvestmentLotsDialog({ asset, assets, onOpenChange }: Investment
                         </>
                       )}
                     </p>
+                    {lot.sourceAccountId !== undefined &&
+                      lot.sourceAmount !== undefined &&
+                      lot.sourceCurrency !== undefined && (
+                        <p className="text-xs text-muted-foreground">
+                          Pagada desde {accounts?.find((a) => a.id === lot.sourceAccountId)?.name ?? 'una cuenta'}:{' '}
+                          <MoneyText value={money(lot.sourceAmount, lot.sourceCurrency)} className="inline" />
+                        </p>
+                      )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button variant="ghost" size="icon" aria-label="Editar compra" onClick={() => openEditLot(lot)}>
@@ -133,7 +143,8 @@ export function InvestmentLotsDialog({ asset, assets, onOpenChange }: Investment
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar esta compra?</AlertDialogTitle>
             <AlertDialogDescription>
-              La cantidad y el costo promedio de la posición se recalculan sin ella. Esta acción no se puede deshacer.
+              La cantidad y el costo promedio de la posición se recalculan sin ella. Si se pagó desde una cuenta, esa
+              plata vuelve a su saldo. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

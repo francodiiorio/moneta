@@ -55,6 +55,21 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
     assertAccount(label, adjustment.accountId, adjustment)
   }
 
+  for (const lot of data.investmentLots) {
+    const label = `Compra de inversión inválida (${lot.id})`
+    const present = [lot.sourceAccountId, lot.sourceAmount, lot.sourceCurrency].filter((v) => v !== undefined).length
+    // Zod's refine already enforces this for a parsed file, but migrated
+    // data is built directly — never let a half-filled source slip by as
+    // "no source" (it would silently drop a debit).
+    if (present !== 0 && present !== 3) throw new Error(`${label}: cuenta de origen, monto y moneda van juntos`)
+    if (lot.sourceAccountId === undefined || lot.sourceAmount === undefined || lot.sourceCurrency === undefined) continue
+    if (lot.sourceAmount <= 0) throw new Error(`${label}: el monto debitado tiene que ser mayor a cero`)
+    assertAccount(label, lot.sourceAccountId, {
+      date: lot.date,
+      currency: lot.sourceCurrency,
+    })
+  }
+
   for (const transfer of data.transfers) {
     const label = `Transferencia inválida "${transfer.description}" (${transfer.id})`
     const from = accountById.get(transfer.fromAccountId)
