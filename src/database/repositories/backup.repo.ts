@@ -1,6 +1,6 @@
 import type { EntityTable } from 'dexie'
 import { db } from '../db'
-import { movementAccountProblem } from '@/domain/accounts'
+import { movementAccountProblem, transferProblem } from '@/domain/accounts'
 import type {
   Account,
   AccountAdjustment,
@@ -17,6 +17,7 @@ import type {
   RecurringPlan,
   SavingsHolding,
   Settings,
+  Transfer,
 } from '@/domain/entities'
 
 export interface AllTablesData {
@@ -35,6 +36,7 @@ export interface AllTablesData {
   accounts: Account[]
   incomes: Income[]
   accountAdjustments: AccountAdjustment[]
+  transfers: Transfer[]
 }
 
 /** Every table a full backup touches — shared by replaceAllTables and
@@ -57,6 +59,7 @@ function allTables() {
     db.accounts,
     db.incomes,
     db.accountAdjustments,
+    db.transfers,
   ] as const
 }
 
@@ -77,6 +80,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     accounts,
     incomes,
     accountAdjustments,
+    transfers,
   ] = await Promise.all([
     db.categories.toArray(),
     db.expenses.toArray(),
@@ -93,6 +97,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     db.accounts.toArray(),
     db.incomes.toArray(),
     db.accountAdjustments.toArray(),
+    db.transfers.toArray(),
   ])
   return {
     categories,
@@ -109,6 +114,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     accounts,
     incomes,
     accountAdjustments,
+    transfers,
     ...(settings !== undefined && { settings }),
   }
 }
@@ -134,6 +140,7 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.accounts.clear(),
       db.incomes.clear(),
       db.accountAdjustments.clear(),
+      db.transfers.clear(),
     ])
     await Promise.all([
       db.categories.bulkAdd(data.categories),
@@ -151,6 +158,7 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.accounts.bulkAdd(data.accounts),
       db.incomes.bulkAdd(data.incomes),
       db.accountAdjustments.bulkAdd(data.accountAdjustments),
+      db.transfers.bulkAdd(data.transfers),
     ])
   })
 }
@@ -181,6 +189,7 @@ export interface MergeSummary {
   accounts: MergeCounts
   incomes: MergeCounts
   accountAdjustments: MergeCounts
+  transfers: MergeCounts
 }
 
 /** Adds only the rows of `incoming` whose id isn't already present in
@@ -211,6 +220,7 @@ async function assertMergedMovementsFit(added: {
   incomes: readonly Income[]
   expenses: readonly Expense[]
   adjustments: readonly AccountAdjustment[]
+  transfers: readonly Transfer[]
 }): Promise<void> {
   const accountById = new Map((await db.accounts.toArray()).map((a) => [a.id, a]))
   const categoryKindById = new Map((await db.categories.toArray()).map((c) => [c.id, c.kind]))
@@ -238,6 +248,14 @@ async function assertMergedMovementsFit(added: {
   }
   for (const adjustment of added.adjustments) {
     check(`Ajuste de saldo (${adjustment.id})`, adjustment.accountId, adjustment)
+  }
+  for (const transfer of added.transfers) {
+    const label = `Transferencia "${transfer.description}" (${transfer.id})`
+    const from = accountById.get(transfer.fromAccountId)
+    const to = accountById.get(transfer.toAccountId)
+    if (!from || !to) throw new Error(`${label}: una de sus cuentas no existe`)
+    const problem = transferProblem(transfer, from, to)
+    if (problem) throw new Error(`${label}: ${problem} (en tu base local)`)
   }
 }
 
@@ -299,6 +317,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       accounts,
       incomes,
       accountAdjustments,
+      transfers,
     ] = await Promise.all([
       addMissing(db.categories, data.categories),
       addMissing(db.recurringPlans, data.recurringPlans),
@@ -313,6 +332,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       addMissing(db.accounts, data.accounts),
       addMissing(db.incomes, data.incomes),
       addMissing(db.accountAdjustments, data.accountAdjustments),
+      addMissing(db.transfers, data.transfers),
     ])
 
     if (data.settings && !(await db.settings.get('singleton'))) {
@@ -347,6 +367,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       incomes: incomes.added,
       expenses: newExpenses,
       adjustments: accountAdjustments.added,
+      transfers: transfers.added,
     })
     const expenses: MergeCounts = {
       added: newExpenses.length,
@@ -380,6 +401,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       accounts: { added: accounts.added.length, skipped: accounts.skipped },
       incomes: { added: incomes.added.length, skipped: incomes.skipped },
       accountAdjustments: { added: accountAdjustments.added.length, skipped: accountAdjustments.skipped },
+      transfers: { added: transfers.added.length, skipped: transfers.skipped },
     }
   })
 }

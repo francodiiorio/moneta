@@ -206,13 +206,15 @@ el saldo de una cuenta es una función pura de dominio. Ver ADR "Se reintroducen
 Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
 `docs/DECISIONS.md`. Una versión de Dexie y de backup por fase.
 
-1. **Cuentas + Ingresos + Ajustes de saldo** (en curso) — `Account` (moneda fija, saldo
+1. **Cuentas + Ingresos + Ajustes de saldo** (hecho) — `Account` (moneda fija, saldo
    inicial a una fecha), `Income` (con cuenta y categoría de ingreso: vuelve
    `Category.kind`), `AccountAdjustment`, `Expense.accountId` opcional (débito). Página
    `/cuentas` con saldos; Movimientos carga gastos e ingresos; las cuentas vuelven a
    sumar al patrimonio (Dashboard, Ahorro e Inversiones → "Patrimonio", Reportes).
-2. **Transferencias** — entre cuentas, incluidas las de distinta moneda (se guardan los
-   dos montos reales).
+2. **Transferencias** (hecho) — entre cuentas, incluidas las de distinta moneda (se
+   guardan los dos montos reales; la cotización implícita se muestra, nunca se guarda).
+   Pestaña "Transferencia" en el diálogo de Movimientos; en la lista, sin signo salvo
+   filtrando por una de sus cuentas. Dexie v6 + backup v6.
 3. **Cuenta de origen en compras de inversión** — `InvestmentLot.sourceAccountId`
    opcional; la compra baja el saldo sin ser un gasto.
 4. **Tarjetas + resúmenes** — `CreditCard`, `CardStatement`, `Expense.cardId` +

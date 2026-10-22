@@ -1,5 +1,5 @@
-import type { Account, AccountAdjustment, Expense, Income } from '@/domain/entities'
-import { add, money, negate, sub, type Money } from '@/domain/money'
+import type { Account, AccountAdjustment, Expense, Income, Transfer } from '@/domain/entities'
+import { add, getCurrency, money, negate, sub, type Money } from '@/domain/money'
 import { formatFullDate, type DateStamp } from '@/lib/dates'
 
 /** Anything that moves an account's balance, already signed: positive
@@ -15,14 +15,16 @@ export interface AccountMovementSources {
   incomes: readonly Income[]
   expenses: readonly Expense[]
   adjustments: readonly AccountAdjustment[]
+  transfers: readonly Transfer[]
 }
 
 /** Flattens every record that touches an account into signed movements.
  *  Only `confirmed` expenses with an `accountId` count — a `projected`
  *  one hasn't happened yet (same rule reports/budgets follow), and one
  *  without `accountId` (credit card, or unspecified) never touched an
- *  account. Transfers, investment purchases and card payments join here
- *  in later phases of Etapa 8 (see docs/ROADMAP.md). */
+ *  account. A transfer is two movements: its `fromAmount` leaves one
+ *  account, its `toAmount` enters the other. Investment purchases and card
+ *  payments join here in later phases of Etapa 8 (see docs/ROADMAP.md). */
 export function toAccountMovements(sources: AccountMovementSources): AccountMovement[] {
   const movements: AccountMovement[] = []
   for (const income of sources.incomes) {
@@ -41,6 +43,18 @@ export function toAccountMovements(sources: AccountMovementSources): AccountMove
       accountId: adjustment.accountId,
       date: adjustment.date,
       amount: money(adjustment.amount, adjustment.currency),
+    })
+  }
+  for (const transfer of sources.transfers) {
+    movements.push({
+      accountId: transfer.fromAccountId,
+      date: transfer.date,
+      amount: negate(money(transfer.fromAmount, transfer.fromCurrency)),
+    })
+    movements.push({
+      accountId: transfer.toAccountId,
+      date: transfer.date,
+      amount: money(transfer.toAmount, transfer.toCurrency),
     })
   }
   return movements
@@ -97,4 +111,51 @@ export function movementAccountProblem(
     return `La fecha es anterior al saldo inicial de "${account.name}" (${formatFullDate(account.openingDate)})`
   }
   return undefined
+}
+
+type TransferAccount = Pick<Account, 'id' | 'name' | 'currency' | 'openingDate'>
+
+/** Why `transfer` can't be recorded between `from` and `to`, or
+ *  `undefined` if it can — same role as `movementAccountProblem`, shared by
+ *  the repository and backup validation. Each side must fit its own
+ *  account; a same-currency transfer moves exactly the same amount (only a
+ *  currency change can make the two sides differ). */
+export function transferProblem(
+  transfer: Pick<Transfer, 'date' | 'fromAmount' | 'fromCurrency' | 'toAmount' | 'toCurrency'>,
+  from: TransferAccount,
+  to: TransferAccount,
+): string | undefined {
+  if (from.id === to.id) return 'Una transferencia tiene que ser entre dos cuentas distintas'
+  if (transfer.fromAmount <= 0 || transfer.toAmount <= 0) return 'Los montos tienen que ser mayores a cero'
+  const fromProblem = movementAccountProblem(from, { date: transfer.date, currency: transfer.fromCurrency })
+  if (fromProblem) return fromProblem
+  const toProblem = movementAccountProblem(to, { date: transfer.date, currency: transfer.toCurrency })
+  if (toProblem) return toProblem
+  if (transfer.fromCurrency === transfer.toCurrency && transfer.fromAmount !== transfer.toAmount) {
+    return 'Entre cuentas de la misma moneda, el monto que sale y el que entra tienen que ser iguales'
+  }
+  return undefined
+}
+
+export interface ImpliedRate {
+  /** The currency quoted as "1 base = rate quote" — whichever side makes
+   *  the rate ≥ 1, so it reads like a real quote ("1 USD = 1.250 ARS")
+   *  whether dollars were bought or sold. */
+  base: string
+  quote: string
+  rate: number
+}
+
+/** The exchange rate a cross-currency transfer actually got. Display only
+ *  (a float ratio of the two amounts in major units): it's never stored
+ *  and never used to compute an amount — both amounts are stored exactly
+ *  as they were. */
+export function transferImpliedRate(
+  transfer: Pick<Transfer, 'fromAmount' | 'fromCurrency' | 'toAmount' | 'toCurrency'>,
+): ImpliedRate {
+  const fromMajor = transfer.fromAmount / 10 ** getCurrency(transfer.fromCurrency).decimals
+  const toMajor = transfer.toAmount / 10 ** getCurrency(transfer.toCurrency).decimals
+  return fromMajor >= toMajor
+    ? { base: transfer.toCurrency, quote: transfer.fromCurrency, rate: fromMajor / toMajor }
+    : { base: transfer.fromCurrency, quote: transfer.toCurrency, rate: toMajor / fromMajor }
 }

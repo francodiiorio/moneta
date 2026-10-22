@@ -1,4 +1,4 @@
-import { movementAccountProblem } from '@/domain/accounts'
+import { movementAccountProblem, transferProblem } from '@/domain/accounts'
 import type { LatestBackupData } from './migrations'
 
 /** Sin partida doble no hay nada que balancear — lo que queda son las
@@ -53,5 +53,14 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
       throw new Error(`${label}: no puede ser cero`)
     }
     assertAccount(label, adjustment.accountId, adjustment)
+  }
+
+  for (const transfer of data.transfers) {
+    const label = `Transferencia inválida "${transfer.description}" (${transfer.id})`
+    const from = accountById.get(transfer.fromAccountId)
+    const to = accountById.get(transfer.toAccountId)
+    if (!from || !to) throw new Error(`${label}: una de sus cuentas no existe en el backup`)
+    const problem = transferProblem(transfer, from, to)
+    if (problem) throw new Error(`${label}: ${problem}`)
   }
 }

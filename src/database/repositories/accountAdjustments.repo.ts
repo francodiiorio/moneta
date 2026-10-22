@@ -69,7 +69,7 @@ export interface AdjustToReachInput {
 export async function createAdjustmentToReach(input: AdjustToReachInput): Promise<Money | undefined> {
   invariant(Number.isInteger(input.target), `El saldo debe ser un entero en unidades menores: ${input.target}`)
 
-  return db.transaction('rw', [db.accounts, db.incomes, db.expenses, db.accountAdjustments], async () => {
+  return db.transaction('rw', [db.accounts, db.incomes, db.expenses, db.accountAdjustments, db.transfers], async () => {
     const account = await db.accounts.get(input.accountId)
     invariant(account, `Cuenta no encontrada: ${input.accountId}`)
     const current = accountBalanceAt(account, toAccountMovements(await listAccountMovementRecords()), input.date)

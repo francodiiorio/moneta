@@ -33,9 +33,24 @@ import { useAccounts } from '../hooks/useAccounts'
 import { useTransactionsUiStore } from '../store'
 import { TransactionFormDialog } from '../components/TransactionFormDialog'
 import { TransactionRow } from '../components/TransactionRow'
-import { isEditableTransaction, removeTransaction, type TransactionListItem } from '../service'
+import { isEditableTransaction, removeTransaction, type TransactionKind, type TransactionListItem } from '../service'
 
 const ALL = '__all__'
+
+const DELETE_COPY: Record<TransactionKind, { title: string; deleted: string; failed: string }> = {
+  expense: { title: '¿Eliminar este gasto?', deleted: 'Gasto eliminado', failed: 'No se pudo eliminar el gasto' },
+  income: { title: '¿Eliminar este ingreso?', deleted: 'Ingreso eliminado', failed: 'No se pudo eliminar el ingreso' },
+  transfer: {
+    title: '¿Eliminar esta transferencia?',
+    deleted: 'Transferencia eliminada',
+    failed: 'No se pudo eliminar la transferencia',
+  },
+  adjustment: {
+    title: '¿Eliminar este ajuste de saldo?',
+    deleted: 'Ajuste de saldo eliminado',
+    failed: 'No se pudo eliminar el ajuste de saldo',
+  },
+}
 
 const CATEGORY_GROUPS = [
   { kind: 'expense', label: 'Gastos' },
@@ -94,16 +109,15 @@ export function TransactionsPage() {
   const editingItem = transactions?.filter(isEditableTransaction).find((t) => t.id === editingTransactionId)
   const groups = groupByDate(transactions ?? [])
 
-  const pendingDeleteNoun =
-    pendingDelete?.kind === 'income' ? 'ingreso' : pendingDelete?.kind === 'adjustment' ? 'ajuste de saldo' : 'gasto'
+  const deleteCopy = pendingDelete ? DELETE_COPY[pendingDelete.kind] : DELETE_COPY.expense
 
   async function handleDelete() {
     if (!pendingDelete) return
     try {
       await removeTransaction(pendingDelete.id, pendingDelete.kind)
-      toast.success(`${pendingDeleteNoun.charAt(0).toUpperCase()}${pendingDeleteNoun.slice(1)} eliminado`)
+      toast.success(deleteCopy.deleted)
     } catch {
-      toast.error(`No se pudo eliminar el ${pendingDeleteNoun}`)
+      toast.error(deleteCopy.failed)
     } finally {
       setPendingDelete(null)
     }
@@ -113,7 +127,7 @@ export function TransactionsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Movimientos"
-        description="Tus gastos e ingresos."
+        description="Tus gastos, ingresos y transferencias."
         actions={
           <>
             <Button variant="outline" asChild>
@@ -225,7 +239,7 @@ export function TransactionsPage() {
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar este {pendingDeleteNoun}?</AlertDialogTitle>
+            <AlertDialogTitle>{deleteCopy.title}</AlertDialogTitle>
             <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

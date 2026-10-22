@@ -1,4 +1,4 @@
-import { ArrowDownLeft, MoreVertical, Receipt, Scale } from 'lucide-react'
+import { ArrowDownLeft, ArrowLeftRight, MoreVertical, Receipt, Scale } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,10 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
     <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
       {hasCategoryIdentity ? (
         <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} />
+      ) : item.kind === 'transfer' ? (
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <ArrowLeftRight className="size-4.5" />
+        </div>
       ) : item.kind === 'adjustment' ? (
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <Scale className="size-4.5" />
@@ -55,8 +59,13 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
 
       <div className="shrink-0 text-right">
         <p className="text-sm font-semibold">
-          <MoneyText value={item.amount} signColor={item.kind !== 'adjustment'} />
+          <MoneyText value={item.amount} signColor={item.signed} />
         </p>
+        {item.counterpart && (
+          <p className="text-xs text-muted-foreground">
+            ⇄ <MoneyText value={item.counterpart} />
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">{formatShortDate(item.date)}</p>
       </div>
 

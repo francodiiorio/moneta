@@ -130,7 +130,7 @@ export function AccountsPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Cuentas"
-        description="Bancos, efectivo y billeteras. El saldo se calcula con tus ingresos, gastos con débito y ajustes."
+        description="Bancos, efectivo y billeteras. El saldo se calcula con tus ingresos, gastos con débito, transferencias y ajustes."
         actions={
           <Button onClick={openCreateDialog}>
             <Plus className="size-4" />

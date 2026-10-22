@@ -80,8 +80,8 @@ AccountAdjustment {
 }
 ```
 
-- **Saldo** = `openingBalance` + ingresos − gastos con débito (`confirmed`) ± ajustes, con
-  fecha entre `openingDate` y la fecha pedida. Una sola función pura:
+- **Saldo** = `openingBalance` + ingresos − gastos con débito (`confirmed`) ± transferencias
+  ± ajustes, con fecha entre `openingDate` y la fecha pedida. Una sola función pura:
   `domain/accounts:accountBalanceAt`. Antes de `openingDate` el saldo es `undefined` (la
   cuenta no existía), no cero — la evolución del patrimonio la deja afuera de esos meses.
 - **Invariantes** (repositories + `validateLedgerIntegrity` del import, misma regla en
@@ -94,6 +94,15 @@ AccountAdjustment {
 - **Ajustar saldo**: la UI pide el saldo real del banco a una fecha y guarda la diferencia
   contra el calculado como un `AccountAdjustment` — nunca pisa un saldo. Los ajustes se
   listan en Movimientos (se pueden borrar, no editar).
+- **Transfer** (Fase 2): `{ id, date, fromAccountId, toAccountId, fromAmount, fromCurrency,
+  toAmount, toCurrency, description, notes?, createdAt, updatedAt }`. Guarda los **dos
+  montos reales** (lo que salió y lo que entró, cada uno en la moneda de su cuenta),
+  nunca una tasa: la cotización implícita (`domain/accounts:transferImpliedRate`) sólo se
+  muestra. Para el saldo son dos movimientos: `−fromAmount` en el origen, `+toAmount` en
+  el destino. Invariantes (`domain/accounts:transferProblem`): cuentas distintas, cada
+  lado encaja en su cuenta (moneda, `openingDate`), y entre cuentas de la misma moneda
+  `fromAmount === toAmount`. Las monedas las pone el repository desde las cuentas, nunca
+  el formulario. No es gasto ni ingreso: no entra en presupuestos ni reportes de gasto.
 - **Patrimonio** = Cuentas + Ahorros + Inversiones (`valuateNetWorth` recupera el bucket
   `accounts`). A diferencia de ahorros e inversiones, las cuentas tienen historial real: la
   evolución usa el saldo de cada cuenta a cada fin de mes.
@@ -315,6 +324,13 @@ categories:          id, name, kind, parentId, isArchived, order
 expenses:            id, date, categoryId, status, sourcePlanId, accountId, [status+date]
 ```
 
+**Versión 6** (Etapa 8, Fase 2 — transferencias; tabla nueva, nace vacía, sin
+`.upgrade()`):
+
+```
+transfers:           id, date, fromAccountId, toAccountId
+```
+
 Dexie omite del índice las claves `undefined`, así que `[status+date]` sólo contiene
 gastos con ambos campos seteados (siempre, en la práctica) y `sourcePlanId` sólo aquellos
 materializados por un plan — eso es lo que permite `db.expenses.where('sourcePlanId')...`
@@ -349,7 +365,7 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
 ```jsonc
 {
   "format": "moneta-backup",
-  "version": 5,
+  "version": 6,
   "exportedAt": "2026-08-23T14:03:11.000Z",
   "app": { "name": "moneta", "version": "0.0.0" },
   "checksum": "sha256 hex sobre `data` canonicalizado",
@@ -359,7 +375,7 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
     "exchangeRates": [], "settings": {},
     "savingsHoldings": [], "investmentAssets": [], "investmentHoldings": [],
     "assetPrices": [], "investmentLots": [],
-    "accounts": [], "incomes": [], "accountAdjustments": []
+    "accounts": [], "incomes": [], "accountAdjustments": [], "transfers": []
   }
 }
 ```
@@ -383,7 +399,8 @@ Reglas (ver `src/features/backups/`):
   vacíos (`migrations/v4_to_v5.ts`). Como `Category.kind` vuelve como campo
   **obligatorio**, la forma de categoría de la v4 (sin `kind`) se congeló en
   `schemas/legacy.ts` (`legacyCategoryV4Schema`) para que un `.finance` v4 real siga
-  validando igual.
+  validando igual. La v6 (Etapa 8, Fase 2) sólo suma `transfers` (vacío al migrar un v5,
+  `migrations/v5_to_v6.ts`); ninguna entidad de la v5 cambia de forma.
 - Como una migración vieja (`schemas/v1.ts`, `v2.ts`, `v3.ts`) tiene que seguir validando
   un archivo `.finance` exactamente como lo hacía cuando esa versión era la última, esos
   schemas **no** pueden depender de los tipos de dominio actuales una vez que el dominio

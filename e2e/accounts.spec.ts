@@ -93,3 +93,42 @@ test('un monto con punto de miles se guarda completo', async ({ page }) => {
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(page.getByText(/15[.,]000,00/)).toBeVisible()
 })
+
+// Etapa 8, Fase 2: una compra de dólares es una transferencia entre una
+// cuenta en pesos y una en dólares — cada saldo se mueve en su moneda y
+// la cotización implícita se ve antes de guardar.
+test('una transferencia entre monedas mueve los dos saldos y muestra la cotización', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Galicia pesos')
+  await page.getByLabel('Saldo inicial').fill('2.000.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Caja USD')
+  await page.getByLabel('Moneda').click()
+  await page.getByRole('option', { name: /USD/ }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByRole('tab', { name: 'Transferencia' }).click()
+  await page.getByLabel('Desde').click()
+  await page.getByRole('option', { name: /Galicia pesos/ }).click()
+  await page.getByLabel('Hacia').click()
+  await page.getByRole('option', { name: /Caja USD/ }).click()
+  await page.getByLabel(/Sale/).fill('1.250.000')
+  await page.getByLabel(/Entra/).fill('1000')
+  await expect(page.getByText(/1 USD = 1\.?250 ARS/)).toBeVisible()
+  await page.getByLabel(/Descripción/).fill('Compra de dólares')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await expect(page.getByText('Transferencia · Galicia pesos → Caja USD')).toBeVisible()
+
+  await page.goto('/cuentas')
+  await expect(page.getByText(/750[.,]000,00/)).toBeVisible()
+  await expect(page.getByText(/1[.,]000[.,]00/).first()).toBeVisible()
+})

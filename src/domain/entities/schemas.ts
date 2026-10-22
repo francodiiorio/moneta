@@ -107,6 +107,28 @@ export const accountAdjustmentSchema = z.object({
 })
 export type AccountAdjustment = z.infer<typeof accountAdjustmentSchema>
 
+// Etapa 8, Fase 2. Guarda los DOS montos reales (lo que salió y lo que
+// entró, cada uno en la moneda de su cuenta) — nunca una tasa para
+// recalcular uno del otro: comprar dólares tiene un tipo de cambio
+// efectivo que sólo el banco sabe, y redondear con una tasa podría
+// inventar o perder un centavo. Si las dos cuentas tienen la misma moneda,
+// los montos son iguales (invariante de domain/accounts:transferProblem).
+export const transferSchema = z.object({
+  id,
+  date: dateStamp,
+  fromAccountId: id,
+  toAccountId: id,
+  fromAmount: minorAmount.positive(),
+  fromCurrency: currencyCode,
+  toAmount: minorAmount.positive(),
+  toCurrency: currencyCode,
+  description: z.string().min(1),
+  notes: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type Transfer = z.infer<typeof transferSchema>
+
 export const recurrenceFrequencySchema = z.enum(['daily', 'weekly', 'monthly', 'yearly'])
 
 export const recurrenceRuleSchema = z.object({

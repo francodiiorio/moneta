@@ -74,7 +74,7 @@ export function AccountFormDialog({ open, account, onOpenChange }: AccountFormDi
           <DialogTitle>{isEditing ? 'Editar cuenta' : 'Nueva cuenta'}</DialogTitle>
           <DialogDescription>
             Una cuenta tiene una sola moneda. Su saldo se calcula solo: saldo inicial + ingresos − gastos con
-            débito ± ajustes.
+            débito ± transferencias ± ajustes.
           </DialogDescription>
         </DialogHeader>
 

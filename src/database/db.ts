@@ -15,6 +15,7 @@ import type {
   RecurringPlan,
   SavingsHolding,
   Settings,
+  Transfer,
 } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 
@@ -71,6 +72,7 @@ export class MonetaDatabase extends Dexie {
   accounts!: EntityTable<Account, 'id'>
   incomes!: EntityTable<Income, 'id'>
   accountAdjustments!: EntityTable<AccountAdjustment, 'id'>
+  transfers!: EntityTable<Transfer, 'id'>
 
   constructor(name = 'moneta') {
     super(name)
@@ -212,6 +214,12 @@ export class MonetaDatabase extends Dexie {
             if (category.kind === undefined) category.kind = 'expense'
           })
       })
+    // Etapa 8, Fase 2: transferencias entre cuentas — tabla nueva, nace
+    // vacía, sin .upgrade(). Indexada por cada lado para poder buscar
+    // "todo lo que toca esta cuenta" sin table scan.
+    this.version(6).stores({
+      transfers: 'id, date, fromAccountId, toAccountId',
+    })
   }
 }
 

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { AccountAdjustment, Expense, Income } from '@/domain/entities'
+import type { AccountAdjustment, Expense, Income, Transfer } from '@/domain/entities'
 import { money } from '@/domain/money'
 import {
   accountBalanceAt,
   adjustmentToReach,
   movementAccountProblem,
+  transferImpliedRate,
+  transferProblem,
   toAccountMovements,
   type AccountMovement,
   type BalanceAccount,
@@ -68,6 +70,7 @@ describe('toAccountMovements', () => {
       incomes: [income()],
       expenses: [expense()],
       adjustments: [adjustment({ amount: -150 }), adjustment({ id: 'adj2', amount: 75 })],
+      transfers: [],
     })
     expect(movements.map((m) => m.amount.amount)).toEqual([50_000, -20_000, -150, 75])
   })
@@ -75,7 +78,7 @@ describe('toAccountMovements', () => {
   it('skips expenses without an account (credit card / unspecified)', () => {
     const withoutAccount = expense()
     delete withoutAccount.accountId
-    const movements = toAccountMovements({ incomes: [], expenses: [withoutAccount], adjustments: [] })
+    const movements = toAccountMovements({ incomes: [], expenses: [withoutAccount], adjustments: [], transfers: [] })
     expect(movements).toEqual([])
   })
 
@@ -84,6 +87,7 @@ describe('toAccountMovements', () => {
       incomes: [],
       expenses: [expense({ status: 'projected' })],
       adjustments: [],
+      transfers: [],
     })
     expect(movements).toEqual([])
   })
@@ -156,5 +160,88 @@ describe('movementAccountProblem', () => {
 
   it('rejects a date before the opening date', () => {
     expect(movementAccountProblem(target, { date: '2026-09-30', currency: 'ARS' })).toMatch(/saldo inicial/)
+  })
+})
+
+function transfer(overrides: Partial<Transfer> = {}): Transfer {
+  return {
+    id: 't1',
+    date: '2026-10-08',
+    fromAccountId: 'a1',
+    toAccountId: 'a2',
+    fromAmount: 1_250_000_00,
+    fromCurrency: 'ARS',
+    toAmount: 1_000_00,
+    toCurrency: 'USD',
+    description: 'Compra de dólares',
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  }
+}
+
+describe('transfers', () => {
+  it('a transfer is two movements: fromAmount leaves one account, toAmount enters the other', () => {
+    const movements = toAccountMovements({ incomes: [], expenses: [], adjustments: [], transfers: [transfer()] })
+    expect(movements).toEqual([
+      { accountId: 'a1', date: '2026-10-08', amount: money(-1_250_000_00, 'ARS') },
+      { accountId: 'a2', date: '2026-10-08', amount: money(1_000_00, 'USD') },
+    ])
+  })
+
+  it('moves balance between accounts without creating or losing money in the same currency', () => {
+    const a1: BalanceAccount = { id: 'a1', currency: 'ARS', openingBalance: 100_000, openingDate: '2026-10-01' }
+    const a2: BalanceAccount = { id: 'a2', currency: 'ARS', openingBalance: 0, openingDate: '2026-10-01' }
+    const movements = toAccountMovements({
+      incomes: [],
+      expenses: [],
+      adjustments: [],
+      transfers: [transfer({ fromAmount: 30_000, toAmount: 30_000, toCurrency: 'ARS' })],
+    })
+    expect(accountBalanceAt(a1, movements, '2026-10-31')).toEqual(money(70_000, 'ARS'))
+    expect(accountBalanceAt(a2, movements, '2026-10-31')).toEqual(money(30_000, 'ARS'))
+  })
+})
+
+describe('transferProblem', () => {
+  const ars = { id: 'a1', name: 'Galicia', currency: 'ARS', openingDate: '2026-10-01' }
+  const ars2 = { id: 'a3', name: 'Mercado Pago', currency: 'ARS', openingDate: '2026-10-01' }
+  const usd = { id: 'a2', name: 'Caja USD', currency: 'USD', openingDate: '2026-10-05' }
+
+  it('accepts a valid cross-currency transfer', () => {
+    expect(transferProblem(transfer(), ars, usd)).toBeUndefined()
+  })
+
+  it('rejects the same account on both sides', () => {
+    expect(transferProblem(transfer({ toAccountId: 'a1' }), ars, ars)).toMatch(/distintas/)
+  })
+
+  it('rejects a side whose currency does not match its account', () => {
+    expect(transferProblem(transfer({ toCurrency: 'ARS' }), ars, usd)).toMatch(/Caja USD/)
+  })
+
+  it('rejects a date before either opening date', () => {
+    expect(transferProblem(transfer({ date: '2026-10-03' }), ars, usd)).toMatch(/Caja USD/)
+  })
+
+  it('rejects different amounts between two accounts of the same currency', () => {
+    const t = transfer({ toAccountId: 'a3', fromAmount: 100, toAmount: 99, toCurrency: 'ARS' })
+    expect(transferProblem(t, ars, ars2)).toMatch(/iguales/)
+    expect(transferProblem({ ...t, toAmount: 100 }, ars, ars2)).toBeUndefined()
+  })
+
+  it('rejects a non-positive amount', () => {
+    expect(transferProblem(transfer({ toAmount: 0 }), ars, usd)).toMatch(/mayores a cero/)
+  })
+})
+
+describe('transferImpliedRate', () => {
+  it('reads as "1 USD = 1250 ARS" when buying dollars', () => {
+    expect(transferImpliedRate(transfer())).toEqual({ base: 'USD', quote: 'ARS', rate: 1250 })
+  })
+
+  it('reads the same way when selling dollars', () => {
+    const selling = transfer({ fromAmount: 1_000_00, fromCurrency: 'USD', toAmount: 1_200_000_00, toCurrency: 'ARS' })
+    expect(transferImpliedRate(selling)).toEqual({ base: 'USD', quote: 'ARS', rate: 1200 })
   })
 })

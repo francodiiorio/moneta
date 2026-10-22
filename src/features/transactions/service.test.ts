@@ -213,3 +213,80 @@ describe('ajustes de saldo en Movimientos', () => {
     expect(await db.accountAdjustments.count()).toBe(0)
   })
 })
+
+describe('transferencias en Movimientos (Fase 2)', () => {
+  afterEach(async () => {
+    await Promise.all([db.accounts.clear(), db.transfers.clear()])
+  })
+
+  async function seedAccounts() {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const base = { type: 'bank' as const, openingBalance: 0, openingDate: '2026-08-01' }
+    const ars = await createAccount({ ...base, name: 'Galicia', currency: 'ARS' })
+    const ars2 = await createAccount({ ...base, name: 'Mercado Pago', currency: 'ARS' })
+    const usd = await createAccount({ ...base, name: 'Caja USD', currency: 'USD' })
+    return { ars, ars2, usd }
+  }
+
+  it('same currency: one amount is used on both sides, and the description defaults', async () => {
+    const { saveTransferFromForm } = await import('./service')
+    const { ars, ars2 } = await seedAccounts()
+    await saveTransferFromForm({
+      date: '2026-08-10',
+      description: '',
+      fromAccountId: ars.id,
+      toAccountId: ars2.id,
+      fromAmount: '15.000',
+      toAmount: '',
+    })
+    expect(await db.transfers.toArray()).toEqual([
+      expect.objectContaining({ fromAmount: 15_000_00, toAmount: 15_000_00, description: 'Transferencia' }),
+    ])
+  })
+
+  it('cross currency: each amount is parsed in its own account currency, and both are required', async () => {
+    const { saveTransferFromForm } = await import('./service')
+    const { ars, usd } = await seedAccounts()
+    const values = {
+      date: '2026-08-10',
+      description: 'Compra de dólares',
+      fromAccountId: ars.id,
+      toAccountId: usd.id,
+      fromAmount: '1.250.000',
+      toAmount: '',
+    }
+    await expect(saveTransferFromForm(values)).rejects.toThrow(/cuánto entró en USD/)
+    await saveTransferFromForm({ ...values, toAmount: '1000' })
+    expect(await db.transfers.toArray()).toEqual([
+      expect.objectContaining({ fromAmount: 1_250_000_00, fromCurrency: 'ARS', toAmount: 1_000_00, toCurrency: 'USD' }),
+    ])
+  })
+
+  it('lists a transfer unsigned overall, and signed from each side when filtered by account', async () => {
+    const { saveTransferFromForm } = await import('./service')
+    const { ars, usd } = await seedAccounts()
+    await saveTransferFromForm({
+      date: '2026-08-10',
+      description: 'Compra de dólares',
+      fromAccountId: ars.id,
+      toAccountId: usd.id,
+      fromAmount: '1.250.000',
+      toAmount: '1000',
+    })
+
+    const [overall] = await listTransactionsForMonth('2026-08')
+    expect(overall).toMatchObject({ kind: 'transfer', accountLabel: 'Galicia → Caja USD', signed: false })
+    expect(overall?.amount).toEqual({ amount: 1_250_000_00, currency: 'ARS' })
+    expect(overall?.counterpart).toEqual({ amount: 1_000_00, currency: 'USD' })
+
+    const [fromSide] = await listTransactionsForMonth('2026-08', { accountId: ars.id })
+    expect(fromSide).toMatchObject({ signed: true, amount: { amount: -1_250_000_00, currency: 'ARS' } })
+
+    const [toSide] = await listTransactionsForMonth('2026-08', { accountId: usd.id })
+    expect(toSide).toMatchObject({ signed: true, amount: { amount: 1_000_00, currency: 'USD' } })
+
+    // A category filter never matches a transfer: it has no category.
+    const categoryId = (await createCategory({ kind: 'expense', name: 'Comida' })).id
+    expect(await listTransactionsForMonth('2026-08', { categoryId })).toEqual([])
+  })
+})

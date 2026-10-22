@@ -27,6 +27,7 @@ const SECTIONS: GuideSection[] = [
     steps: [
       'En "Cuentas" creá tus cuentas (banco, efectivo, billetera virtual) con su moneda y el saldo que tenían a una fecha. Desde ahí, Moneta calcula el saldo solo.',
       'Desde "Movimientos" → "Nuevo movimiento", elegí Gasto o Ingreso e indicá la descripción, el monto, la categoría y la cuenta. Un ingreso siempre entra a una cuenta; un gasto con débito sale de una, y uno con tarjeta de crédito se carga sin cuenta.',
+      'Para pasar plata entre tus cuentas (o comprar dólares), usá "Nuevo movimiento" → Transferencia. No cuenta como gasto ni ingreso: sólo mueve saldos. Si las cuentas son de distinta moneda, cargá lo que salió y lo que entró, y Moneta te muestra la cotización que te hicieron.',
       'Si el saldo no coincide con el del banco, usá "Ajustar saldo" en la cuenta: se guarda la diferencia como un ajuste visible en Movimientos, sin tocar nada de lo cargado.',
       'Podés crear una categoría nueva al vuelo mientras estás cargando un movimiento.',
     ],

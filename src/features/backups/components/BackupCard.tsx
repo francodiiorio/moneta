@@ -43,6 +43,7 @@ const MERGE_LABELS: Record<keyof MergeSummary, [string, string]> = {
   accounts: ['cuenta', 'cuentas'],
   incomes: ['ingreso', 'ingresos'],
   accountAdjustments: ['ajuste de saldo', 'ajustes de saldo'],
+  transfers: ['transferencia', 'transferencias'],
 }
 
 function joinList(parts: string[]): string {

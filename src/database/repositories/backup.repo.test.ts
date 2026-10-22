@@ -22,6 +22,7 @@ afterEach(async () => {
     db.accounts.clear(),
     db.incomes.clear(),
     db.accountAdjustments.clear(),
+    db.transfers.clear(),
   ])
 })
 
@@ -41,6 +42,7 @@ function emptyData(overrides: Partial<AllTablesData> = {}): AllTablesData {
     accounts: [],
     incomes: [],
     accountAdjustments: [],
+    transfers: [],
     ...overrides,
   }
 }
@@ -231,6 +233,7 @@ describe('mergeAllTables', () => {
       accounts: { added: 0, skipped: 0 },
       incomes: { added: 0, skipped: 0 },
       accountAdjustments: { added: 0, skipped: 0 },
+      transfers: { added: 0, skipped: 0 },
     })
     expect(await db.categories.count()).toBe(before)
   })

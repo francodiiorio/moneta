@@ -23,6 +23,7 @@ afterEach(async () => {
     db.accounts.clear(),
     db.incomes.clear(),
     db.accountAdjustments.clear(),
+    db.transfers.clear(),
   ])
 })
 
@@ -84,6 +85,34 @@ async function seedFullDatabase() {
     amount: -1_50,
     currency: 'ARS',
     description: 'Comisión',
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  const usdAccount = {
+    id: generateId(),
+    name: 'Caja USD',
+    type: 'bank' as const,
+    currency: 'USD',
+    openingBalance: 0,
+    openingDate: '2026-08-01',
+    isArchived: false,
+    order: 1,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.accounts.add(usdAccount)
+
+  await db.transfers.add({
+    id: generateId(),
+    date: '2026-08-10',
+    fromAccountId: account.id,
+    toAccountId: usdAccount.id,
+    fromAmount: 125_000_00,
+    fromCurrency: 'ARS',
+    toAmount: 100_00,
+    toCurrency: 'USD',
+    description: 'Compra de dólares',
     createdAt: now,
     updatedAt: now,
   })
@@ -231,6 +260,7 @@ async function snapshotAllTables() {
     accounts: sortById(await db.accounts.toArray()),
     incomes: sortById(await db.incomes.toArray()),
     accountAdjustments: sortById(await db.accountAdjustments.toArray()),
+    transfers: sortById(await db.transfers.toArray()),
     settings: await db.settings.get('singleton'),
   }
 }
@@ -252,6 +282,7 @@ async function clearAllTables() {
     db.accounts.clear(),
     db.incomes.clear(),
     db.accountAdjustments.clear(),
+    db.transfers.clear(),
   ])
 }
 
@@ -433,9 +464,10 @@ describe('backup round-trip — merge', () => {
       investmentHoldings: { added: 1, skipped: 0 },
       assetPrices: { added: 1, skipped: 0 },
       investmentLots: { added: 1, skipped: 0 },
-      accounts: { added: 1, skipped: 0 },
+      accounts: { added: 2, skipped: 0 },
       incomes: { added: 1, skipped: 0 },
       accountAdjustments: { added: 1, skipped: 0 },
+      transfers: { added: 1, skipped: 0 },
     })
 
     const categoryIds = (await db.categories.toArray()).map((c) => c.id).sort()
@@ -470,9 +502,10 @@ describe('backup round-trip — merge', () => {
       investmentHoldings: { added: 0, skipped: 1 },
       assetPrices: { added: 0, skipped: 1 },
       investmentLots: { added: 0, skipped: 1 },
-      accounts: { added: 0, skipped: 1 },
+      accounts: { added: 0, skipped: 2 },
       incomes: { added: 0, skipped: 1 },
       accountAdjustments: { added: 0, skipped: 1 },
+      transfers: { added: 0, skipped: 1 },
     })
     expect(await db.expenses.count()).toBe(countBefore)
   })
@@ -704,6 +737,7 @@ describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
     expect(migrated.accounts).toEqual([])
     expect(migrated.incomes).toEqual([])
     expect(migrated.accountAdjustments).toEqual([])
+    expect(migrated.transfers).toEqual([])
   })
 
   it('importing a v4 .finance file lands its categories with kind expense in Dexie', async () => {
@@ -715,13 +749,14 @@ describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
     expect(await db.expenses.count()).toBe(1)
   })
 
-  it('exports as version 5', async () => {
+  it('exports as version 6', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
-    expect(payload.version).toBe(5)
-    expect(payload.data.accounts).toHaveLength(1)
+    expect(payload.version).toBe(6)
+    expect(payload.data.accounts).toHaveLength(2)
     expect(payload.data.incomes).toHaveLength(1)
     expect(payload.data.accountAdjustments).toHaveLength(1)
+    expect(payload.data.transfers).toHaveLength(1)
   })
 })
 
@@ -796,7 +831,7 @@ describe('backup — hallazgos de la revisión de la Fase 1', () => {
 
     // Same account id on this device, but since switched to USD (allowed
     // locally while it had no movements here).
-    const accountId = (await db.accounts.toArray())[0]!.id
+    const accountId = (await db.accounts.toArray()).find((a) => a.name === 'Galicia pesos')!.id
     await clearAllTables()
     const now = new Date().toISOString()
     await db.accounts.add({
@@ -817,5 +852,35 @@ describe('backup — hallazgos de la revisión de la Fase 1', () => {
     expect(await db.incomes.count()).toBe(0)
     expect(await db.categories.get(seeded.category.id)).toBeUndefined()
     expect(await db.accounts.count()).toBe(1)
+  })
+})
+
+describe('transferencias en el backup (Fase 2)', () => {
+  it('a v5 file migrates to v6 with no transfers', () => {
+    const v5 = {
+      ...v4Payload(),
+      version: 5 as const,
+      data: {
+        ...v4Payload().data,
+        categories: v4Payload().data.categories.map((c) => ({ ...c, kind: 'expense' as const })),
+        accounts: [],
+        incomes: [],
+        accountAdjustments: [],
+      },
+    }
+    const migrated = migrateToLatest(v5)
+    expect(migrated.transfers).toEqual([])
+    expect(migrated.categories[0]?.kind).toBe('expense')
+  })
+
+  it('rejects a transfer from an account to itself, without touching the database', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    const transfer = payload.data.transfers[0]!
+    transfer.toAccountId = transfer.fromAccountId
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/distintas/)
+    expect(await db.accounts.count()).toBe(0)
   })
 })
