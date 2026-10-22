@@ -137,8 +137,12 @@ test('una transferencia entre monedas mueve los dos saldos y muestra la cotizaci
 // loaded and defaulted every new gasto to ARS whatever the base currency.
 test('un gasto nuevo arranca en la moneda base elegida en Ajustes', async ({ page }) => {
   await page.goto('/ajustes')
-  await page.getByText('Moneda base').locator('..').getByRole('combobox').click()
+  const baseCurrency = page.getByText('Moneda base').locator('..').getByRole('combobox')
+  await baseCurrency.click()
   await page.getByRole('option', { name: 'USD', exact: true }).click()
+  // The select shows the stored setting (live query): wait until the write
+  // landed before leaving the page, or the next page can still read ARS.
+  await expect(baseCurrency).toContainText('USD')
 
   await page.goto('/movimientos')
   await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
