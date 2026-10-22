@@ -132,3 +132,44 @@ test('una transferencia entre monedas mueve los dos saldos y muestra la cotizaci
   await expect(page.getByText(/750[.,]000,00/)).toBeVisible()
   await expect(page.getByText(/1[.,]000[.,]00/).first()).toBeVisible()
 })
+
+// Regression (code review, Fase 2): the gasto form mounted before settings
+// loaded and defaulted every new gasto to ARS whatever the base currency.
+test('un gasto nuevo arranca en la moneda base elegida en Ajustes', async ({ page }) => {
+  await page.goto('/ajustes')
+  await page.getByText('Moneda base').locator('..').getByRole('combobox').click()
+  await page.getByRole('option', { name: 'USD', exact: true }).click()
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await expect(page.getByLabel('Moneda')).toContainText('USD')
+})
+
+test('una transferencia entre cuentas de la misma moneda pide un solo monto', async ({ page }) => {
+  for (const name of ['Galicia pesos', 'Mercado Pago']) {
+    await page.goto('/cuentas')
+    await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+    await page.getByLabel('Nombre').fill(name)
+    await page.getByLabel('Saldo inicial').fill('1000')
+    await page.getByRole('button', { name: 'Guardar' }).click()
+    await expect(page.getByRole('dialog')).not.toBeVisible()
+  }
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByRole('tab', { name: 'Transferencia' }).click()
+  await page.getByLabel('Desde').click()
+  await page.getByRole('option', { name: /Galicia pesos/ }).click()
+  await page.getByLabel('Hacia').click()
+  // "Hacia" never offers the account already chosen as "Desde".
+  await expect(page.getByRole('option', { name: /Galicia pesos/ })).toHaveCount(0)
+  await page.getByRole('option', { name: /Mercado Pago/ }).click()
+  await expect(page.getByLabel(/Entra/)).toHaveCount(0)
+  await page.getByLabel('Monto').fill('300')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/cuentas')
+  await expect(page.getByText(/^\$\s?700,00$/)).toBeVisible()
+  await expect(page.getByText(/^\$\s?1[.,]300,00$/)).toBeVisible()
+})

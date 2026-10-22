@@ -8,11 +8,10 @@ import { DateField } from '@/components/DateField'
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CURRENCIES, formatMoney, money } from '@/domain/money'
+import { CURRENCIES, formatAmountInput, magnitude } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
 import { CategoryField } from './CategoryField'
 import { useAccounts } from '../hooks/useAccounts'
-import { useSettings } from '../hooks/useSettings'
 import { EXPENSE_CURRENCIES, movementFormSchema, type MovementFormValues, type MovementKind } from '../schema'
 import { saveMovement, type EditableTransactionItem } from '../service'
 
@@ -23,6 +22,8 @@ interface MovementFormProps {
    *  two keeps what was already typed (except the category: they're
    *  disjoint). */
   kind: MovementKind
+  /** The base currency, already loaded — see TransactionFormDialog. */
+  defaultCurrency: string
   item: (EditableTransactionItem & { kind: MovementKind }) | undefined
   onSaved: () => void
   onCancel: () => void
@@ -32,14 +33,8 @@ function emptyValues(kind: MovementKind, defaultCurrency: string): MovementFormV
   return { kind, date: todayStamp(), description: '', categoryId: '', currency: defaultCurrency, amount: '', accountId: '' }
 }
 
-function magnitudeString(value: { amount: number; currency: string }): string {
-  return formatMoney(money(Math.abs(value.amount), value.currency)).replace(/[^\d,.-]/g, '')
-}
-
-export function MovementForm({ kind, item, onSaved, onCancel }: MovementFormProps) {
-  const settings = useSettings()
+export function MovementForm({ kind, defaultCurrency, item, onSaved, onCancel }: MovementFormProps) {
   const accounts = useAccounts()
-  const defaultCurrency = settings?.baseCurrency ?? 'ARS'
 
   const form = useForm<MovementFormValues>({
     resolver: zodResolver(movementFormSchema),
@@ -54,7 +49,7 @@ export function MovementForm({ kind, item, onSaved, onCancel }: MovementFormProp
         description: item.description,
         categoryId: item.categoryId,
         currency: item.amount.currency,
-        amount: magnitudeString(item.amount),
+        amount: formatAmountInput(magnitude(item.amount)),
         accountId: item.accountId ?? '',
       })
     } else {

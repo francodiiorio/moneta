@@ -256,6 +256,8 @@ export async function saveTransferFromForm(values: TransferFormValues, existingI
       fromAmount,
       toAmount,
       description: values.description.trim() || TRANSFER_LABEL,
+      expectedFromCurrency: from.currency,
+      expectedToCurrency: to.currency,
     },
     existingId,
   )

@@ -48,6 +48,12 @@ export function negate(a: Money): Money {
   return money(-(a.amount as number), a.currency)
 }
 
+/** The same amount without its sign — e.g. a gasto shown negated in a
+ *  list, back to the positive magnitude its form edits. */
+export function magnitude(a: Money): Money {
+  return a.amount < 0 ? negate(a) : a
+}
+
 export function isZero(a: Money): boolean {
   return a.amount === 0
 }
@@ -216,4 +222,13 @@ export function formatAxisAmount(rawMinorValue: number, currency: CurrencyCode):
   const info = getCurrency(currency)
   const decimalValue = rawMinorValue / 10 ** info.decimals
   return new Intl.NumberFormat(info.locale, { maximumFractionDigits: 0 }).format(decimalValue)
+}
+
+/** The text an amount input is pre-filled with when editing: what
+ *  `formatMoney` shows, without the currency symbol — so `parseAmount`
+ *  reads it back to exactly the same Money (both use the app's es-AR
+ *  separators; see money.test.ts "round-trips"). The one place that
+ *  strips a formatted amount for an input. */
+export function formatAmountInput(value: Money): string {
+  return formatMoney(value).replace(/[^\d,.-]/g, '')
 }

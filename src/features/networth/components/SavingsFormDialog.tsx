@@ -7,7 +7,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CURRENCIES, formatMoney, money } from '@/domain/money'
+import { CURRENCIES, formatAmountInput, money } from '@/domain/money'
 import type { SavingsHolding } from '@/domain/entities'
 import { savingsFormSchema, NETWORTH_CURRENCIES, type SavingsFormValues } from '../schema'
 import { createSavingsHoldingFromForm, updateSavingsHoldingFromForm } from '../service'
@@ -36,7 +36,7 @@ export function SavingsFormDialog({ open, holding, onOpenChange }: SavingsFormDi
         ? {
             name: holding.name,
             currency: holding.currency,
-            amount: formatMoney(money(holding.amount, holding.currency)).replace(/[^\d,.-]/g, ''),
+            amount: formatAmountInput(money(holding.amount, holding.currency)),
             location: holding.location ?? '',
             notes: holding.notes ?? '',
           }

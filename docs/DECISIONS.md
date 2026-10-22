@@ -1255,3 +1255,16 @@ duplicado; nada de separadores seguidos ("1..000"); y un monto que no entra exac
 `number` (> 2^53 unidades menores) se rechaza. Antes "--1.500" daba +1,50 y
 `String(1.2e-7)` daba 1,27 — en silencio. En el import de CSV esas celdas pasan a
 mostrarse como filas inválidas en la vista previa.
+
+## La cotización implícita de una transferencia es un float sólo para mostrar
+
+**Decisión:** `domain/accounts:transferImpliedRate` divide los dos montos de una
+transferencia entre monedas (pasados a unidades mayores) para mostrar "1 USD = 1.250 ARS".
+Es la única excepción a la regla de `CLAUDE.md` de que sólo `formatMoney` convierte un
+`Minor` a número decimal: el resultado es una tasa (un ratio, float por naturaleza, igual
+que `ExchangeRate.rate`), nunca se guarda y nunca se usa para calcular un monto — los dos
+montos de la transferencia se guardan tal como fueron.
+
+**Por qué no guardarla:** guardar la tasa y derivar un monto del otro obligaría a redondear,
+y el redondeo podría inventar o perder un centavo respecto de lo que realmente movió el
+banco. Ver ADR "Se reintroducen Cuentas, Ingresos y Transferencias".

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { movementKindSchema } from '../schema'
+import { useSettings } from '../hooks/useSettings'
 import type { EditableTransactionItem } from '../service'
 import { MovementForm } from './MovementForm'
 import { TransferForm } from './TransferForm'
@@ -40,18 +41,39 @@ const COPY: Record<DialogMode, { create: string; edit: string; description: stri
  *  transferencia has a shape of its own (TransferForm). Editing never
  *  switches kind: the tabs only show when creating. */
 export function TransactionFormDialog({ open, item, onOpenChange }: TransactionFormDialogProps) {
+  const settings = useSettings()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         {/* Radix unmounts the content while closed, so the body — and its
-            tab state — starts fresh on every open, from the item if any. */}
-        <DialogBody item={item} onClose={() => onOpenChange(false)} />
+            tab state — starts fresh on every open, from the item if any.
+            Waits for settings: the forms read their default currency once,
+            when they mount, so mounting them before settings load would
+            silently default every new gasto to ARS. */}
+        {settings && (
+          <DialogBody
+            item={item}
+            defaultCurrency={settings.baseCurrency}
+            onClose={() => onOpenChange(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )
 }
 
-function DialogBody({ item, onClose }: { item: EditableTransactionItem | undefined; onClose: () => void }) {
+interface DialogBodyProps {
+  item: EditableTransactionItem | undefined
+  defaultCurrency: string
+  onClose: () => void
+}
+
+function DialogBody({ item: itemProp, defaultCurrency, onClose }: DialogBodyProps) {
+  // Pinned to what was being edited when the dialog opened: closing it
+  // clears the page's editing id while Radix still plays the exit
+  // animation, and reading the live prop would flash "Nuevo …", the tabs
+  // and empty fields during those ~200 ms.
+  const [item] = useState(itemProp)
   const [mode, setMode] = useState<DialogMode>(item?.kind ?? 'expense')
   // While editing, the item decides — never a tab picked before.
   const activeMode: DialogMode = item?.kind ?? mode
@@ -89,6 +111,7 @@ function DialogBody({ item, onClose }: { item: EditableTransactionItem | undefin
       ) : (
         <MovementForm
           kind={activeMode}
+          defaultCurrency={defaultCurrency}
           item={item && item.kind !== 'transfer' ? { ...item, kind: item.kind } : undefined}
           onSaved={onClose}
           onCancel={onClose}

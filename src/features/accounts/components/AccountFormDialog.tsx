@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { DateField } from '@/components/DateField'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { CURRENCIES, formatMoney, money } from '@/domain/money'
+import { CURRENCIES, formatAmountInput, money } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
 import { ACCOUNT_TYPE_LABELS } from '../labels'
 import { accountFormSchema, ACCOUNT_CURRENCIES, type AccountFormValues } from '../schema'
@@ -41,7 +41,7 @@ export function AccountFormDialog({ open, account, onOpenChange }: AccountFormDi
             name: account.name,
             type: account.type,
             currency: account.currency,
-            openingBalance: formatMoney(money(account.openingBalance, account.currency)).replace(/[^\d,.-]/g, ''),
+            openingBalance: formatAmountInput(money(account.openingBalance, account.currency)),
             openingDate: account.openingDate,
             notes: account.notes ?? '',
           }

@@ -290,3 +290,21 @@ describe('transferencias en Movimientos (Fase 2)', () => {
     expect(await listTransactionsForMonth('2026-08', { categoryId })).toEqual([])
   })
 })
+
+describe('removeTransaction — transferencia', () => {
+  afterEach(async () => {
+    await Promise.all([db.accounts.clear(), db.transfers.clear()])
+  })
+
+  it('deletes the transfer row', async () => {
+    const { saveTransferFromForm, removeTransaction } = await import('./service')
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const base = { type: 'bank' as const, currency: 'ARS', openingBalance: 0, openingDate: '2026-08-01' }
+    const a = await createAccount({ ...base, name: 'A' })
+    const b = await createAccount({ ...base, name: 'B' })
+    await saveTransferFromForm({ date: '2026-08-10', description: '', fromAccountId: a.id, toAccountId: b.id, fromAmount: '10', toAmount: '' })
+    const [item] = await listTransactionsForMonth('2026-08')
+    await removeTransaction(item!.id, item!.kind)
+    expect(await db.transfers.count()).toBe(0)
+  })
+})

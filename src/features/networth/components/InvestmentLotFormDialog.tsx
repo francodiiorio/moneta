@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DateField } from '@/components/DateField'
 import { formatQuantity, quantity } from '@/domain/decimal'
-import { formatMoney, money } from '@/domain/money'
+import { formatAmountInput, money } from '@/domain/money'
 import type { InvestmentAsset, InvestmentLot } from '@/domain/entities'
 import { todayStamp } from '@/lib/dates'
 import { investmentLotFormSchema, type InvestmentLotFormValues } from '../schema'
@@ -75,7 +75,7 @@ export function InvestmentLotFormDialog({
             quantity: formatQuantity(quantity(lot.quantity)),
             costPerUnit:
               lot.costPerUnit !== undefined && asset
-                ? formatMoney(money(lot.costPerUnit, asset.currency)).replace(/[^\d,.-]/g, '')
+                ? formatAmountInput(money(lot.costPerUnit, asset.currency))
                 : '',
             date: lot.date,
           }

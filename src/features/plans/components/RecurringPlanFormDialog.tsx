@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DateField } from '@/components/DateField'
 import type { RecurringPlan } from '@/domain/entities'
-import { CURRENCIES, formatMoney, money } from '@/domain/money'
+import { CURRENCIES, formatAmountInput, money } from '@/domain/money'
 import { cn } from '@/lib/cn'
 import { todayStamp } from '@/lib/dates'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
@@ -54,7 +54,7 @@ function planToFormValues(plan: RecurringPlan): RecurringPlanFormValues {
     description: template.description,
     categoryId: template.categoryId,
     currency: template.currency,
-    amount: formatMoney(money(template.amount, template.currency)).replace(/[^\d,.-]/g, ''),
+    amount: formatAmountInput(money(template.amount, template.currency)),
     freq: rule.freq,
     interval: String(rule.interval),
     dayOfMonth: rule.dayOfMonth !== undefined ? String(rule.dayOfMonth) : '',

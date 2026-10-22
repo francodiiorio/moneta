@@ -15,6 +15,13 @@ export interface TransferInput {
   toAmount: number
   description: string
   notes?: string
+  /** The currencies the caller parsed `fromAmount`/`toAmount` in. Checked
+   *  against the accounts inside the write transaction: amounts are bare
+   *  integers, so if an account's currency changed between the caller's
+   *  read and this write (another tab, an account with no movements yet),
+   *  the same integer would silently mean a different amount. */
+  expectedFromCurrency: string
+  expectedToCurrency: string
 }
 
 export async function listTransfersInRange(startDate: string, endDate: string): Promise<Transfer[]> {
@@ -38,13 +45,21 @@ export async function saveTransfer(input: TransferInput, existingId?: string): P
     const [from, to] = await Promise.all([db.accounts.get(input.fromAccountId), db.accounts.get(input.toAccountId)])
     invariant(from, `Cuenta no encontrada: ${input.fromAccountId}`)
     invariant(to, `Cuenta no encontrada: ${input.toAccountId}`)
+    invariant(
+      from.currency === input.expectedFromCurrency && to.currency === input.expectedToCurrency,
+      'La moneda de una de las cuentas cambió mientras cargabas la transferencia — volvé a intentarlo',
+    )
 
     const now = new Date().toISOString()
     let createdAt = now
+    // The form has no notes field: on edit, keep the stored notes (e.g.
+    // from an imported backup) unless the caller explicitly sends new ones.
+    let notes = input.notes
     if (existingId) {
       const existing = await db.transfers.get(existingId)
       invariant(existing, `No se encontró la transferencia a editar: ${existingId}`)
       createdAt = existing.createdAt
+      notes ??= existing.notes
     }
 
     const transfer: Transfer = {
@@ -59,7 +74,7 @@ export async function saveTransfer(input: TransferInput, existingId?: string): P
       description: input.description,
       createdAt,
       updatedAt: now,
-      ...(input.notes !== undefined && { notes: input.notes }),
+      ...(notes !== undefined && { notes }),
     }
     const problem = transferProblem(transfer, from, to)
     invariant(problem === undefined, problem ?? '')

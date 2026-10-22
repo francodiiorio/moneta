@@ -3,7 +3,7 @@ import { CURRENCY_CODES } from '@/domain/money'
 
 export const EXPENSE_CURRENCIES = CURRENCY_CODES
 
-const amountString = z
+export const amountString = z
   .string()
   .min(1, 'Ingresá un monto')
   .refine((v) => /\d/.test(v), { message: 'Ingresá un monto válido' })

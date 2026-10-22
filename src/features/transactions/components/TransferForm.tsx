@@ -10,11 +10,11 @@ import { DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { transferImpliedRate } from '@/domain/accounts'
 import type { Account } from '@/domain/entities'
-import { formatMoney, money, parseAmount, type Money } from '@/domain/money'
+import { formatAmountInput, parseAmount, type Money } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
-import { transferFormSchema, type TransferFormValues } from '../schema'
-import { saveTransferFromForm, type EditableTransactionItem } from '../service'
+import { amountString, transferFormSchema, type TransferFormValues } from '../schema'
+import { saveTransferFromForm, TRANSFER_LABEL, type EditableTransactionItem } from '../service'
 
 interface TransferFormProps {
   item: (EditableTransactionItem & { kind: 'transfer' }) | undefined
@@ -24,10 +24,6 @@ interface TransferFormProps {
 
 function emptyValues(): TransferFormValues {
   return { date: todayStamp(), description: '', fromAccountId: '', toAccountId: '', fromAmount: '', toAmount: '' }
-}
-
-function amountString(value: Money): string {
-  return formatMoney(money(Math.abs(value.amount), value.currency)).replace(/[^\d,.-]/g, '')
 }
 
 /** Parses for the live rate preview only — the real parse happens again
@@ -57,13 +53,19 @@ export function TransferForm({ item, onSaved, onCancel }: TransferFormProps) {
       form.reset(emptyValues())
       return
     }
+    const { fromAmount, toAmount } = item.transfer
     form.reset({
       date: item.date,
-      description: item.description,
+      // The default label was stored only because the field was left
+      // blank — show it blank again, not as if the user had typed it.
+      description: item.description === TRANSFER_LABEL ? '' : item.description,
       fromAccountId: item.transfer.fromAccountId,
       toAccountId: item.transfer.toAccountId,
-      fromAmount: amountString(item.transfer.fromAmount),
-      toAmount: amountString(item.transfer.toAmount),
+      fromAmount: formatAmountInput(fromAmount),
+      // Same currency: only one amount was ever asked for. Leaving the
+      // other blank means switching "Hacia" to another currency later
+      // starts empty, instead of showing pesos under "Entra (USD)".
+      toAmount: fromAmount.currency === toAmount.currency ? '' : formatAmountInput(toAmount),
     })
     // Keyed on item?.id, same reasoning as MovementForm.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,9 +97,17 @@ export function TransferForm({ item, onSaved, onCancel }: TransferFormProps) {
   const accountOptions = accounts?.filter((a) => !a.isArchived || keep.has(a.id)) ?? []
 
   async function onSubmit(values: TransferFormValues) {
-    if (crossCurrency && !values.toAmount.trim()) {
-      form.setError('toAmount', { message: `Ingresá cuánto entró en ${to.currency}` })
-      return
+    // Only asked for across currencies, so the schema can't require it —
+    // same rules as any other amount once it's shown.
+    if (crossCurrency) {
+      const toAmountCheck = amountString.safeParse(values.toAmount)
+      if (!toAmountCheck.success) {
+        const message = values.toAmount.trim()
+          ? (toAmountCheck.error.issues[0]?.message ?? 'Ingresá un monto válido')
+          : `Ingresá cuánto entró en ${to.currency}`
+        form.setError('toAmount', { message })
+        return
+      }
     }
     try {
       await saveTransferFromForm(values, item?.id)
@@ -109,6 +119,8 @@ export function TransferForm({ item, onSaved, onCancel }: TransferFormProps) {
   }
 
   function accountSelect(name: 'fromAccountId' | 'toAccountId', label: string) {
+    // "Hacia" never offers the account already chosen as "Desde".
+    const options = name === 'toAccountId' ? accountOptions.filter((a) => a.id !== fromAccountId) : accountOptions
     return (
       <FormField
         control={form.control}
@@ -123,7 +135,7 @@ export function TransferForm({ item, onSaved, onCancel }: TransferFormProps) {
                 </SelectTrigger>
               </FormControl>
               <SelectContent>
-                {accountOptions.map((account: Account) => (
+                {options.map((account: Account) => (
                   <SelectItem key={account.id} value={account.id}>
                     {account.name} · {account.currency}
                   </SelectItem>

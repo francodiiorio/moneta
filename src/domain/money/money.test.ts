@@ -3,7 +3,9 @@ import {
   add,
   applyRate,
   formatAxisAmount,
+  formatAmountInput,
   formatMoney,
+  magnitude,
   isNegative,
   isPositive,
   isZero,
@@ -151,11 +153,17 @@ describe('parseAmount', () => {
       expect(() => parseAmount('100.000.000.000.000', 'ARS')).toThrow(/demasiado grande/)
     })
 
-    it('round-trips what formatMoney shows when editing (always two decimals)', () => {
-      for (const amount of [0, 5, 1_500_00, 900_000_00, 1_234_567_89]) {
-        const shown = formatMoney(money(amount, 'ARS')).replace(/[^\d,.-]/g, '')
-        expect(parseAmount(shown, 'ARS')).toEqual(money(amount, 'ARS'))
+    it('round-trips formatAmountInput (what an edit form is pre-filled with), in every currency', () => {
+      for (const currency of ['ARS', 'USD', 'EUR']) {
+        for (const amount of [0, 5, 1_500_00, 900_000_00, 1_234_567_89, -50_000_00]) {
+          expect(parseAmount(formatAmountInput(money(amount, currency)), currency)).toEqual(money(amount, currency))
+        }
       }
+    })
+
+    it('magnitude drops the sign only', () => {
+      expect(magnitude(money(-1500, 'ARS'))).toEqual(money(1500, 'ARS'))
+      expect(magnitude(money(1500, 'ARS'))).toEqual(money(1500, 'ARS'))
     })
   })
 
