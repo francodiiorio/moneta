@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { BackupCard } from '@/features/backups/components/BackupCard'
+import { DeleteAllDataCard } from '../components/DeleteAllDataCard'
 import { useSettings } from '../hooks/useSettings'
 import { settingsRepo } from '@/database/repositories'
 import { CURRENCIES } from '@/domain/money'
@@ -133,6 +134,8 @@ export function SettingsPage() {
       </Card>
 
       <BackupCard />
+
+      <DeleteAllDataCard />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { categoriesRepo, settingsRepo } from '@/database/repositories'
 import { materializeDue } from '@/features/plans/service'
 import { isStale, refreshQuotes } from '@/features/quotes/service'
+import { onDataWipedElsewhere } from '@/features/settings/service'
 import { ThemeProvider } from './theme-provider'
 import { router } from './router'
 
@@ -71,6 +72,11 @@ export function App() {
         })
     }
   }, [])
+
+  // Another tab erased all data: start over like that tab did (its reload
+  // reseeds the default categories; this one would otherwise keep empty
+  // screens, or a half-filled form writing into a wiped database).
+  useEffect(() => onDataWipedElsewhere(() => window.location.assign('/')), [])
 
   return (
     <ThemeProvider>

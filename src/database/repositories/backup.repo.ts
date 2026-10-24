@@ -142,32 +142,22 @@ export async function readAllTables(): Promise<AllTablesData> {
   }
 }
 
+/** Erases everything the app stores — every table of the database, the
+ *  settings included, not just the ones a backup lists — atomically:
+ *  "Borrar todos los datos" in Ajustes. The app reseeds its default
+ *  categories on the next start. */
+export async function wipeAllTables(): Promise<void> {
+  await db.transaction('rw', db.tables, async () => {
+    await Promise.all(db.tables.map((table) => table.clear()))
+  })
+}
+
 /** Wipes every table and repopulates it from `data`, atomically. Used
  *  only by backup import — see features/backups/import.ts, which
  *  validates and migrates `data` before calling this. */
 export async function replaceAllTables(data: AllTablesData): Promise<void> {
   await db.transaction('rw', allTables(), async () => {
-    await Promise.all([
-      db.categories.clear(),
-      db.expenses.clear(),
-      db.recurringPlans.clear(),
-      db.installmentPlans.clear(),
-      db.budgets.clear(),
-      db.exchangeRates.clear(),
-      db.settings.clear(),
-      db.savingsHoldings.clear(),
-      db.investmentAssets.clear(),
-      db.investmentHoldings.clear(),
-      db.assetPrices.clear(),
-      db.investmentLots.clear(),
-      db.accounts.clear(),
-      db.incomes.clear(),
-      db.accountAdjustments.clear(),
-      db.transfers.clear(),
-      db.creditCards.clear(),
-      db.cardStatements.clear(),
-      db.statementPayments.clear(),
-    ])
+    await Promise.all(allTables().map((table) => table.clear()))
     await Promise.all([
       db.categories.bulkAdd(data.categories),
       db.expenses.bulkAdd(data.expenses),

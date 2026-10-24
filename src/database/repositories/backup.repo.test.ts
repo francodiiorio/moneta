@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '../db'
 import { generateId } from '@/lib/ids'
 import { createCategory } from './categories.repo'
-import { mergeAllTables, readAllTables, type AllTablesData } from './backup.repo'
+import { updateSettings } from './settings.repo'
+import { mergeAllTables, readAllTables, wipeAllTables, type AllTablesData } from './backup.repo'
 import type { Category, Expense, RecurringPlan, Settings } from '@/domain/entities'
 
 afterEach(async () => {
@@ -361,5 +362,15 @@ describe('mergeAllTables', () => {
     const stored = await db.expenses.where('sourcePlanId').equals(planId).toArray()
     expect(stored).toHaveLength(1)
     expect(stored[0]?.id).toBe(duplicateA.id)
+  })
+})
+
+describe('wipeAllTables', () => {
+  it('leaves every table empty, settings included', async () => {
+    await mergeAllTables(emptyData({ categories: [category()] }))
+    await updateSettings({ baseCurrency: 'USD' })
+    await wipeAllTables()
+    // Every table of the database, not only the ones a backup lists.
+    for (const table of db.tables) expect(await table.count(), table.name).toBe(0)
   })
 })
