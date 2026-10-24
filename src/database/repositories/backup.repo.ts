@@ -1,11 +1,15 @@
 import type { EntityTable } from 'dexie'
 import { db } from '../db'
 import { movementAccountProblem, transferProblem } from '@/domain/accounts'
+import { reassignCardExpenses, getCardCalendar } from './creditCards.repo'
+import type { CardCalendar } from '@/domain/cards'
 import type {
   Account,
   AccountAdjustment,
   AssetPrice,
   Budget,
+  CardStatement,
+  CreditCard,
   Category,
   ExchangeRate,
   Expense,
@@ -37,6 +41,8 @@ export interface AllTablesData {
   incomes: Income[]
   accountAdjustments: AccountAdjustment[]
   transfers: Transfer[]
+  creditCards: CreditCard[]
+  cardStatements: CardStatement[]
 }
 
 /** Every table a full backup touches — shared by replaceAllTables and
@@ -60,6 +66,8 @@ function allTables() {
     db.incomes,
     db.accountAdjustments,
     db.transfers,
+    db.creditCards,
+    db.cardStatements,
   ] as const
 }
 
@@ -81,6 +89,8 @@ export async function readAllTables(): Promise<AllTablesData> {
     incomes,
     accountAdjustments,
     transfers,
+    creditCards,
+    cardStatements,
   ] = await Promise.all([
     db.categories.toArray(),
     db.expenses.toArray(),
@@ -98,6 +108,8 @@ export async function readAllTables(): Promise<AllTablesData> {
     db.incomes.toArray(),
     db.accountAdjustments.toArray(),
     db.transfers.toArray(),
+    db.creditCards.toArray(),
+    db.cardStatements.toArray(),
   ])
   return {
     categories,
@@ -115,6 +127,8 @@ export async function readAllTables(): Promise<AllTablesData> {
     incomes,
     accountAdjustments,
     transfers,
+    creditCards,
+    cardStatements,
     ...(settings !== undefined && { settings }),
   }
 }
@@ -141,6 +155,8 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.incomes.clear(),
       db.accountAdjustments.clear(),
       db.transfers.clear(),
+      db.creditCards.clear(),
+      db.cardStatements.clear(),
     ])
     await Promise.all([
       db.categories.bulkAdd(data.categories),
@@ -159,6 +175,8 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.incomes.bulkAdd(data.incomes),
       db.accountAdjustments.bulkAdd(data.accountAdjustments),
       db.transfers.bulkAdd(data.transfers),
+      db.creditCards.bulkAdd(data.creditCards),
+      db.cardStatements.bulkAdd(data.cardStatements),
     ])
   })
 }
@@ -190,6 +208,8 @@ export interface MergeSummary {
   incomes: MergeCounts
   accountAdjustments: MergeCounts
   transfers: MergeCounts
+  creditCards: MergeCounts
+  cardStatements: MergeCounts
 }
 
 /** Adds only the rows of `incoming` whose id isn't already present in
@@ -249,6 +269,12 @@ async function assertMergedMovementsFit(added: {
   }
   for (const adjustment of added.adjustments) {
     check(`Ajuste de saldo (${adjustment.id})`, adjustment.accountId, adjustment)
+  }
+  const cardIds = new Set((await db.creditCards.toArray()).map((c) => c.id))
+  for (const expense of added.expenses) {
+    if (expense.cardId !== undefined && !cardIds.has(expense.cardId)) {
+      throw new Error(`Gasto "${expense.description}" (${expense.id}): la tarjeta ${expense.cardId} no existe`)
+    }
   }
   for (const lot of added.investmentLots) {
     const present = [lot.sourceAccountId, lot.sourceAmount, lot.sourceCurrency].filter((v) => v !== undefined).length
@@ -327,6 +353,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       incomes,
       accountAdjustments,
       transfers,
+      creditCards,
     ] = await Promise.all([
       addMissing(db.categories, data.categories),
       addMissing(db.recurringPlans, data.recurringPlans),
@@ -342,7 +369,32 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       addMissing(db.incomes, data.incomes),
       addMissing(db.accountAdjustments, data.accountAdjustments),
       addMissing(db.transfers, data.transfers),
+      addMissing(db.creditCards, data.creditCards),
     ])
+
+    // A period's corrected dates are unique per card ([cardId+period]): an
+    // incoming row for a period this device already corrected — even under
+    // another id — loses, same "local wins" rule as everything else.
+    const localPeriods = new Set((await db.cardStatements.toArray()).flatMap((s) => [s.id, `${s.cardId}:${s.period}`]))
+    const newStatements = data.cardStatements.filter((s) => {
+      if (localPeriods.has(s.id) || localPeriods.has(`${s.cardId}:${s.period}`)) return false
+      localPeriods.add(`${s.cardId}:${s.period}`)
+      return true
+    })
+    // New corrected dates for a card change where its automatically placed
+    // gastos belong — same re-placement as correcting them in the app,
+    // otherwise those gastos would look "pinned by hand" from then on.
+    const touchedCards = [...new Set(newStatements.map((s) => s.cardId))]
+    const calendarsBefore = new Map<string, CardCalendar>()
+    for (const cardId of touchedCards) calendarsBefore.set(cardId, await getCardCalendar(cardId))
+    if (newStatements.length > 0) await db.cardStatements.bulkAdd(newStatements)
+    for (const [cardId, before] of calendarsBefore) {
+      await reassignCardExpenses(cardId, before, await getCardCalendar(cardId))
+    }
+    const cardStatements: MergeCounts = {
+      added: newStatements.length,
+      skipped: data.cardStatements.length - newStatements.length,
+    }
 
     if (data.settings && !(await db.settings.get('singleton'))) {
       await db.settings.add(data.settings)
@@ -412,6 +464,8 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       incomes: { added: incomes.added.length, skipped: incomes.skipped },
       accountAdjustments: { added: accountAdjustments.added.length, skipped: accountAdjustments.skipped },
       transfers: { added: transfers.added.length, skipped: transfers.skipped },
+      creditCards: { added: creditCards.added.length, skipped: creditCards.skipped },
+      cardStatements,
     }
   })
 }

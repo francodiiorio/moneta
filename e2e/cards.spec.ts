@@ -1,0 +1,104 @@
+import { expect, test } from '@playwright/test'
+
+// Etapa 8, Fase 4: una compra con tarjeta entra al resumen que corresponde
+// según los días de cierre, y se ve en Tarjetas y en el Dashboard.
+test('un gasto con tarjeta entra al resumen en curso y se ve en Tarjetas y el Dashboard', async ({ page }) => {
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('Visa Galicia')
+  await page.getByLabel('Día de cierre').fill('25')
+  await page.getByLabel('Día de vencimiento').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText('Cierra el 25 · vence el 5')).toBeVisible()
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByLabel('Descripción').fill('Zapatillas')
+  await page.getByLabel('Monto').fill('85.000')
+  await page.getByLabel('Medio de pago').click()
+  await page.getByRole('option', { name: 'Visa Galicia' }).click()
+  // The statement field appears, defaulting to the one the date falls into.
+  await expect(page.getByLabel('Resumen')).toContainText('Según la fecha')
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Ropa' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText(/Ropa · Visa Galicia · resumen de/)).toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('link', { name: 'Ver resúmenes' }).click()
+  await expect(page.getByText('En curso')).toBeVisible()
+  await expect(page.getByText('Zapatillas')).toBeVisible()
+  await expect(page.getByText(/85[.,]000,00/).first()).toBeVisible()
+
+  await page.goto('/')
+  await expect(page.getByRole('main').getByText('Visa Galicia')).toBeVisible()
+})
+
+test('un gasto con tarjeta se puede fijar en un resumen posterior (presentación tardía)', async ({ page }) => {
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('Master')
+  await page.getByLabel('Día de cierre').fill('25')
+  await page.getByLabel('Día de vencimiento').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByLabel('Descripción').fill('Hotel')
+  await page.getByLabel('Monto').fill('100')
+  await page.getByLabel('Medio de pago').click()
+  await page.getByRole('option', { name: 'Master' }).click()
+  await page.getByLabel('Resumen').click()
+  // Pinned to the statement after the automatic one (options: "según la
+  // fecha", then "Fijar en" the automatic one and the next two).
+  await page.getByRole('option', { name: /^Fijar en/ }).nth(1).click()
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Entretenimiento' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('link', { name: 'Ver resúmenes' }).click()
+  await expect(page.getByText('Hotel')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Resumen siguiente' }).click()
+  await expect(page.getByText('Hotel')).toBeVisible()
+  await expect(page.getByText('Próximo')).toBeVisible()
+})
+
+// Regression (code review, Fase 4a): Gasto with a card → Ingreso with an
+// account → back to Gasto left both set, and saving failed.
+test('cambiar de pestaña con una tarjeta elegida no deja dos medios de pago', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Galicia')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('Visa')
+  await page.getByLabel('Día de cierre').fill('25')
+  await page.getByLabel('Día de vencimiento').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByLabel('Descripción').fill('Algo')
+  await page.getByLabel('Monto').fill('100')
+  await page.getByLabel('Medio de pago').click()
+  await page.getByRole('option', { name: 'Visa' }).click()
+  await page.getByRole('tab', { name: 'Ingreso' }).click()
+  await page.getByLabel('Cuenta', { exact: true }).click()
+  await page.getByRole('option', { name: /Galicia/ }).click()
+  await expect(page.getByLabel('Cuenta', { exact: true })).toContainText('Galicia')
+  await page.getByRole('tab', { name: 'Gasto' }).click()
+  await expect(page.getByLabel('Medio de pago')).toContainText('Galicia')
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Otros' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText('Otros · Galicia')).toBeVisible()
+})

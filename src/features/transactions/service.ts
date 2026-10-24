@@ -2,6 +2,7 @@ import {
   accountAdjustmentsRepo,
   accountsRepo,
   categoriesRepo,
+  creditCardsRepo,
   expensesRepo,
   incomesRepo,
   investmentLotsRepo,
@@ -10,7 +11,8 @@ import {
 } from '@/database/repositories'
 import type { Account, Category, CategoryKind, Expense } from '@/domain/entities'
 import { money, negate, parseAmount, type Money } from '@/domain/money'
-import { monthRange, type DateStamp, type MonthStamp } from '@/lib/dates'
+import { statementPeriodFor, type CardCalendar } from '@/domain/cards'
+import { formatMonthLabel, monthRange, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 import type { ExpenseFormValues, IncomeFormValues, MovementFormValues, MovementKind, TransferFormValues } from './schema'
 
@@ -65,7 +67,16 @@ export interface TransactionListItem {
   categoryColor?: string
   categoryIcon?: string
   accountId?: string
+  /** The account, card ("Visa · resumen de octubre 2026") or both
+   *  accounts of a transfer ("Galicia → Caja USD"). */
   accountLabel?: string
+  /** Only for a gasto paid with a credit card. */
+  cardId?: string
+  statementPeriod?: MonthStamp
+  /** True when the gasto sits in a statement other than the one its date
+   *  puts it in (a late presentation the user pinned) — the edit form then
+   *  keeps it pinned; otherwise it offers "según la fecha". */
+  statementPinned?: boolean
   /** Only for kind 'transfer'. */
   transfer?: TransferDetails
 }
@@ -90,7 +101,7 @@ export async function listTransactionsForMonth(
   filters: TransactionFilters = {},
 ): Promise<TransactionListItem[]> {
   const { start, end } = monthRange(month)
-  const [expenses, incomes, adjustments, transfers, lots, assets, categories, accounts] = await Promise.all([
+  const [expenses, incomes, adjustments, transfers, lots, assets, categories, accounts, cards] = await Promise.all([
     expensesRepo.listExpensesInRange(start, end),
     incomesRepo.listIncomesInRange(start, end),
     accountAdjustmentsRepo.listAdjustmentsInRange(start, end),
@@ -99,7 +110,13 @@ export async function listTransactionsForMonth(
     investmentsRepo.listInvestmentAssets(),
     categoriesRepo.listCategories(),
     accountsRepo.listAccounts(),
+    creditCardsRepo.listCreditCards(),
   ])
+  const cardName = new Map(cards.map((c) => [c.id, c.name]))
+  const calendars = new Map<string, CardCalendar>()
+  for (const cardId of new Set(expenses.flatMap((e) => (e.cardId ? [e.cardId] : [])))) {
+    calendars.set(cardId, await creditCardsRepo.getCardCalendar(cardId))
+  }
 
   const categoryById = new Map(categories.map((c) => [c.id, c] as [string, Category]))
   const accountById = new Map(accounts.map((a) => [a.id, a] as [string, Account]))
@@ -128,6 +145,16 @@ export async function listTransactionsForMonth(
       amount: negate(money(expense.amount, expense.currency)),
       signed: true,
       ...decorate(expense.categoryId, expense.accountId),
+      ...(expense.cardId !== undefined &&
+        expense.statementPeriod !== undefined && {
+          cardId: expense.cardId,
+          statementPeriod: expense.statementPeriod,
+          statementPinned: (() => {
+            const calendar = calendars.get(expense.cardId)
+            return calendar !== undefined && statementPeriodFor(calendar, expense.date) !== expense.statementPeriod
+          })(),
+          accountLabel: `${cardName.get(expense.cardId) ?? 'Tarjeta'} · resumen de ${formatMonthLabel(expense.statementPeriod).toLowerCase()}`,
+        }),
     })),
     ...incomes.map((income) => ({
       id: income.id,
@@ -226,6 +253,8 @@ export async function saveExpense(values: ExpenseFormValues, existingId?: string
       currency: values.currency,
       status: 'confirmed',
       ...(values.accountId && { accountId: values.accountId }),
+      ...(values.cardId && { cardId: values.cardId }),
+      ...(values.cardId && values.statementPeriod && { statementPeriod: values.statementPeriod }),
     },
     existingId,
   )
@@ -325,6 +354,11 @@ export async function listAllCategories(): Promise<Category[]> {
 
 export async function createCategoryQuick(name: string, kind: CategoryKind): Promise<Category> {
   return categoriesRepo.createCategory({ name, kind })
+}
+
+/** Every credit card, archived included — same picker rule as accounts. */
+export async function listAllCards() {
+  return creditCardsRepo.listCreditCards()
 }
 
 /** Every account, archived included — the picker offers only active ones

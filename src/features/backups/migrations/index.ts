@@ -5,16 +5,18 @@ import { backupV3Schema } from '../schemas/v3'
 import { backupV4Schema } from '../schemas/v4'
 import { backupV5Schema } from '../schemas/v5'
 import { backupV6Schema } from '../schemas/v6'
-import { backupV7Schema, type BackupDataV7 } from '../schemas/v7'
+import { backupV7Schema } from '../schemas/v7'
+import { backupV8Schema, type BackupDataV8 } from '../schemas/v8'
 import { migrateV1ToV2 } from './v1_to_v2'
 import { migrateV2ToV3 } from './v2_to_v3'
 import { migrateV3ToV4 } from './v3_to_v4'
 import { migrateV4ToV5 } from './v4_to_v5'
 import { migrateV5ToV6 } from './v5_to_v6'
 import { migrateV6ToV7 } from './v6_to_v7'
+import { migrateV7ToV8 } from './v7_to_v8'
 
-export const LATEST_VERSION = 7
-export type LatestBackupData = BackupDataV7
+export const LATEST_VERSION = 8
+export type LatestBackupData = BackupDataV8
 
 const versionEnvelopeSchema = z.object({ version: z.number().int() })
 
@@ -43,7 +45,7 @@ export function migrateToLatest(raw: unknown): LatestBackupData {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)
       }
-      return migrateV6ToV7(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(migrateV1ToV2(result.data.data))))))
+      return migrateV7ToV8(migrateV6ToV7(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(migrateV1ToV2(result.data.data)))))))
     }
     case 2: {
       const result = backupV2Schema.safeParse(raw)
@@ -51,7 +53,7 @@ export function migrateToLatest(raw: unknown): LatestBackupData {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)
       }
-      return migrateV6ToV7(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(result.data.data)))))
+      return migrateV7ToV8(migrateV6ToV7(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(result.data.data))))))
     }
     case 3: {
       const result = backupV3Schema.safeParse(raw)
@@ -59,7 +61,7 @@ export function migrateToLatest(raw: unknown): LatestBackupData {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)
       }
-      return migrateV6ToV7(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(result.data.data))))
+      return migrateV7ToV8(migrateV6ToV7(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(result.data.data)))))
     }
     case 4: {
       const result = backupV4Schema.safeParse(raw)
@@ -67,7 +69,7 @@ export function migrateToLatest(raw: unknown): LatestBackupData {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)
       }
-      return migrateV6ToV7(migrateV5ToV6(migrateV4ToV5(result.data.data)))
+      return migrateV7ToV8(migrateV6ToV7(migrateV5ToV6(migrateV4ToV5(result.data.data))))
     }
     case 5: {
       const result = backupV5Schema.safeParse(raw)
@@ -75,7 +77,7 @@ export function migrateToLatest(raw: unknown): LatestBackupData {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)
       }
-      return migrateV6ToV7(migrateV5ToV6(result.data.data))
+      return migrateV7ToV8(migrateV6ToV7(migrateV5ToV6(result.data.data)))
     }
     case 6: {
       const result = backupV6Schema.safeParse(raw)
@@ -83,10 +85,18 @@ export function migrateToLatest(raw: unknown): LatestBackupData {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)
       }
-      return migrateV6ToV7(result.data.data)
+      return migrateV7ToV8(migrateV6ToV7(result.data.data))
     }
     case 7: {
       const result = backupV7Schema.safeParse(raw)
+      if (!result.success) {
+        const detail = result.error.issues.map((issue) => issue.message).join('; ')
+        throw new Error(`El backup no es válido: ${detail}`)
+      }
+      return migrateV7ToV8(result.data.data)
+    }
+    case 8: {
+      const result = backupV8Schema.safeParse(raw)
       if (!result.success) {
         const detail = result.error.issues.map((issue) => issue.message).join('; ')
         throw new Error(`El backup no es válido: ${detail}`)

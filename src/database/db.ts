@@ -3,6 +3,8 @@ import type {
   Account,
   AccountAdjustment,
   AssetPrice,
+  CardStatement,
+  CreditCard,
   Budget,
   Category,
   ExchangeRate,
@@ -73,6 +75,8 @@ export class MonetaDatabase extends Dexie {
   incomes!: EntityTable<Income, 'id'>
   accountAdjustments!: EntityTable<AccountAdjustment, 'id'>
   transfers!: EntityTable<Transfer, 'id'>
+  creditCards!: EntityTable<CreditCard, 'id'>
+  cardStatements!: EntityTable<CardStatement, 'id'>
 
   constructor(name = 'moneta') {
     super(name)
@@ -225,6 +229,14 @@ export class MonetaDatabase extends Dexie {
     // cuenta, y Dexie deja afuera del índice las claves `undefined`.
     this.version(7).stores({
       investmentLots: 'id, assetId, date, sourceAccountId',
+    })
+    // Etapa 8, Fase 4: tarjetas de crédito y sus resúmenes. Tablas nuevas
+    // (vacías) + índices de tarjeta en `expenses` — ningún gasto existente
+    // tiene tarjeta, así que no hace falta .upgrade().
+    this.version(8).stores({
+      creditCards: 'id, isArchived, order',
+      cardStatements: 'id, cardId, &[cardId+period]',
+      expenses: 'id, date, categoryId, status, sourcePlanId, accountId, cardId, [cardId+statementPeriod], [status+date]',
     })
   }
 }

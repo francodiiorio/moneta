@@ -142,6 +142,8 @@ describe('ingresos y cuentas en Movimientos (Etapa 8)', () => {
       currency: 'ARS',
       amount: '1000',
       accountId: account.id,
+      cardId: '',
+      statementPeriod: '',
     })
     await saveMovement({
       kind: 'expense',
@@ -151,6 +153,8 @@ describe('ingresos y cuentas en Movimientos (Etapa 8)', () => {
       currency: 'ARS',
       amount: '200',
       accountId: '',
+      cardId: '',
+      statementPeriod: '',
     })
 
     const items = await listTransactionsForMonth('2026-08')
@@ -166,7 +170,7 @@ describe('ingresos y cuentas en Movimientos (Etapa 8)', () => {
     const { saveMovement } = await import('./service')
     const account = await seedAccount()
     const expenseCategory = await createCategory({ kind: 'expense', name: 'Comida' })
-    const base = { kind: 'expense' as const, date: '2026-08-06', categoryId: expenseCategory.id, currency: 'ARS', amount: '200' }
+    const base = { kind: 'expense' as const, date: '2026-08-06', categoryId: expenseCategory.id, currency: 'ARS', amount: '200', cardId: '', statementPeriod: '' }
     await saveMovement({ ...base, description: 'Con débito', accountId: account.id })
     await saveMovement({ ...base, description: 'Sin cuenta', accountId: '' })
 
@@ -186,6 +190,8 @@ describe('ingresos y cuentas en Movimientos (Etapa 8)', () => {
       currency: 'ARS',
       amount: '1000',
       accountId: account.id,
+      cardId: '',
+      statementPeriod: '',
     })
     const [item] = await listTransactionsForMonth('2026-08')
     await removeTransaction(item!.id, item!.kind)
@@ -348,5 +354,28 @@ describe('compras de inversión con cuenta de origen en Movimientos (Fase 3)', (
     expect(await listTransactionsForMonth('2026-08', { accountId: account.id })).toHaveLength(1)
     expect(await listTransactionsForMonth('2026-08', { accountId: 'other' })).toHaveLength(0)
     expect(await listTransactionsForMonth('2026-07')).toHaveLength(0)
+  })
+})
+
+describe('gastos con tarjeta en Movimientos (Fase 4)', () => {
+  afterEach(async () => {
+    await Promise.all([db.creditCards.clear(), db.cardStatements.clear()])
+  })
+
+  it('saves card + statement ("" = automatic), labels the row, and flags pinned ones', async () => {
+    const { saveMovement } = await import('./service')
+    const { createCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const card = await createCreditCard({ name: 'Visa', closingDay: 25, dueDay: 5 })
+    const category = await createCategory({ kind: 'expense', name: 'Ropa' })
+    const base = { kind: 'expense' as const, categoryId: category.id, currency: 'ARS', amount: '100', accountId: '', cardId: card.id }
+
+    await saveMovement({ ...base, date: '2026-08-10', description: 'Auto', statementPeriod: '' })
+    await saveMovement({ ...base, date: '2026-08-11', description: 'Fijado', statementPeriod: '2026-09' })
+
+    const items = await listTransactionsForMonth('2026-08')
+    const auto = items.find((i) => i.description === 'Auto')
+    const pinned = items.find((i) => i.description === 'Fijado')
+    expect(auto).toMatchObject({ cardId: card.id, statementPeriod: '2026-08', statementPinned: false, accountLabel: 'Visa · resumen de agosto 2026' })
+    expect(pinned).toMatchObject({ statementPeriod: '2026-09', statementPinned: true })
   })
 })

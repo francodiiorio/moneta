@@ -24,6 +24,8 @@ afterEach(async () => {
     db.incomes.clear(),
     db.accountAdjustments.clear(),
     db.transfers.clear(),
+    db.creditCards.clear(),
+    db.cardStatements.clear(),
   ])
 })
 
@@ -113,6 +115,40 @@ async function seedFullDatabase() {
     toAmount: 100_00,
     toCurrency: 'USD',
     description: 'Compra de dólares',
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  const card = {
+    id: generateId(),
+    name: 'Visa',
+    closingDay: 25,
+    dueDay: 5,
+    isArchived: false,
+    order: 0,
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.creditCards.add(card)
+  await db.cardStatements.add({
+    id: generateId(),
+    cardId: card.id,
+    period: '2026-08',
+    closeDate: '2026-08-27',
+    dueDate: '2026-09-08',
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.expenses.add({
+    id: generateId(),
+    date: '2026-08-15',
+    amount: 30_000_00,
+    currency: 'ARS',
+    categoryId: category.id,
+    description: 'Zapatillas',
+    status: 'confirmed' as const,
+    cardId: card.id,
+    statementPeriod: '2026-08',
     createdAt: now,
     updatedAt: now,
   })
@@ -266,6 +302,8 @@ async function snapshotAllTables() {
     incomes: sortById(await db.incomes.toArray()),
     accountAdjustments: sortById(await db.accountAdjustments.toArray()),
     transfers: sortById(await db.transfers.toArray()),
+    creditCards: sortById(await db.creditCards.toArray()),
+    cardStatements: sortById(await db.cardStatements.toArray()),
     settings: await db.settings.get('singleton'),
   }
 }
@@ -288,6 +326,8 @@ async function clearAllTables() {
     db.incomes.clear(),
     db.accountAdjustments.clear(),
     db.transfers.clear(),
+    db.creditCards.clear(),
+    db.cardStatements.clear(),
   ])
 }
 
@@ -459,7 +499,7 @@ describe('backup round-trip — merge', () => {
     expect(result.checksumMatched).toBe(true)
     expect(result.merged).toEqual({
       categories: { added: 2, skipped: 0 },
-      expenses: { added: 1, skipped: 0 },
+      expenses: { added: 2, skipped: 0 },
       recurringPlans: { added: 1, skipped: 0 },
       installmentPlans: { added: 1, skipped: 0 },
       budgets: { added: 1, skipped: 0 },
@@ -473,14 +513,17 @@ describe('backup round-trip — merge', () => {
       incomes: { added: 1, skipped: 0 },
       accountAdjustments: { added: 1, skipped: 0 },
       transfers: { added: 1, skipped: 0 },
+      creditCards: { added: 1, skipped: 0 },
+      cardStatements: { added: 1, skipped: 0 },
     })
 
     const categoryIds = (await db.categories.toArray()).map((c) => c.id).sort()
     expect(categoryIds).toEqual(
       [deviceA.category.id, deviceA.incomeCategory.id, deviceB.category.id, deviceB.incomeCategory.id].sort(),
     )
-    const expenseIds = (await db.expenses.toArray()).map((e) => e.id).sort()
-    expect(expenseIds).toEqual([deviceA.expense.id, deviceB.expense.id].sort())
+    const expenseIds = (await db.expenses.toArray()).map((e) => e.id)
+    expect(expenseIds).toHaveLength(4) // a debit gasto and a card gasto from each device
+    expect(expenseIds).toEqual(expect.arrayContaining([deviceA.expense.id, deviceB.expense.id]))
     // Local settings (from deviceB's seed) were never touched by the merge.
     expect((await db.settings.get('singleton'))?.baseCurrency).toBe('ARS')
   })
@@ -497,7 +540,7 @@ describe('backup round-trip — merge', () => {
     const second = await importBackup(file, { mode: 'merge' })
     expect(second.merged).toEqual({
       categories: { added: 0, skipped: 2 },
-      expenses: { added: 0, skipped: 1 },
+      expenses: { added: 0, skipped: 2 },
       recurringPlans: { added: 0, skipped: 1 },
       installmentPlans: { added: 0, skipped: 1 },
       budgets: { added: 0, skipped: 1 },
@@ -511,6 +554,8 @@ describe('backup round-trip — merge', () => {
       incomes: { added: 0, skipped: 1 },
       accountAdjustments: { added: 0, skipped: 1 },
       transfers: { added: 0, skipped: 1 },
+      creditCards: { added: 0, skipped: 1 },
+      cardStatements: { added: 0, skipped: 1 },
     })
     expect(await db.expenses.count()).toBe(countBefore)
   })
@@ -754,10 +799,10 @@ describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
     expect(await db.expenses.count()).toBe(1)
   })
 
-  it('exports as version 7', async () => {
+  it('exports as version 8', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
-    expect(payload.version).toBe(7)
+    expect(payload.version).toBe(8)
     expect(payload.data.accounts).toHaveLength(2)
     expect(payload.data.incomes).toHaveLength(1)
     expect(payload.data.accountAdjustments).toHaveLength(1)
@@ -796,13 +841,13 @@ describe('import validation — cuentas e ingresos', () => {
   it('rejects a gasto that uses an ingreso category', async () => {
     const payload = await exportedPayload()
     const incomeCategory = payload.data.categories.find((c) => c.kind === 'income')!
-    payload.data.expenses[0]!.categoryId = incomeCategory.id
+    payload.data.expenses.find((e) => e.description === 'Supermercado')!.categoryId = incomeCategory.id
     await expect(importPayload(payload)).rejects.toThrow(/categoría de ingreso/)
   })
 
   it('rejects a debit gasto dated before its account opening date', async () => {
     const payload = await exportedPayload()
-    payload.data.expenses[0]!.date = '2026-07-31'
+    payload.data.expenses.find((e) => e.description === 'Supermercado')!.date = '2026-07-31'
     await expect(importPayload(payload)).rejects.toThrow(/saldo inicial/)
   })
 
@@ -977,5 +1022,88 @@ describe('revisión de la Fase 3 — backups', () => {
     })
     await expect(importBackup(file, { mode: 'merge' })).rejects.toThrow(/es en ARS/)
     expect(await db.investmentLots.count()).toBe(0)
+  })
+})
+
+describe('tarjetas en el backup (Fase 4)', () => {
+  it('a v7 file migrates to v8 with no cards and no gasto on a card', () => {
+    const v7 = {
+      ...v4Payload(),
+      version: 7 as const,
+      data: {
+        ...v4Payload().data,
+        categories: v4Payload().data.categories.map((c) => ({ ...c, kind: 'expense' as const })),
+        accounts: [],
+        incomes: [],
+        accountAdjustments: [],
+        transfers: [],
+      },
+    }
+    const migrated = migrateToLatest(v7)
+    expect(migrated.creditCards).toEqual([])
+    expect(migrated.cardStatements).toEqual([])
+    expect(migrated.expenses[0]?.cardId).toBeUndefined()
+  })
+
+  it('rejects a gasto on a card that is not in the file', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.expenses.find((e) => e.description === 'Zapatillas')!.cardId = 'ghost'
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/tarjeta ghost no existe/)
+  })
+
+  it('merge keeps the local corrected dates of a period over an incoming row with another id', async () => {
+    await seedFullDatabase()
+    const exported = await exportBackup()
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+    const [statement] = await db.cardStatements.toArray()
+    await db.cardStatements.update(statement!.id, { closeDate: '2026-08-26' })
+    // Same card+period locally under a different id: the local row wins.
+    await db.cardStatements.delete(statement!.id)
+    await db.cardStatements.add({ ...statement!, id: 'local-row', closeDate: '2026-08-26' })
+
+    const result = await importBackup(file, { mode: 'merge' })
+    expect(result.merged?.cardStatements).toEqual({ added: 0, skipped: 1 })
+    expect(await db.cardStatements.toArray()).toEqual([expect.objectContaining({ id: 'local-row', closeDate: '2026-08-26' })])
+  })
+})
+
+describe('revisión de la Fase 4a — backups', () => {
+  it('rejects corrected dates out of order (a mistyped year)', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.cardStatements[0]!.closeDate = '2025-08-27'
+    payload.data.cardStatements[0]!.dueDate = '2025-09-08'
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/ese mes o en el siguiente/)
+  })
+
+  it('rejects a gasto billed in a statement that closed before its date', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.expenses.find((e) => e.description === 'Zapatillas')!.date = '2026-08-28'
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/cerró antes/)
+  })
+
+  it('merging corrected dates for a local card re-places its automatic gastos', async () => {
+    await seedFullDatabase()
+    const exported = await exportBackup()
+    const file = new File([exported.blob], exported.filename, { type: 'application/json' })
+    const [card] = await db.creditCards.toArray()
+    // Locally: no corrected dates, and a gasto on Aug 26 (after the default
+    // 25th close) automatically in September.
+    await db.cardStatements.clear()
+    const zapatillas = (await db.expenses.toArray()).find((e) => e.description === 'Zapatillas')!
+    await db.expenses.update(zapatillas.id, { date: '2026-08-26', statementPeriod: '2026-09' })
+
+    // The file corrects August to close on the 27th: the gasto belongs there.
+    await importBackup(file, { mode: 'merge' })
+    expect(await db.cardStatements.where('cardId').equals(card!.id).count()).toBe(1)
+    expect((await db.expenses.get(zapatillas.id))?.statementPeriod).toBe('2026-08')
   })
 })

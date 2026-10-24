@@ -220,9 +220,12 @@ Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
    de la cuenta, comisiones incluidas); la compra baja el saldo sin ser un gasto y se
    lista, de sólo lectura, en Movimientos. Borrar la compra o la posición devuelve el
    débito. Dexie v7 (índice) + backup v7 (forma del lote v4–v6 congelada).
-4. **Tarjetas + resúmenes** — `CreditCard`, `CardStatement`, `Expense.cardId` +
-   `statementPeriod` (también en cuotas y recurrentes), calendario de cierres con
-   override por mes, vista `/tarjetas`, aviso de cierre/vencimiento en el Dashboard.
+4. **Tarjetas + resúmenes** — (4a, hecho) `CreditCard`, `CardStatement` (sólo los
+   períodos con fechas corregidas), `Expense.cardId` + `statementPeriod` guardado;
+   "Medio de pago" en el formulario de gasto con el resumen elegible; `/tarjetas` y
+   `/tarjetas/:cardId` (resumen por período, total por moneda, corregir fechas); aviso de
+   cierre/vencimiento en el Dashboard. Dexie v8 + backup v8. (4b, pendiente) cuotas y
+   recurrentes con tarjeta: la cuota *i* cae en el resumen de la compra + *i*.
 5. **Pago de resumen desde cuentas** — por moneda, con la cotización usada si la cuenta
    es de otra moneda. Sólo pago total.
 6. **CSV a cuenta o tarjeta + conciliación** contra el total real del banco.

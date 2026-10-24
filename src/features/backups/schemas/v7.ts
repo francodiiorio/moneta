@@ -6,7 +6,6 @@ import {
   budgetSchema,
   categorySchema,
   exchangeRateSchema,
-  expenseSchema,
   incomeSchema,
   installmentPlanSchema,
   investmentAssetSchema,
@@ -18,6 +17,7 @@ import {
   transferSchema,
 } from '@/domain/entities'
 import { BACKUP_FORMAT } from './v1'
+import { legacyExpenseV5Schema } from './legacy'
 
 /**
  * Never edit this schema once it has shipped in a released version —
@@ -37,7 +37,7 @@ export const backupV7Schema = z.object({
   checksum: z.string(),
   data: z.object({
     categories: z.array(categorySchema),
-    expenses: z.array(expenseSchema),
+    expenses: z.array(legacyExpenseV5Schema),
     recurringPlans: z.array(recurringPlanSchema),
     installmentPlans: z.array(installmentPlanSchema),
     budgets: z.array(budgetSchema),

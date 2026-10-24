@@ -18,6 +18,10 @@ export const expenseFormSchema = z.object({
   amount: amountString,
   /** '' or absent = no account (credit card, or unspecified). */
   accountId: z.string().optional(),
+  /** '' or absent = not paid with a credit card. */
+  cardId: z.string().optional(),
+  /** '' or absent with a card = placed automatically by its calendar. */
+  statementPeriod: z.string().optional(),
 })
 export type ExpenseFormValues = z.infer<typeof expenseFormSchema>
 
@@ -33,7 +37,7 @@ export type MovementKind = z.infer<typeof movementKindSchema>
  *  switching Gasto/Ingreso keeps what was already typed. An ingreso
  *  always needs an account; a gasto never does. */
 export const movementFormSchema = expenseFormSchema
-  .extend({ kind: movementKindSchema, accountId: z.string() })
+  .extend({ kind: movementKindSchema, accountId: z.string(), cardId: z.string(), statementPeriod: z.string() })
   .superRefine((values, ctx) => {
     if (values.kind === 'income' && !values.accountId) {
       ctx.addIssue({ code: 'custom', path: ['accountId'], message: 'Elegí la cuenta donde entró' })

@@ -480,6 +480,8 @@ describe('materializeDue after a backup merge', () => {
       incomes: [],
       accountAdjustments: [],
       transfers: [],
+      creditCards: [],
+      cardStatements: [],
     })
 
     // Without the watermark repair in mergeAllTables, lastMaterializedDate

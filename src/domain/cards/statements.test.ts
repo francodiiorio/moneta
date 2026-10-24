@@ -1,0 +1,126 @@
+import { describe, expect, it } from 'vitest'
+import { money } from '@/domain/money'
+import {
+  openStatement,
+  reassignedPeriods,
+  statementDates,
+  statementOverrideProblem,
+  statementPeriodFor,
+  statementTotals,
+  type CardCalendar,
+} from './statements'
+
+const visa: CardCalendar = { card: { closingDay: 25, dueDay: 5 }, overrides: [] }
+
+describe('statementDates', () => {
+  it('closes on closingDay of the period; due falls next month when dueDay comes first', () => {
+    expect(statementDates(visa, '2026-10')).toEqual({ period: '2026-10', closeDate: '2026-10-25', dueDate: '2026-11-05' })
+  })
+
+  it('due stays in the same month when dueDay comes after the close', () => {
+    const card: CardCalendar = { card: { closingDay: 5, dueDay: 15 }, overrides: [] }
+    expect(statementDates(card, '2026-10')).toEqual({ period: '2026-10', closeDate: '2026-10-05', dueDate: '2026-10-15' })
+  })
+
+  it('clamps day 31 to short months', () => {
+    const card: CardCalendar = { card: { closingDay: 31, dueDay: 10 }, overrides: [] }
+    expect(statementDates(card, '2026-02')).toEqual({ period: '2026-02', closeDate: '2026-02-28', dueDate: '2026-03-10' })
+  })
+
+  it('uses the hand-corrected dates of an overridden period, only for that period', () => {
+    const cal: CardCalendar = { ...visa, overrides: [{ period: '2026-10', closeDate: '2026-10-29', dueDate: '2026-11-09' }] }
+    expect(statementDates(cal, '2026-10')).toEqual({ period: '2026-10', closeDate: '2026-10-29', dueDate: '2026-11-09' })
+    expect(statementDates(cal, '2026-11').closeDate).toBe('2026-11-25')
+  })
+})
+
+describe('statementPeriodFor', () => {
+  it('a purchase before or on the closing day goes into that month’s statement', () => {
+    expect(statementPeriodFor(visa, '2026-10-01')).toBe('2026-10')
+    expect(statementPeriodFor(visa, '2026-10-25')).toBe('2026-10')
+  })
+
+  it('a purchase after the close goes into the next one', () => {
+    expect(statementPeriodFor(visa, '2026-10-26')).toBe('2026-11')
+    expect(statementPeriodFor(visa, '2026-12-31')).toBe('2027-01')
+  })
+
+  it('follows an override that moves the close earlier or later', () => {
+    const earlier: CardCalendar = { ...visa, overrides: [{ period: '2026-10', closeDate: '2026-10-22', dueDate: '2026-11-03' }] }
+    expect(statementPeriodFor(earlier, '2026-10-23')).toBe('2026-11')
+    const later: CardCalendar = { ...visa, overrides: [{ period: '2026-10', closeDate: '2026-10-28', dueDate: '2026-11-08' }] }
+    expect(statementPeriodFor(later, '2026-10-27')).toBe('2026-10')
+  })
+
+  it('a close moved into the next month still captures the first days of that month', () => {
+    const cal: CardCalendar = { card: { closingDay: 30, dueDay: 10 }, overrides: [{ period: '2026-09', closeDate: '2026-10-02', dueDate: '2026-10-12' }] }
+    expect(statementPeriodFor(cal, '2026-10-01')).toBe('2026-09')
+    expect(statementPeriodFor(cal, '2026-10-03')).toBe('2026-10')
+  })
+})
+
+describe('openStatement', () => {
+  it('is the statement today’s purchases go into', () => {
+    expect(openStatement(visa, '2026-10-23')).toEqual({ period: '2026-10', closeDate: '2026-10-25', dueDate: '2026-11-05' })
+    expect(openStatement(visa, '2026-10-26').period).toBe('2026-11')
+  })
+})
+
+describe('statementTotals', () => {
+  it('sums per currency, never mixing them, sorted', () => {
+    const totals = statementTotals([
+      { amount: 1_000_00, currency: 'USD' },
+      { amount: 50_000_00, currency: 'ARS' },
+      { amount: 2_50, currency: 'USD' },
+      { amount: 25_000_00, currency: 'ARS' },
+    ])
+    expect(totals).toEqual([money(75_000_00, 'ARS'), money(1_002_50, 'USD')])
+  })
+
+  it('is empty for no expenses', () => {
+    expect(statementTotals([])).toEqual([])
+  })
+})
+
+describe('reassignedPeriods', () => {
+  const after: CardCalendar = { ...visa, overrides: [{ period: '2026-10', closeDate: '2026-10-22', dueDate: '2026-11-03' }] }
+
+  it('moves an automatically placed expense whose statement changed', () => {
+    expect(reassignedPeriods([{ id: 'e1', date: '2026-10-24', statementPeriod: '2026-10' }], visa, after)).toEqual([
+      { id: 'e1', statementPeriod: '2026-11' },
+    ])
+  })
+
+  it('leaves one that stays in the same statement', () => {
+    expect(reassignedPeriods([{ id: 'e1', date: '2026-10-10', statementPeriod: '2026-10' }], visa, after)).toEqual([])
+  })
+
+  it('leaves one the user placed by hand (not where automatic placement would put it)', () => {
+    // A late presentation: bought Oct 10, billed in November's statement.
+    expect(reassignedPeriods([{ id: 'e1', date: '2026-10-10', statementPeriod: '2026-11' }], visa, after)).toEqual([])
+  })
+})
+
+describe('statementOverrideProblem', () => {
+  it('accepts a close moved a few days within the period or into the next month', () => {
+    expect(statementOverrideProblem(visa, '2026-10', '2026-10-22', '2026-11-03')).toBeUndefined()
+    expect(statementOverrideProblem(visa, '2026-10', '2026-11-02', '2026-11-12')).toBeUndefined()
+  })
+
+  it('rejects a mistyped year or month (outside the period and the next one)', () => {
+    expect(statementOverrideProblem(visa, '2026-10', '2025-10-25', '2025-11-05')).toMatch(/ese mes o en el siguiente/)
+    expect(statementOverrideProblem(visa, '2026-10', '2026-12-01', '2026-12-10')).toMatch(/ese mes o en el siguiente/)
+  })
+
+  it('rejects a close on or past the next period’s close, or on/before the previous one', () => {
+    // November closes Nov 25 by default.
+    expect(statementOverrideProblem(visa, '2026-10', '2026-11-25', '2026-12-05')).toMatch(/antes del siguiente/)
+    const cal: CardCalendar = { ...visa, overrides: [{ period: '2026-09', closeDate: '2026-10-02', dueDate: '2026-10-12' }] }
+    expect(statementOverrideProblem(cal, '2026-10', '2026-10-01', '2026-10-15')).toMatch(/después del cierre del resumen anterior/)
+  })
+
+  it('rejects a due date before the close, and invalid dates', () => {
+    expect(statementOverrideProblem(visa, '2026-10', '2026-10-25', '2026-10-24')).toMatch(/vencimiento/)
+    expect(statementOverrideProblem(visa, '2026-10', '2026-02-31', '2026-03-05')).toMatch(/inválida/)
+  })
+})

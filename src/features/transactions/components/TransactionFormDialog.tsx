@@ -21,7 +21,7 @@ const COPY: Record<DialogMode, { create: string; edit: string; description: stri
   expense: {
     create: 'Nuevo gasto',
     edit: 'Editar gasto',
-    description: 'Registrá en qué se fue la plata. Si lo pagaste con débito, elegí la cuenta.',
+    description: 'Registrá en qué se fue la plata y con qué la pagaste: débito de una cuenta o tarjeta de crédito.',
   },
   income: {
     create: 'Nuevo ingreso',

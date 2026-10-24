@@ -1306,3 +1306,43 @@ viejo (ADR reemplazada, arriba).
 
 **Costo aceptado:** agregarle cuenta de origen a una compra vieja cuyo débito ya se había
 reflejado a mano (un ajuste o un gasto con débito) lo cuenta dos veces — la Ayuda lo avisa.
+
+## Tarjetas: el resumen se guarda en el gasto, y corregir fechas sólo mueve lo automático (Etapa 8, Fase 4)
+
+**Decisión:** el período de un gasto con tarjeta (`statementPeriod`, el mes en que cierra
+su resumen) se calcula al guardarlo con el calendario de la tarjeta y se **guarda**, en vez
+de derivarse cada vez. El calendario son los días por defecto de la tarjeta más un
+`CardStatement` sólo para los meses en que el banco publicó otras fechas.
+
+**Por qué guardarlo:** una presentación tardía (comprado el 10, facturado en el resumen
+siguiente) y, en la Fase 4b, una cuota (la *i*-ésima va en el resumen de la compra + *i*)
+no se pueden derivar de la fecha del gasto; y un resumen ya cerrado no debería cambiar
+porque después se edite una fecha.
+
+**Cómo conviven lo guardado y las correcciones:** al corregir las fechas de un período (o
+los días por defecto de la tarjeta), se reasignan en la misma transacción sólo los gastos
+cuyo período guardado coincide con el que la ubicación automática les daba con el
+calendario **anterior** (`domain/cards:reassignedPeriods`). Un gasto fijado a mano no
+coincide, así que no se toca — sin necesitar un flag "manual" en el modelo.
+
+**Reglas que lo mantienen consistente** (revisión de la Fase 4a):
+- **Un resumen cerrado no se mueve.** Cambiar los días por defecto de la tarjeta primero
+  congela cada período ya cerrado que tenga gastos, escribiendo sus fechas viejas como
+  override; los días nuevos rigen desde el resumen abierto hoy.
+- **Las fechas corregidas tienen que ser coherentes** (`statementOverrideProblem`): el
+  cierre de un período cae en su mes o el siguiente, y queda estrictamente entre el cierre
+  del anterior y el del siguiente. Es lo que `statementPeriodFor` asume; un año mal
+  tipeado reubicaría en silencio todo alrededor. Se valida al guardar y al importar.
+- **Un gasto nunca va a un resumen que cerró antes de su fecha.**
+- **Editar la fecha de un gasto en un resumen abierto lo reubica** si estaba en su resumen
+  automático (el formulario sólo devuelve el período que tenía); si estaba fijado a mano,
+  queda fijado.
+- **Merge:** fechas corregidas que llegan de otro dispositivo reubican los gastos
+  automáticos locales de esa tarjeta, igual que corregirlas en la app.
+
+**Descartado:** derivar el período siempre (simple, pero no soporta presentaciones tardías
+ni cuotas), y reasignar todo lo de períodos abiertos (pisaría las correcciones manuales).
+
+**Avisos:** el Dashboard muestra, por tarjeta, el resumen en curso (cuándo cierra, cuánto
+lleva) y el anterior (cuándo vence, cuánto es). Sin backend no hay notificaciones push
+programables: el aviso aparece al abrir la app.

@@ -104,6 +104,34 @@ AccountAdjustment {
   lado encaja en su cuenta (moneda, `openingDate`), y entre cuentas de la misma moneda
   `fromAmount === toAmount`. Las monedas las pone el repository desde las cuentas, nunca
   el formulario. No es gasto ni ingreso: no entra en presupuestos ni reportes de gasto.
+### CreditCard / CardStatement (Etapa 8, Fase 4)
+
+```ts
+CreditCard    { id, name, closingDay /* 1–31 */, dueDay /* 1–31 */, isArchived, order, notes?, createdAt, updatedAt }
+CardStatement { id, cardId, period /* YYYY-MM */, closeDate, dueDate, createdAt, updatedAt }   // sólo overrides
+Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con accountId
+```
+
+- Una tarjeta **no tiene moneda**: un resumen argentino trae saldo en ARS y en USD por
+  separado, y `domain/cards:statementTotals` devuelve un total por moneda, sin convertir.
+- **Período** = el mes en que cierra el resumen. Sus fechas por defecto salen de los días
+  de la tarjeta (`dayOfMonth`, recortado al fin de mes); el vencimiento es el primer
+  `dueDay` posterior al cierre (mismo mes si viene después, si no el siguiente). Un
+  `CardStatement` existe sólo para los períodos cuyas fechas reales el usuario corrigió
+  (único por `[cardId+period]`).
+- **A qué resumen va un gasto:** el primer período cuyo cierre es ≥ la fecha del gasto
+  (el día del cierre cuenta) — `statementPeriodFor`. Se **guarda** en el gasto
+  (`statementPeriod`): si el usuario lo fija en otro (presentación tardía), queda ahí.
+- **Corregir fechas** (override, o cambiar los días por defecto de la tarjeta) reasigna,
+  en la misma transacción, sólo los gastos que estaban donde la ubicación automática los
+  ponía con el calendario anterior (`reassignedPeriods`); los fijados a mano no se mueven.
+  Cambiar los días de la tarjeta antes congela (como overrides) los períodos ya cerrados
+  con gastos, para que nunca cambien. Un override tiene que cerrar en su mes o el
+  siguiente, entre los cierres vecinos (`statementOverrideProblem`), y un gasto no puede
+  ir a un resumen que cerró antes de su fecha.
+- Pagar un resumen (Fase 5) nunca creará un gasto: cada compra ya se contó en su fecha.
+- Borrar una tarjeta sólo se puede sin gastos; si no, se archiva.
+
 - **Compra de inversión con cuenta de origen** (Fase 3): `InvestmentLot` suma
   `sourceAccountId` + `sourceAmount` + `sourceCurrency`, los tres o ninguno (refine en
   `investmentLotSchema`). `sourceAmount` es lo que realmente salió de la cuenta, en SU
@@ -348,6 +376,15 @@ transfers:           id, date, fromAccountId, toAccountId
 investmentLots:      id, assetId, date, sourceAccountId
 ```
 
+**Versión 8** (Etapa 8, Fase 4 — tarjetas; tablas nuevas vacías + índices de tarjeta en
+`expenses`, sin `.upgrade()`):
+
+```
+creditCards:         id, isArchived, order
+cardStatements:      id, cardId, &[cardId+period]
+expenses:            id, date, categoryId, status, sourcePlanId, accountId, cardId, [cardId+statementPeriod], [status+date]
+```
+
 Dexie omite del índice las claves `undefined`, así que `[status+date]` sólo contiene
 gastos con ambos campos seteados (siempre, en la práctica) y `sourcePlanId` sólo aquellos
 materializados por un plan — eso es lo que permite `db.expenses.where('sourcePlanId')...`
@@ -382,7 +419,7 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
 ```jsonc
 {
   "format": "moneta-backup",
-  "version": 7,
+  "version": 8,
   "exportedAt": "2026-08-23T14:03:11.000Z",
   "app": { "name": "moneta", "version": "0.0.0" },
   "checksum": "sha256 hex sobre `data` canonicalizado",
@@ -392,7 +429,8 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
     "exchangeRates": [], "settings": {},
     "savingsHoldings": [], "investmentAssets": [], "investmentHoldings": [],
     "assetPrices": [], "investmentLots": [],
-    "accounts": [], "incomes": [], "accountAdjustments": [], "transfers": []
+    "accounts": [], "incomes": [], "accountAdjustments": [], "transfers": [],
+    "creditCards": [], "cardStatements": []
   }
 }
 ```
@@ -421,7 +459,11 @@ Reglas (ver `src/features/backups/`):
   la cuenta de origen opcional a `InvestmentLot`; como su schema pasó a tener un `refine`
   y campos nuevos, la forma del lote de v4–v6 quedó congelada en
   `legacyInvestmentLotV4Schema` (`schemas/legacy.ts`). `migrations/v6_to_v7.ts` deja cada
-  lote igual (ninguno debitaba una cuenta).
+  lote igual (ninguno debitaba una cuenta). La v8 (Fase 4) suma `creditCards`,
+  `cardStatements` y `Expense.cardId`/`statementPeriod`; como `expenseSchema` ganó campos
+  y `refine`s, la forma del gasto de v5–v7 quedó congelada en `legacyExpenseV5Schema`
+  (`migrations/v7_to_v8.ts` arranca las tablas vacías). En modo merge, un período
+  corregido que el dispositivo local ya tiene (aunque con otro id) se saltea.
 - Como una migración vieja (`schemas/v1.ts`, `v2.ts`, `v3.ts`) tiene que seguir validando
   un archivo `.finance` exactamente como lo hacía cuando esa versión era la última, esos
   schemas **no** pueden depender de los tipos de dominio actuales una vez que el dominio

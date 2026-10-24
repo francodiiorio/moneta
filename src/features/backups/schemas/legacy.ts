@@ -228,3 +228,12 @@ export const legacyInvestmentLotV4Schema = z.object({
   updatedAt: isoInstant,
 })
 export type LegacyInvestmentLotV4 = z.infer<typeof legacyInvestmentLotV4Schema>
+
+/** `Expense` as `schemas/v5.ts`, `v6.ts` and `v7.ts` shipped it: with the
+ *  optional `accountId` (Etapa 8, Fase 1) but before the credit-card fields
+ *  and their refines (Fase 4). Frozen so those versions keep validating
+ *  exactly as before. */
+export const legacyExpenseV5Schema = legacyExpenseV4Schema.extend({
+  accountId: id.optional(),
+})
+export type LegacyExpenseV5 = z.infer<typeof legacyExpenseV5Schema>

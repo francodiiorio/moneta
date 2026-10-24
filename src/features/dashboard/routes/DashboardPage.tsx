@@ -26,6 +26,7 @@ import { useSettings } from '../hooks/useSettings'
 import { VariationBadge } from '../components/VariationBadge'
 import { MonthSelector } from '../components/MonthSelector'
 import { PeriodSelect } from '../components/PeriodSelect'
+import { CardDeadlines } from '../components/CardDeadlines'
 
 const BUDGET_ALERT_THRESHOLD = 90
 
@@ -177,6 +178,8 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <CardDeadlines />
 
       {/* Same visual family as MissingRateBanner/MissingPriceBanner — a
           heads-up, not a content section, so it doesn't get full Card

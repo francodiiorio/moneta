@@ -34,10 +34,18 @@ export const expenseStatusSchema = z.enum(['confirmed', 'projected'])
 // partida doble: ver ADR "Simplificación: se elimina Cuentas, Ingresos y
 // Transferencias" en docs/DECISIONS.md. `status` sigue haciendo falta para
 // un recurrente/cuota que todavía no venció (`'projected'`) — sólo los
-// `'confirmed'` cuentan en reportes/presupuestos. `accountId` (Etapa 8) es
-// opcional: sólo un gasto con débito sale de una cuenta; uno con tarjeta de
-// crédito o sin especificar no toca ningún saldo.
-export const expenseSchema = z.object({
+// `'confirmed'` cuentan en reportes/presupuestos.
+//
+// Medio de pago (Etapa 8), a lo sumo uno:
+// - `accountId`: débito — el gasto sale de esa cuenta y baja su saldo.
+// - `cardId` + `statementPeriod`: tarjeta de crédito — entra al resumen de
+//   ese período (el mes en que cierra), que se paga después (Fase 5). El
+//   período se GUARDA, no se deriva cada vez: una cuota cae directo en su
+//   resumen, una presentación tardía se mueve a mano, y un resumen ya
+//   cerrado no cambia si después se edita una fecha. Ver domain/cards.
+// - ninguno: sin especificar; no toca ningún saldo.
+export const expenseSchema = z
+  .object({
   id,
   date: dateStamp,
   amount: minorAmount.positive(),
@@ -50,9 +58,19 @@ export const expenseSchema = z.object({
   sourcePlanId: id.optional(),
   occurrenceIndex: z.number().int().nonnegative().optional(),
   accountId: id.optional(),
+  cardId: id.optional(),
+  statementPeriod: monthStamp.optional(),
   createdAt: isoInstant,
   updatedAt: isoInstant,
 })
+  .refine((e) => (e.cardId === undefined) === (e.statementPeriod === undefined), {
+    message: 'Un gasto con tarjeta necesita su resumen (y viceversa)',
+    path: ['statementPeriod'],
+  })
+  .refine((e) => e.accountId === undefined || e.cardId === undefined, {
+    message: 'Un gasto se paga con débito o con tarjeta, no con los dos',
+    path: ['cardId'],
+  })
 export type Expense = z.infer<typeof expenseSchema>
 
 export const accountTypeSchema = z.enum(['bank', 'cash', 'wallet', 'broker', 'other'])
@@ -128,6 +146,41 @@ export const transferSchema = z.object({
   updatedAt: isoInstant,
 })
 export type Transfer = z.infer<typeof transferSchema>
+
+// Etapa 8, Fase 4. Sin moneda: un resumen argentino trae saldo en ARS y en
+// USD por separado. `closingDay`/`dueDay` son los días por defecto; el mes
+// en que el banco los mueve se corrige con un CardStatement.
+export const creditCardSchema = z.object({
+  id,
+  name: z.string().min(1),
+  closingDay: z.number().int().min(1).max(31),
+  dueDay: z.number().int().min(1).max(31),
+  isArchived: z.boolean(),
+  order: z.number(),
+  notes: z.string().optional(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type CreditCard = z.infer<typeof creditCardSchema>
+
+// Fechas reales de un resumen cuando difieren de los días por defecto de la
+// tarjeta — sólo existe una fila para los períodos corregidos a mano.
+// `period` es el mes en que cierra el resumen ("YYYY-MM").
+export const cardStatementSchema = z
+  .object({
+    id,
+    cardId: id,
+    period: monthStamp,
+    closeDate: dateStamp,
+    dueDate: dateStamp,
+    createdAt: isoInstant,
+    updatedAt: isoInstant,
+  })
+  .refine((s) => s.dueDate >= s.closeDate, {
+    message: 'El vencimiento no puede ser anterior al cierre',
+    path: ['dueDate'],
+  })
+export type CardStatement = z.infer<typeof cardStatementSchema>
 
 export const recurrenceFrequencySchema = z.enum(['daily', 'weekly', 'monthly', 'yearly'])
 

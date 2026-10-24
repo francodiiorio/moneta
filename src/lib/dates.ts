@@ -1,4 +1,15 @@
-import { addMonths, endOfMonth, endOfYear, format, formatDistanceToNow, parse, startOfMonth, startOfYear } from 'date-fns'
+import {
+  addMonths,
+  differenceInCalendarDays,
+  endOfMonth,
+  endOfYear,
+  format,
+  formatDistanceToNow,
+  getDaysInMonth,
+  parse,
+  startOfMonth,
+  startOfYear,
+} from 'date-fns'
 import { es } from 'date-fns/locale'
 
 /** A calendar day with no timezone attached, e.g. "2026-08-23". */
@@ -37,7 +48,11 @@ export function currentMonthStamp(): MonthStamp {
 
 export function isValidDateStamp(value: string): value is DateStamp {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  return toDateStamp(fromDateStamp(value)) === value
+  // Same guard as isValidMonthStamp: "2026-02-31" matches the shape but
+  // parses to an Invalid Date, and format() throws RangeError on one.
+  const parsed = fromDateStamp(value)
+  if (Number.isNaN(parsed.getTime())) return false
+  return toDateStamp(parsed) === value
 }
 
 function monthStart(month: MonthStamp): Date {
@@ -106,4 +121,25 @@ export function currentYearStamp(): YearStamp {
 export function yearRange(year: YearStamp): { start: DateStamp; end: DateStamp } {
   const start = parse(year, YEAR_FORMAT, new Date())
   return { start: toDateStamp(startOfYear(start)), end: toDateStamp(endOfYear(start)) }
+}
+
+/** Day `day` of `month`, clamped to the month's last day — "el 31" in
+ *  February is the 28th/29th, never March 3rd. */
+export function dayOfMonth(month: MonthStamp, day: number): DateStamp {
+  const start = monthStart(month)
+  const clamped = Math.min(Math.max(1, day), getDaysInMonth(start))
+  return toDateStamp(new Date(start.getFullYear(), start.getMonth(), clamped))
+}
+
+/** Whole calendar days from `from` to `to` (negative if `to` is earlier). */
+export function daysBetween(from: DateStamp, to: DateStamp): number {
+  return differenceInCalendarDays(fromDateStamp(to), fromDateStamp(from))
+}
+
+/** "hoy", "mañana", "en 5 días", "hace 3 días" — for a countdown to a date. */
+export function relativeDays(days: number): string {
+  if (days === 0) return 'hoy'
+  if (days === 1) return 'mañana'
+  if (days === -1) return 'ayer'
+  return days > 0 ? `en ${days} días` : `hace ${-days} días`
 }

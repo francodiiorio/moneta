@@ -4,6 +4,9 @@ import type { Expense } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import { assertAccountAccepts } from './accounts.repo'
+import { getCardCalendar } from './creditCards.repo'
+import { statementDates, statementPeriodFor } from '@/domain/cards'
+import { isValidMonthStamp, todayStamp, type MonthStamp } from '@/lib/dates'
 import type { CurrencyCode } from '@/domain/money'
 import type { DateStamp } from '@/lib/dates'
 
@@ -20,6 +23,12 @@ export interface ExpenseInput {
   occurrenceIndex?: number
   /** Debit only — the gasto left this account (see domain/accounts). */
   accountId?: string
+  /** Credit card — mutually exclusive with `accountId`. */
+  cardId?: string
+  /** The statement it's billed in. Omitted with a `cardId`: placed
+   *  automatically by the card's calendar (domain/cards:statementPeriodFor);
+   *  given: pinned there (a late presentation, an installment). */
+  statementPeriod?: MonthStamp
 }
 
 export async function listExpensesInRange(startDate: string, endDate: string): Promise<Expense[]> {
@@ -47,22 +56,59 @@ export async function listExpensesInRange(startDate: string, endDate: string): P
  * that its own backup would then refuse to restore. That's why every
  * parent transaction above also covers `db.categories`.
  *
- * `db.accounts` joins the scope only when the gasto has an `accountId`:
- * the plan repos' parent transactions don't cover it, and Dexie rejects a
- * nested transaction that asks for a table its parent doesn't have —
- * plans never set `accountId` (Etapa 8, Fase 1), so they keep nesting
- * fine.
+ * `db.accounts` joins the scope only when the gasto has an `accountId`,
+ * and the card tables only with a `cardId`: the plan repos' parent
+ * transactions don't cover them, and Dexie rejects a nested transaction
+ * that asks for a table its parent doesn't have — plans never set either
+ * (Etapa 8), so they keep nesting fine.
  */
 export async function saveExpense(input: ExpenseInput, existingId?: string): Promise<string> {
   invariant(input.amount > 0, `El monto debe ser mayor a cero, recibido: ${input.amount}`)
 
-  const tables =
-    input.accountId !== undefined ? [db.expenses, db.categories, db.accounts] : [db.expenses, db.categories]
+  invariant(
+    input.accountId === undefined || input.cardId === undefined,
+    'Un gasto se paga con débito o con tarjeta, no con los dos',
+  )
+  invariant(input.cardId !== undefined || input.statementPeriod === undefined, 'Un resumen necesita una tarjeta')
+  invariant(
+    input.statementPeriod === undefined || isValidMonthStamp(input.statementPeriod),
+    `Resumen inválido: ${input.statementPeriod}`,
+  )
+
+  const tables = [
+    db.expenses,
+    db.categories,
+    ...(input.accountId !== undefined ? [db.accounts] : []),
+    ...(input.cardId !== undefined ? [db.creditCards, db.cardStatements] : []),
+  ]
   return db.transaction('rw', tables, async () => {
     const category = await db.categories.get(input.categoryId)
     invariant(category, `Categoría no encontrada: ${input.categoryId}`)
     invariant(category.kind === 'expense', `"${category.name}" no es una categoría de gasto`)
     if (input.accountId !== undefined) await assertAccountAccepts(input.accountId, input)
+    let statementPeriod: MonthStamp | undefined
+    if (input.cardId !== undefined) {
+      // Always read: it's also what checks the card still exists, even
+      // when the period comes pinned.
+      const calendar = await getCardCalendar(input.cardId)
+      const automatic = statementPeriodFor(calendar, input.date)
+      statementPeriod = input.statementPeriod ?? automatic
+      if (existingId && input.statementPeriod !== undefined) {
+        // An edit that keeps the statement the gasto had, where that was
+        // simply its automatic one and that statement is still open: the
+        // form only echoed it back, so follow the (maybe corrected) date —
+        // otherwise fixing a typo in the date would pin it to the old
+        // statement forever. A closed statement never moves.
+        const existing = await db.expenses.get(existingId)
+        const wasAutomatic =
+          existing?.cardId === input.cardId &&
+          existing.statementPeriod === input.statementPeriod &&
+          existing.statementPeriod === statementPeriodFor(calendar, existing.date)
+        const stillOpen = statementDates(calendar, input.statementPeriod).closeDate >= todayStamp()
+        if (wasAutomatic && stillOpen) statementPeriod = automatic
+      }
+      invariant(statementPeriod >= automatic, 'Ese resumen cerró antes de la fecha del gasto')
+    }
     const now = new Date().toISOString()
     const id = existingId ?? generateId()
 
@@ -88,6 +134,7 @@ export async function saveExpense(input: ExpenseInput, existingId?: string): Pro
       ...(input.sourcePlanId !== undefined && { sourcePlanId: input.sourcePlanId }),
       ...(input.occurrenceIndex !== undefined && { occurrenceIndex: input.occurrenceIndex }),
       ...(input.accountId !== undefined && { accountId: input.accountId }),
+      ...(input.cardId !== undefined && statementPeriod !== undefined && { cardId: input.cardId, statementPeriod }),
     }
     await db.expenses.put(expense)
     return id

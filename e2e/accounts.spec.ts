@@ -27,7 +27,7 @@ test('una cuenta suma ingresos, resta gastos con débito, se ajusta, y entra al 
   await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
   await page.getByLabel('Descripción').fill('Supermercado')
   await page.getByLabel('Monto').fill('200')
-  await page.getByLabel('Cuenta (opcional)').click()
+  await page.getByLabel('Medio de pago').click()
   await page.getByRole('option', { name: /Galicia pesos/ }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Comida' }).click()

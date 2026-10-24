@@ -1,4 +1,6 @@
 import { movementAccountProblem, transferProblem } from '@/domain/accounts'
+import { statementOverrideProblem, statementPeriodFor, type CardCalendar } from '@/domain/cards'
+import { isValidMonthStamp } from '@/lib/dates'
 import type { LatestBackupData } from './migrations'
 
 /** Sin partida doble no hay nada que balancear — lo que queda son las
@@ -14,6 +16,27 @@ import type { LatestBackupData } from './migrations'
 export function validateLedgerIntegrity(data: LatestBackupData): void {
   const categoryKindById = new Map(data.categories.map((c) => [c.id, c.kind]))
   const accountById = new Map(data.accounts.map((a) => [a.id, a]))
+  const calendarByCard = new Map<string, CardCalendar>(
+    data.creditCards.map((card) => [card.id, { card, overrides: data.cardStatements.filter((s) => s.cardId === card.id) }]),
+  )
+
+  const statementKeys = new Set<string>()
+  for (const statement of data.cardStatements) {
+    const label = `Resumen inválido (${statement.id})`
+    const calendar = calendarByCard.get(statement.cardId)
+    if (!calendar) throw new Error(`${label}: la tarjeta ${statement.cardId} no existe en el backup`)
+    // Message built before the type-guard check (which narrows the value to
+    // `never` in its failing branch).
+    const invalidPeriod = `${label}: período ${statement.period} inválido`
+    if (!isValidMonthStamp(statement.period)) throw new Error(invalidPeriod)
+    const key = `${statement.cardId}:${statement.period}`
+    if (statementKeys.has(key)) throw new Error(`Resumen duplicado para el período ${statement.period}`)
+    statementKeys.add(key)
+    // Same rules the app enforces when correcting dates — an out-of-order
+    // close would silently re-place every purchase around it.
+    const problem = statementOverrideProblem(calendar, statement.period, statement.closeDate, statement.dueDate)
+    if (problem) throw new Error(`${label}: ${problem}`)
+  }
 
   function assertAccount(label: string, accountId: string, movement: { date: string; currency: string }): void {
     const account = accountById.get(accountId)
@@ -34,6 +57,21 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
       throw new Error(`${label}: usa una categoría de ingreso`)
     }
     if (expense.accountId !== undefined) assertAccount(label, expense.accountId, expense)
+    if (expense.accountId !== undefined && expense.cardId !== undefined) {
+      throw new Error(`${label}: no puede ser con débito y con tarjeta a la vez`)
+    }
+    if ((expense.cardId === undefined) !== (expense.statementPeriod === undefined)) {
+      throw new Error(`${label}: tarjeta y resumen van juntos`)
+    }
+    if (expense.cardId !== undefined && expense.statementPeriod !== undefined) {
+      const calendar = calendarByCard.get(expense.cardId)
+      if (!calendar) throw new Error(`${label}: la tarjeta ${expense.cardId} no existe en el backup`)
+      const invalidPeriod = `${label}: resumen ${expense.statementPeriod} inválido`
+      if (!isValidMonthStamp(expense.statementPeriod)) throw new Error(invalidPeriod)
+      if (expense.statementPeriod < statementPeriodFor(calendar, expense.date)) {
+        throw new Error(`${label}: su resumen cerró antes de la fecha del gasto`)
+      }
+    }
   }
 
   for (const income of data.incomes) {
