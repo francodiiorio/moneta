@@ -5,13 +5,18 @@ import { ChevronLeft } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { csvMappingSchema, type CsvMapping } from '../schema'
 import { parseCsvFile, type CsvEncoding } from '../parse'
-import { importSelectedRows, prepareImport, type PreviewRow } from '../service'
+import { importSelectedRows, lastStatementDate, prepareImport, type PreviewRow } from '../service'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
+import { useCardStatementChoices, useImportTargets } from '../hooks/useImportTargets'
 import { UploadStep } from '../components/UploadStep'
 import { PreviewTable } from '../components/PreviewTable'
+import { ReconcileAccountCard } from '../components/ReconcileAccountCard'
+import { Button } from '@/components/ui/button'
+import type { DateStamp } from '@/lib/dates'
 
 function defaultMapping(): CsvMapping {
   return {
+    destination: { kind: 'none' },
     categoryId: '',
     currency: 'ARS',
     hasHeaderRow: true,
@@ -26,8 +31,10 @@ function defaultMapping(): CsvMapping {
 export function ImportCsvPage() {
   const navigate = useNavigate()
   const expenseCategories = useExpenseCategories()
+  const targets = useImportTargets()
 
-  const [step, setStep] = useState<'upload' | 'preview'>('upload')
+  const [step, setStep] = useState<'upload' | 'preview' | 'done'>('upload')
+  const [result, setResult] = useState<{ expenses: number; incomes: number; lastDate: DateStamp | undefined }>()
   const [file, setFile] = useState<File | null>(null)
   const [rows, setRows] = useState<string[][]>([])
   // Plain useState instead of react-hook-form here, deliberately: every
@@ -40,6 +47,9 @@ export function ImportCsvPage() {
   const [preview, setPreview] = useState<PreviewRow[]>([])
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [isBusy, setIsBusy] = useState(false)
+  const statementChoices = useCardStatementChoices(
+    mapping.destination.kind === 'card' ? mapping.destination.cardId : undefined,
+  )
 
   async function reparse(nextFile: File, encoding: CsvEncoding) {
     try {
@@ -73,14 +83,14 @@ export function ImportCsvPage() {
   const rowCount = rows.length === 0 ? 0 : mapping.hasHeaderRow ? rows.length - 1 : rows.length
 
   async function handleContinue() {
-    const result = csvMappingSchema.safeParse(mapping)
-    if (!result.success) {
-      toast.error(result.error.issues[0]?.message ?? 'Revisá el mapeo de columnas')
+    const parsed = csvMappingSchema.safeParse(mapping)
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? 'Revisá el mapeo de columnas')
       return
     }
     setIsBusy(true)
     try {
-      const built = await prepareImport(rows, result.data)
+      const built = await prepareImport(rows, parsed.data)
       setPreview(built)
       setSelected(new Set(built.filter((r) => r.defaultSelected).map((r) => r.index)))
       setStep('preview')
@@ -104,9 +114,16 @@ export function ImportCsvPage() {
     setIsBusy(true)
     try {
       const rowsToImport = preview.filter((r) => selected.has(r.index))
-      const result = await importSelectedRows(rowsToImport, mapping)
-      toast.success(`Se importaron ${result.imported} gasto${result.imported === 1 ? '' : 's'}`)
-      void navigate('/movimientos')
+      const imported = await importSelectedRows(rowsToImport, mapping)
+      if (mapping.destination.kind !== 'account') {
+        toast.success(`Se importaron ${imported.imported} movimiento${imported.imported === 1 ? '' : 's'}`)
+        void navigate('/movimientos')
+        return
+      }
+      // Into an account: offer reconciling against the statement's balance,
+      // at the file's last date (skipped duplicates count: Moneta has them).
+      setResult({ expenses: imported.expenses, incomes: imported.incomes, lastDate: lastStatementDate(preview) })
+      setStep('done')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo importar')
     } finally {
@@ -114,6 +131,18 @@ export function ImportCsvPage() {
     }
   }
 
+  function startOver() {
+    setFile(null)
+    setRows([])
+    setPreview([])
+    setSelected(new Set())
+    setResult(undefined)
+    setStep('upload')
+  }
+
+  const { destination } = mapping
+  const importAccount =
+    destination.kind === 'account' ? targets?.accounts.find((a) => a.id === destination.accountId) : undefined
   const selectedCount = preview.filter((r) => selected.has(r.index)).length
   const duplicateCount = preview.filter((r) => r.status === 'duplicate').length
   const invalidCount = preview.filter((r) => r.status === 'invalid').length
@@ -131,7 +160,7 @@ export function ImportCsvPage() {
 
       <PageHeader
         title="Importar CSV"
-        description="Cargá un extracto bancario y creá los gastos en bloque."
+        description="Cargá un extracto del banco o de la tarjeta y creá los movimientos en bloque."
       />
 
       {step === 'upload' ? (
@@ -140,6 +169,8 @@ export function ImportCsvPage() {
           setMapping={setMapping}
           columns={columns}
           expenseCategories={expenseCategories}
+          targets={targets}
+          statementChoices={statementChoices}
           hasFile={!!file}
           rowCount={rowCount}
           onFileChange={(e) => void handleFileChange(e)}
@@ -147,6 +178,22 @@ export function ImportCsvPage() {
           onContinue={() => void handleContinue()}
           isBusy={isBusy}
         />
+      ) : step === 'done' ? (
+        <div className="flex flex-col gap-4">
+          <p className="text-sm">
+            Se importaron {result?.expenses ?? 0} gasto{result?.expenses === 1 ? '' : 's'} y {result?.incomes ?? 0} ingreso
+            {result?.incomes === 1 ? '' : 's'}.
+          </p>
+          {importAccount && result?.lastDate && <ReconcileAccountCard account={importAccount} defaultDate={result.lastDate} />}
+          <div className="flex gap-2">
+            <Button asChild variant="outline">
+              <Link to="/movimientos">Ir a Movimientos</Link>
+            </Button>
+            <Button variant="ghost" onClick={startOver}>
+              Importar otro archivo
+            </Button>
+          </div>
+        </div>
       ) : (
         <PreviewTable
           rows={preview}
@@ -156,6 +203,10 @@ export function ImportCsvPage() {
           duplicateCount={duplicateCount}
           invalidCount={invalidCount}
           excludedCount={excludedCount}
+          {...(destination.kind === 'account' && {
+            notice:
+              'Los pagos de tarjeta y las transferencias entre tus cuentas no son gastos ni ingresos: si ya los cargaste en Moneta aparecen como duplicados; si no, destildalos y registralos con "Pagar resumen" o como transferencia.',
+          })}
           onBack={() => setStep('upload')}
           onImport={() => void handleImport()}
           isBusy={isBusy}

@@ -36,3 +36,10 @@ export const paymentFormSchema = z.object({
   ),
 })
 export type PaymentFormValues = z.infer<typeof paymentFormSchema>
+
+export interface ReconcileFormValues {
+  /** One per currency asked; a blank bank total isn't compared. */
+  lines: { currency: string; bankTotal: string }[]
+  categoryId: string
+  description: string
+}

@@ -22,6 +22,7 @@ import { negate } from '@/domain/money'
 import { formatFullDate, formatMonthLabel, formatShortDate, isValidMonthStamp, shiftMonth, type MonthStamp } from '@/lib/dates'
 import { StatementDatesDialog } from '../components/StatementDatesDialog'
 import { PayStatementDialog } from '../components/PayStatementDialog'
+import { ReconcileStatementDialog } from '../components/ReconcileStatementDialog'
 import { DueBadge } from '../components/DueBadge'
 import { MoneyTotals } from '@/components/MoneyTotals'
 import { useOpenPeriod } from '../hooks/useOpenPeriod'
@@ -52,6 +53,7 @@ function StatementBrowser({ cardId }: { cardId: string }) {
   const detail = useStatementDetail(cardId, period)
   const [editingDates, setEditingDates] = useState(false)
   const [paying, setPaying] = useState(false)
+  const [reconciling, setReconciling] = useState(false)
   const [confirmingUndo, setConfirmingUndo] = useState(false)
 
   async function handleUndo() {
@@ -180,11 +182,19 @@ function StatementBrowser({ cardId }: { cardId: string }) {
               </CardContent>
             </Card>
           ) : (
-            detail.status === 'closed' &&
-            detail.totals.length > 0 && (
-              <Button className="w-full sm:w-fit" onClick={() => setPaying(true)}>
-                Pagar resumen
-              </Button>
+            detail.status === 'closed' && (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                {/* Before paying: the bank's total may carry taxes or fees
+                    Moneta doesn't have yet. */}
+                <Button variant="outline" className="w-full sm:w-fit" onClick={() => setReconciling(true)}>
+                  Conciliar con el banco
+                </Button>
+                {detail.totals.length > 0 && (
+                  <Button className="w-full sm:w-fit" onClick={() => setPaying(true)}>
+                    Pagar resumen
+                  </Button>
+                )}
+              </div>
             )
           )}
 
@@ -219,6 +229,13 @@ function StatementBrowser({ cardId }: { cardId: string }) {
         cardName={detail?.card.name ?? ''}
         statement={paying && detail ? detail : undefined}
         onOpenChange={(open) => (open ? undefined : setPaying(false))}
+      />
+
+      <ReconcileStatementDialog
+        cardId={cardId}
+        cardName={detail?.card.name ?? ''}
+        statement={reconciling && detail ? detail : undefined}
+        onOpenChange={(open) => (open ? undefined : setReconciling(false))}
       />
 
       <AlertDialog open={confirmingUndo} onOpenChange={setConfirmingUndo}>

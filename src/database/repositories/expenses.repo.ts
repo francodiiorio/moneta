@@ -47,7 +47,7 @@ export async function listExpensesInRange(startDate: string, endDate: string): P
  * without it, a concurrent `deleteExpense` for the same id between the two
  * could "resurrect" a gasto the user just deleted, with a `createdAt` read
  * from a row that no longer exists. Dexie joins this into whatever
- * transaction a caller (bulkSaveExpenses, installmentPlans.repo.ts,
+ * transaction a caller (imports.repo.ts, installmentPlans.repo.ts,
  * recurringPlans.repo.ts) already has open on `db.expenses`, so this is
  * free for them.
  *
@@ -138,20 +138,6 @@ export async function saveExpense(input: ExpenseInput, existingId?: string): Pro
     }
     await db.expenses.put(expense)
     return id
-  })
-}
-
-/**
- * Writes every input in `inputs` atomically — one Dexie `rw` transaction
- * covering all of them, so a bulk import (CSV, etc.) either lands
- * entirely or not at all, same guarantee as every other multi-write in
- * this repo.
- */
-export async function bulkSaveExpenses(inputs: readonly ExpenseInput[]): Promise<void> {
-  await db.transaction('rw', db.expenses, db.categories, async () => {
-    for (const input of inputs) {
-      await saveExpense(input)
-    }
   })
 }
 

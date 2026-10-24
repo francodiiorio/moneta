@@ -3,6 +3,7 @@ import {
   add,
   applyRate,
   formatAxisAmount,
+  tryParseAmount,
   tryParsePositiveAmount,
   formatAmountInput,
   formatMoney,
@@ -271,5 +272,14 @@ describe('tryParsePositiveAmount', () => {
     expect(tryParsePositiveAmount('abc', 'ARS')).toBeUndefined()
     expect(tryParsePositiveAmount('0', 'ARS')).toBeUndefined()
     expect(tryParsePositiveAmount('-5', 'ARS')).toBeUndefined()
+  })
+})
+
+describe('tryParseAmount', () => {
+  it('reads any sign, refuses parenthesized negatives instead of reading them as positive', () => {
+    expect(tryParseAmount('-1.500', 'ARS')).toEqual(money(-1_500_00, 'ARS'))
+    expect(tryParseAmount('0', 'ARS')).toEqual(money(0, 'ARS'))
+    expect(tryParseAmount('(1.234,56)', 'ARS')).toBeUndefined()
+    expect(tryParseAmount('', 'ARS')).toBeUndefined()
   })
 })

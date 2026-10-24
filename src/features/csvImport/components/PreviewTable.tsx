@@ -16,6 +16,8 @@ interface PreviewTableProps {
   duplicateCount: number
   invalidCount: number
   excludedCount: number
+  /** Shown above the table (e.g. how to treat card payments). */
+  notice?: string
   onBack: () => void
   onImport: () => void
   isBusy: boolean
@@ -29,6 +31,7 @@ export function PreviewTable({
   duplicateCount,
   invalidCount,
   excludedCount,
+  notice,
   onBack,
   onImport,
   isBusy,
@@ -39,8 +42,10 @@ export function PreviewTable({
         {selectedCount} a importar
         {duplicateCount > 0 && ` · ${duplicateCount} posible${duplicateCount === 1 ? '' : 's'} duplicado${duplicateCount === 1 ? '' : 's'}`}
         {invalidCount > 0 && ` · ${invalidCount} fila${invalidCount === 1 ? '' : 's'} inválida${invalidCount === 1 ? '' : 's'}`}
-        {excludedCount > 0 && ` · ${excludedCount} fila${excludedCount === 1 ? '' : 's'} sin importar (no es gasto)`}
+        {excludedCount > 0 && ` · ${excludedCount} crédito${excludedCount === 1 ? '' : 's'} sin importar`}
       </p>
+
+      {notice && <p className="rounded-lg bg-muted/50 p-3 text-sm">{notice}</p>}
 
       <div className="rounded-xl border border-border">
         <Table>
@@ -71,10 +76,26 @@ export function PreviewTable({
                     {row.description ?? row.raw.join(' ')}
                   </TableCell>
                   <TableCell className="text-right">
-                    {row.amount ? <MoneyText value={negate(row.amount)} signColor /> : '—'}
+                    {row.amount ? (
+                      <MoneyText value={row.kind === 'income' ? row.amount : negate(row.amount)} signColor />
+                    ) : (
+                      '—'
+                    )}
                   </TableCell>
                   <TableCell>
-                    {row.status === 'duplicate' && <Badge variant="secondary">Posible duplicado</Badge>}
+                    {row.kind === 'income' && row.status !== 'excluded' && row.status !== 'invalid' && (
+                      <Badge variant="outline">Ingreso</Badge>
+                    )}
+                    {row.status === 'duplicate' && (
+                      <Badge variant="secondary">
+                        Posible duplicado{row.duplicateOf ? ` · ${row.duplicateOf.toLowerCase()}` : ''}
+                      </Badge>
+                    )}
+                    {row.ownMovement && (
+                      <Badge variant="secondary" title={`Menciona "${row.ownMovement}"`}>
+                        ¿Entre tus cuentas?
+                      </Badge>
+                    )}
                     {(row.status === 'invalid' || row.status === 'excluded') && (
                       <Badge variant="destructive" title={row.invalidReason}>
                         {row.invalidReason}
@@ -94,7 +115,7 @@ export function PreviewTable({
           Volver
         </Button>
         <Button onClick={onImport} disabled={isBusy || selectedCount === 0}>
-          Importar {selectedCount} gasto{selectedCount === 1 ? '' : 's'}
+          Importar {selectedCount} movimiento{selectedCount === 1 ? '' : 's'}
         </Button>
       </div>
     </div>

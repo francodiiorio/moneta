@@ -233,7 +233,13 @@ Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
    pagado / sin pagar / vencido sin pagar / pagado con diferencia en el resumen, en
    Tarjetas y en el Dashboard; el pago se lista, de sólo lectura, en Movimientos. Nunca
    crea un gasto. Dexie v10 + backup v10.
-6. **CSV a cuenta o tarjeta + conciliación** contra el total real del banco.
+6. **CSV a cuenta o tarjeta + conciliación** (hecho) — el import de CSV elige destino:
+   ninguno (gastos sueltos, como antes), una cuenta (débitos, y los créditos como
+   ingresos si se elige una categoría de ingreso; nada antes del saldo inicial) o una
+   tarjeta (por fecha, o todo fijado en un resumen — el CSV del resumen del banco).
+   Conciliación: tras importar a una cuenta, saldo del extracto vs. Moneta → ajuste por
+   la diferencia; en un resumen cerrado sin pagar, total del banco vs. Moneta → lo que
+   el banco cobró de más queda como gasto del resumen. Sin cambios de schema.
 
 Pendiente de definir dentro de la etapa: "Ingresos" y "Balance neto" en Reportes y en
 el informe mensual.

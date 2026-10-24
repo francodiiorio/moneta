@@ -167,6 +167,10 @@ tabs). Un clic más para llegar a Cotizaciones es un costo menor frente a duplic
 
 ## Import de CSV: una categoría por lote, duplicados destildados no bloqueados
 
+> **Actualizada en la Etapa 8, Fase 6** (ver "CSV a cuenta o tarjeta y conciliación con el
+> banco"): el import vuelve a tener destino, y los créditos de una cuenta se importan como
+> ingresos con una categoría de ingreso elegida para el lote.
+>
 > **Parcialmente superada.** Tras "Simplificación: se elimina Cuentas, Ingresos y
 > Transferencias" (al final de este documento), ya no hay cuenta destino ni categoría de
 > ingreso — sólo **una** categoría de gasto para todo el lote y una moneda elegida
@@ -1397,3 +1401,42 @@ resumen siguiente.
 arrastrado" entre resúmenes) y restar la deuda de tarjeta no pagada del patrimonio (el
 patrimonio sigue siendo base caja: cuentas + ahorros + inversiones; queda para más
 adelante si se pide).
+
+## CSV a cuenta o tarjeta y conciliación con el banco (Etapa 8, Fase 6)
+
+**Destino del import:** el CSV va a una cuenta, a una tarjeta o a ninguna (como antes de la
+Etapa 8). A una cuenta, los gastos son débitos y la moneda es la de la cuenta; los
+créditos vuelven a poder importarse como **ingresos**, pero sólo si el usuario elige una
+categoría de ingreso — con una sola por lote, igual que los gastos (ver "Import de CSV:
+una categoría por lote"). A una tarjeta, los gastos van al resumen de su fecha, o todos a
+un resumen elegido: el CSV del resumen del banco trae compras presentadas tarde, con fecha
+anterior al cierre anterior, y ubicarlas por fecha las mandaría al resumen equivocado.
+Los créditos de una tarjeta (pagos, reintegros) nunca se importan: no hay gasto negativo, y
+el pago ya se registra aparte (Fase 5). Un lote se escribe entero o nada.
+
+**Duplicados:** además de la coincidencia exacta (día, monto, moneda y descripción), con
+destino se compara por monto y moneda contra lo que ya mueve ese destino, sin mirar el
+texto — el del banco ("COTO SUC 123", "MERCADOLIBRE C.03/12") casi nunca es el que se
+tipeó: en una cuenta, gastos, ingresos, transferencias, pagos de resumen y compras de
+inversión a ±3 días (un pago de tarjeta o una transferencia importados como gasto o
+ingreso se contarían dos veces); en una tarjeta, sus gastos a ±3 días o del mismo
+resumen (una cuota tiene la fecha corrida meses). Cada movimiento existente cubre una
+sola fila. Una fila que menciona otra cuenta o tarjeta propia viene destildada. Nada se
+bloquea: un duplicado se puede tildar igual. Nunca se importa a un resumen pagado.
+
+**Conciliación de cuenta:** después de importar, se compara el saldo del extracto con el
+que calcula Moneta al final de su último día (el de todas las filas, también las
+salteadas por duplicadas: Moneta ya las tiene); la diferencia se guarda como un `AccountAdjustment`
+(el mismo "Ajustar saldo" de Cuentas) — nunca se pisa un saldo.
+
+**Conciliación de resumen:** se carga el total del banco por moneda y se compara. Lo que el
+banco cobra **de más** (impuestos, intereses, comisiones) es un gasto real: se registra
+como gasto de ese resumen, fechado a su cierre, con una categoría elegida — así presupuestos
+y reportes lo ven, y el resumen queda listo para pagarse completo. Lo que cobra **de menos**
+no se registra solo: casi siempre es un gasto que el comercio presenta en el resumen
+siguiente (se mueve editándolo) o un reintegro, y no hay un registro honesto para eso
+sin gastos negativos. Sólo en un resumen cerrado y sin pagar.
+
+**Sin schema nuevo:** no se guarda "el total del banco" ni un estado "conciliado": el
+resultado de conciliar son registros que ya existen (un ajuste, un gasto), y que el total
+coincida se ve en el propio resumen.

@@ -8,6 +8,7 @@ import {
 import {
   openStatement,
   statementDates,
+  statementDifferences,
   statementPaymentState,
   statementPeriodFor,
   statementTotals,
@@ -16,10 +17,10 @@ import {
   type StatementPaymentState,
 } from '@/domain/cards'
 import type { CreditCard, Expense, StatementPayment } from '@/domain/entities'
-import { money, parseAmount, type Money } from '@/domain/money'
+import { money, parseAmount, tryParseAmount, type Money } from '@/domain/money'
 import { daysBetween, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
-import type { CardFormValues, PaymentFormValues, StatementDatesFormValues } from './schema'
+import type { CardFormValues, PaymentFormValues, ReconcileFormValues, StatementDatesFormValues } from './schema'
 
 export { setCreditCardArchived, deleteCreditCard, listCreditCards } from '@/database/repositories/creditCards.repo'
 export { listAccounts } from '@/database/repositories/accounts.repo'
@@ -294,4 +295,61 @@ export async function payStatementFromForm(
  *  undid it. */
 export async function undoStatementPayment(cardId: string, period: MonthStamp): Promise<number> {
   return statementPaymentsRepo.undoStatementPayment(cardId, period)
+}
+
+export const RECONCILE_DESCRIPTION = 'Cargos del resumen (diferencia con el banco)'
+
+/** The currencies reconciliation asks the bank's total for: the
+ *  statement's own, plus ARS and USD — an Argentine statement bills both,
+ *  even when Moneta has nothing loaded in one of them yet. */
+export function reconcileCurrencies(totals: readonly Money[]): string[] {
+  return [...new Set([...totals.map((t) => t.currency), 'ARS', 'USD'])]
+}
+
+/** Bank totals typed so far, parsed — a blank or unreadable line is left
+ *  out (not compared). For the live preview and the save alike. */
+export function parseBankTotals(lines: ReconcileFormValues['lines']): Money[] {
+  return lines.flatMap((line) => {
+    const parsed = tryParseAmount(line.bankTotal, line.currency)
+    return parsed ? [parsed] : []
+  })
+}
+
+/**
+ * Registers, as a gasto of the statement, every currency where the bank
+ * billed more than Moneta's total — against the totals the user was shown
+ * (the repository re-reads them and rejects if they changed).
+ */
+export async function reconcileStatementFromForm(
+  cardId: string,
+  period: MonthStamp,
+  values: ReconcileFormValues,
+  shownTotals: readonly Money[],
+): Promise<number> {
+  const bankTotals = parseBankTotals(values.lines)
+  const differences = statementDifferences(shownTotals, bankTotals)
+  const lines = bankTotals.flatMap((bank, i) =>
+    (differences[i]?.amount ?? 0) > 0
+      ? [
+          {
+            currency: bank.currency,
+            bankTotal: bank.amount,
+            expectedTotal: shownTotals.find((t) => t.currency === bank.currency)?.amount ?? 0,
+          },
+        ]
+      : [],
+  )
+  invariant(lines.length > 0, 'No hay diferencias a favor del banco para registrar')
+  invariant(values.categoryId !== '', 'Elegí una categoría para la diferencia')
+  return cardStatementsRepo.addStatementDifferences({
+    cardId,
+    period,
+    categoryId: values.categoryId,
+    description: values.description.trim() || RECONCILE_DESCRIPTION,
+    lines,
+  })
+}
+
+export function listExpenseCategories() {
+  return categoriesRepo.listActiveCategories('expense')
 }

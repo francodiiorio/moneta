@@ -246,3 +246,100 @@ describe('revisión de la Fase 5', () => {
     expect(frozen).toMatchObject({ closeDate: '2026-10-25', dueDate: '2026-11-05' })
   })
 })
+
+describe('addStatementDifferences (Fase 6)', () => {
+  it('never on a paid statement, nor an open one', async () => {
+    const { addStatementDifferences } = await import('./cardStatements.repo')
+    const { card, pesos, dollars } = await setup()
+    const category = await db.categories.toCollection().first()
+    const input = {
+      cardId: card.id,
+      period: '2026-10',
+      categoryId: category!.id,
+      description: 'Cargos',
+      lines: [{ currency: 'ARS', expectedTotal: 80_000_00, bankTotal: 81_000_00 }],
+    }
+    // Open while today is before Oct 25 2026; closed afterwards.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    onTestFinished(() => void vi.useRealTimers())
+    vi.setSystemTime(new Date('2026-10-20T12:00:00'))
+    await expect(addStatementDifferences(input)).rejects.toThrow(/resumen cerrado/)
+    vi.setSystemTime(new Date('2026-11-10T12:00:00'))
+    await payStatement({
+      cardId: card.id,
+      period: '2026-10',
+      date: '2026-11-05',
+      lines: [
+        { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
+        { currency: 'USD', expectedAmount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
+      ],
+    })
+    await expect(addStatementDifferences(input)).rejects.toThrow(/ya está pagado/)
+    await undoStatementPayment(card.id, '2026-10')
+    expect(await addStatementDifferences(input)).toBe(1)
+  })
+})
+
+describe('addStatementDifferences — revisión de la Fase 6', () => {
+  async function closedOctober() {
+    const ctx = await setup()
+    const category = await db.categories.toCollection().first()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    onTestFinished(() => void vi.useRealTimers())
+    vi.setSystemTime(new Date('2026-11-10T12:00:00'))
+    return { ...ctx, categoryId: category!.id }
+  }
+
+  it('one gasto per currency where the bank billed more, tagged and dated at the close', async () => {
+    const { addStatementDifferences } = await import('./cardStatements.repo')
+    const { card, categoryId } = await closedOctober()
+    const created = await addStatementDifferences({
+      cardId: card.id,
+      period: '2026-10',
+      categoryId,
+      description: 'Cargos',
+      lines: [
+        { currency: 'ARS', expectedTotal: 80_000_00, bankTotal: 81_500_00 },
+        { currency: 'USD', expectedTotal: 10_00, bankTotal: 12_00 },
+      ],
+    })
+    expect(created).toBe(2)
+    const charges = await db.expenses.filter((e) => e.description === 'Cargos').toArray()
+    expect(charges.map((e) => [e.currency, e.amount, e.date, e.statementPeriod, e.tags])).toEqual(
+      expect.arrayContaining([
+        ['ARS', 1_500_00, '2026-10-25', '2026-10', ['conciliacion-resumen']],
+        ['USD', 2_00, '2026-10-25', '2026-10', ['conciliacion-resumen']],
+      ]),
+    )
+  })
+
+  it('rejects stale totals, a bank total not above Moneta’s, and two lines of one currency', async () => {
+    const { addStatementDifferences } = await import('./cardStatements.repo')
+    const { card, categoryId } = await closedOctober()
+    const base = { cardId: card.id, period: '2026-10', categoryId, description: 'Cargos' }
+    await expect(
+      addStatementDifferences({ ...base, lines: [{ currency: 'ARS', expectedTotal: 70_000_00, bankTotal: 81_000_00 }] }),
+    ).rejects.toThrow(/cambió/)
+    await expect(
+      addStatementDifferences({ ...base, lines: [{ currency: 'ARS', expectedTotal: 80_000_00, bankTotal: 80_000_00 }] }),
+    ).rejects.toThrow(/no cobró más/)
+    const line = { currency: 'ARS', expectedTotal: 80_000_00, bankTotal: 81_000_00 }
+    await expect(addStatementDifferences({ ...base, lines: [line, line] })).rejects.toThrow(/una sola/i)
+    expect(await db.expenses.filter((e) => e.description === 'Cargos').count()).toBe(0)
+  })
+
+  it('the charge stays in its statement when its close is corrected, re-dated to the new close', async () => {
+    const { addStatementDifferences } = await import('./cardStatements.repo')
+    const { card, categoryId } = await closedOctober()
+    await addStatementDifferences({
+      cardId: card.id,
+      period: '2026-10',
+      categoryId,
+      description: 'Cargos',
+      lines: [{ currency: 'ARS', expectedTotal: 80_000_00, bankTotal: 81_000_00 }],
+    })
+    await setStatementOverride({ cardId: card.id, period: '2026-10', closeDate: '2026-10-23', dueDate: '2026-11-05' })
+    const charge = await db.expenses.filter((e) => e.description === 'Cargos').first()
+    expect(charge).toMatchObject({ statementPeriod: '2026-10', date: '2026-10-23' })
+  })
+})

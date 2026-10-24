@@ -45,6 +45,12 @@ partida doble no tenía sentido, así que se reemplazó por esta entidad única.
 }
 ```
 
+- `tags` marca el origen de algunos gastos creados en bloque: `csv-import` (import de
+  CSV) y `conciliacion-resumen` (la diferencia con el total del banco registrada al
+  conciliar un resumen de tarjeta — fechada al cierre, fijada en ese resumen: corregir
+  el cierre la re-fecha al nuevo cierre, nunca la muda de resumen). Los ingresos
+  importados no quedan marcados: `Income` no tiene `tags`.
+
 - `amount` es siempre positivo (`minorAmount.positive()`) — es la magnitud del gasto, no
   hay signo que cargar porque no hay una segunda pata que balancear.
 - `currency` vive directo en el gasto (antes la fijaba la cuenta) — cada gasto lleva la

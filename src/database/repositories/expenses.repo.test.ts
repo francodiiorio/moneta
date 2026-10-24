@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { db } from '../db'
 import { createCategory } from './categories.repo'
 import {
-  bulkSaveExpenses,
   confirmDueProjected,
   deleteAllBySourcePlanId,
   deleteExpense,
@@ -76,25 +75,6 @@ describe('saveExpense', () => {
   it('rejects editing an id that does not exist', async () => {
     const category = await setup()
     await expect(saveExpense(input(category.id), 'no-existe')).rejects.toThrow(/No se encontró/)
-  })
-})
-
-describe('bulkSaveExpenses', () => {
-  it('writes every input atomically', async () => {
-    const category = await setup()
-    await bulkSaveExpenses([
-      input(category.id, { description: 'Uno' }),
-      input(category.id, { description: 'Dos' }),
-    ])
-    expect(await db.expenses.count()).toBe(2)
-  })
-
-  it('is all-or-nothing: one invalid input rolls back the entire batch', async () => {
-    const category = await setup()
-    await expect(
-      bulkSaveExpenses([input(category.id, { description: 'Válido' }), input(category.id, { amount: 0 })]),
-    ).rejects.toThrow(/mayor a cero/)
-    expect(await db.expenses.count()).toBe(0)
   })
 })
 

@@ -85,8 +85,9 @@ const SECTIONS: GuideSection[] = [
     icon: Upload,
     title: '7. Importá un extracto bancario',
     steps: [
-      'Desde "Movimientos" → "Importar CSV", subís el archivo y le indicás qué columna es cuál (fecha, descripción, monto), la moneda y una categoría.',
-      'Sólo se importan gastos: si el extracto trae también ingresos (columna de crédito, o un monto positivo), esas filas quedan marcadas como "no se importa" y no se pueden seleccionar.',
+      'Desde "Movimientos" → "Importar CSV", subís el archivo, elegís de dónde es (una cuenta, una tarjeta o ninguna) y le indicás qué columna es cuál (fecha, descripción, monto), la moneda y una categoría.',
+      'De una cuenta: los gastos salen de esa cuenta, y si elegís una categoría de ingreso, los créditos (plata que entró) se importan como ingresos. De una tarjeta: los gastos entran en sus resúmenes; si es el CSV del resumen del banco, elegí ese resumen y entran todos ahí. Sin cuenta ni tarjeta, los créditos no se importan.',
+      'Al importar a una cuenta, cargá el saldo que muestra el extracto: si no coincide con el de Moneta, registrás un ajuste por la diferencia. En un resumen de tarjeta cerrado, "Conciliar con el banco" compara con el total del banco y registra lo que el banco cobró de más (impuestos, intereses, comisiones) como gasto de ese resumen.',
       'Antes de confirmar, revisás una vista previa: los posibles duplicados y las filas que no se pudieron leer quedan destildados por defecto, así nunca se importa nada sin que lo veas primero.',
     ],
     link: { to: '/movimientos/importar', label: 'Ir a Importar CSV' },

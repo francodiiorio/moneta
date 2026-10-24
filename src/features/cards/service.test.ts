@@ -11,6 +11,8 @@ import {
   getStatementDetail,
   listCardSummaries,
   payStatementFromForm,
+  reconcileCurrencies,
+  reconcileStatementFromForm,
   resetStatementDates,
   statementChoices,
   undoStatementPayment,
@@ -209,5 +211,49 @@ describe('paying a statement (Fase 5)', () => {
         shown([money(50_000_00, 'ARS'), money(10_00, 'USD')]),
       ),
     ).rejects.toThrow(/cuánto se debitó/)
+  })
+})
+
+describe('reconciling a statement against the bank (Fase 6)', () => {
+  it('registers what the bank billed above Moneta as a gasto of that statement, dated at its close', async () => {
+    const card = await seed()
+    const category = await createCategory({ kind: 'expense', name: 'Impuestos' })
+    const shown = [money(50_000_00, 'ARS'), money(10_00, 'USD')]
+    const created = await reconcileStatementFromForm(
+      card.id,
+      '2026-09',
+      {
+        lines: [
+          { currency: 'ARS', bankTotal: '53.250' },
+          { currency: 'USD', bankTotal: '10' },
+        ],
+        categoryId: category.id,
+        description: '',
+      },
+      shown,
+    )
+    expect(created).toBe(1)
+    const detail = await getStatementDetail(card.id, '2026-09', '2026-10-23')
+    expect(detail?.totals).toEqual([money(53_250_00, 'ARS'), money(10_00, 'USD')])
+    expect(detail?.expenses.find((e) => e.description.startsWith('Cargos del resumen'))).toMatchObject({
+      date: '2026-09-25',
+      amount: money(3_250_00, 'ARS'),
+    })
+  })
+
+  it('nothing to register when the bank billed the same or less; rejects if the totals changed meanwhile', async () => {
+    const card = await seed()
+    const category = await createCategory({ kind: 'expense', name: 'Impuestos' })
+    const values = { lines: [{ currency: 'ARS', bankTotal: '49.000' }], categoryId: category.id, description: '' }
+    await expect(reconcileStatementFromForm(card.id, '2026-09', values, [money(50_000_00, 'ARS')])).rejects.toThrow(
+      /No hay diferencias/,
+    )
+    const stale = { ...values, lines: [{ currency: 'ARS', bankTotal: '60.000' }] }
+    await expect(reconcileStatementFromForm(card.id, '2026-09', stale, [money(40_000_00, 'ARS')])).rejects.toThrow(/cambió/)
+  })
+
+  it('asks for the statement’s currencies plus ARS and USD', () => {
+    expect(reconcileCurrencies([money(1, 'EUR')])).toEqual(['EUR', 'ARS', 'USD'])
+    expect(reconcileCurrencies([money(1, 'USD')])).toEqual(['USD', 'ARS'])
   })
 })

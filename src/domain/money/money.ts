@@ -233,15 +233,21 @@ export function formatAmountInput(value: Money): string {
   return formatMoney(value).replace(/[^\d,.-]/g, '')
 }
 
-/** `parseAmount` for live previews while the user types: a positive
- *  amount, or `undefined` for anything not (yet) readable — never throws.
- *  Saving parses again with `parseAmount`. */
-export function tryParsePositiveAmount(input: string, currency: CurrencyCode): Money | undefined {
-  if (!/\d/.test(input)) return undefined
+/** `parseAmount` for live previews while the user types, any sign:
+ *  `undefined` for anything not (yet) readable — never throws. An
+ *  accounting-style negative "(1.234,56)" is refused rather than read as
+ *  positive (`parseAmount` drops the parentheses). Saving parses again. */
+export function tryParseAmount(input: string, currency: CurrencyCode): Money | undefined {
+  if (!/\d/.test(input) || /[()]/.test(input)) return undefined
   try {
-    const parsed = parseAmount(input, currency)
-    return parsed.amount > 0 ? parsed : undefined
+    return parseAmount(input, currency)
   } catch {
     return undefined
   }
+}
+
+/** `tryParseAmount`, only a positive amount. */
+export function tryParsePositiveAmount(input: string, currency: CurrencyCode): Money | undefined {
+  const parsed = tryParseAmount(input, currency)
+  return parsed && parsed.amount > 0 ? parsed : undefined
 }

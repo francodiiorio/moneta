@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -14,6 +13,7 @@ import type { Account } from '@/domain/entities'
 import { tryParsePositiveAmount } from '@/domain/money'
 import { formatMonthLabel, todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
+import { useDialogSession } from '../hooks/useDialogSession'
 import { paymentFormSchema, type PaymentFormValues } from '../schema'
 import { payStatementFromForm, type StatementView } from '../service'
 
@@ -27,14 +27,7 @@ interface PayStatementDialogProps {
 
 export function PayStatementDialog({ cardId, cardName, statement, onOpenChange }: PayStatementDialogProps) {
   const accounts = useAccounts()
-  // The body outlives `statement` so the dialog keeps its content during
-  // the close animation; a new `key` per open starts the form fresh.
-  const [session, setSession] = useState(() => (statement ? { key: 1, statement } : undefined))
-  const [wasOpen, setWasOpen] = useState(!!statement)
-  if (!!statement !== wasOpen) {
-    setWasOpen(!!statement)
-    if (statement) setSession({ key: (session?.key ?? 0) + 1, statement })
-  }
+  const session = useDialogSession(statement)
 
   return (
     <Dialog open={!!statement} onOpenChange={onOpenChange}>
@@ -46,7 +39,7 @@ export function PayStatementDialog({ cardId, cardName, statement, onOpenChange }
             key={session.key}
             cardId={cardId}
             cardName={cardName}
-            statement={session.statement}
+            statement={session.value}
             accounts={accounts}
             onClose={() => onOpenChange(false)}
           />

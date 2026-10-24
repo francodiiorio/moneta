@@ -1,4 +1,5 @@
 import {
+  addDays as addCalendarDays,
   addMonths,
   differenceInCalendarDays,
   endOfMonth,
@@ -134,6 +135,11 @@ export function dayOfMonth(month: MonthStamp, day: number): DateStamp {
 /** Whole calendar days from `from` to `to` (negative if `to` is earlier). */
 export function daysBetween(from: DateStamp, to: DateStamp): number {
   return differenceInCalendarDays(fromDateStamp(to), fromDateStamp(from))
+}
+
+/** `date` moved `days` calendar days (negative goes back). */
+export function addDays(date: DateStamp, days: number): DateStamp {
+  return toDateStamp(addCalendarDays(fromDateStamp(date), days))
 }
 
 /** "hoy", "mañana", "en 5 días", "hace 3 días" — for a countdown to a date. */

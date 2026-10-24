@@ -14,10 +14,10 @@ const encodingSchema = z.enum(['utf-8', 'windows-1252'])
 
 /** Some banks export a single signed amount column (positive/negative
  *  meaning varies by bank), others export separate debit/credit columns
- *  — both are common enough to support without guessing. Sólo se
- *  importan gastos: el lado que no representa un gasto (positivo cuando
- *  `signConvention` es 'positive-is-income', o la columna de crédito) se
- *  excluye de la vista previa — ver service.ts. */
+ *  — both are common enough to support without guessing. The credit side
+ *  (positive when `signConvention` is 'positive-is-income', or the credit
+ *  column) only imports into an account with an income category; anywhere
+ *  else it's excluded from the preview — see service.ts. */
 export const amountMappingSchema = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('single'),
@@ -32,7 +32,29 @@ export const amountMappingSchema = z.discriminatedUnion('mode', [
 ])
 export type AmountMapping = z.infer<typeof amountMappingSchema>
 
+/** Where the imported movements go. None: plain gastos, as before
+ *  Etapa 8. An account: debit gastos, and — only with an income category —
+ *  its credits as ingresos. A card: gastos placed by date in its
+ *  statements, or all pinned to one (importing the bank's statement). */
+export const csvDestinationSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('none') }),
+  z.object({
+    kind: z.literal('account'),
+    accountId: z.string().min(1, 'Elegí una cuenta'),
+    /** '' = credits aren't imported. */
+    incomeCategoryId: z.string(),
+  }),
+  z.object({
+    kind: z.literal('card'),
+    cardId: z.string().min(1, 'Elegí una tarjeta'),
+    /** '' = each gasto by its date. */
+    statementPeriod: z.string(),
+  }),
+])
+export type CsvDestination = z.infer<typeof csvDestinationSchema>
+
 export const csvMappingSchema = z.object({
+  destination: csvDestinationSchema,
   categoryId: z.string().min(1, 'Elegí una categoría'),
   currency: z.string().min(3).max(8),
   hasHeaderRow: z.boolean(),

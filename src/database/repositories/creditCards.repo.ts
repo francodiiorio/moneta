@@ -58,6 +58,10 @@ export async function getCardCalendar(cardId: string): Promise<CardCalendar> {
  *   put them under the old calendar move (domain/cards:reassignedPeriods);
  *   the ones pinned by hand stay.
  */
+/** Marks the gastos statement reconciliation creates: the bank's charges
+ *  of THAT statement, so they never move to another one. */
+export const STATEMENT_RECONCILE_TAG = 'conciliacion-resumen'
+
 export async function reassignCardExpenses(cardId: string, before: CardCalendar, after: CardCalendar): Promise<number> {
   const today = todayStamp()
   const now = new Date().toISOString()
@@ -67,6 +71,13 @@ export async function reassignCardExpenses(cardId: string, before: CardCalendar,
   let moved = 0
   const others = []
   for (const expense of expenses) {
+    // A reconciliation charge stays in its statement, dated at its close —
+    // wherever that close moves (a later date would be past it).
+    if (expense.tags?.includes(STATEMENT_RECONCILE_TAG) && expense.statementPeriod !== undefined) {
+      const { closeDate } = statementDates(after, expense.statementPeriod)
+      if (closeDate !== expense.date) await db.expenses.update(expense.id, { date: closeDate, updatedAt: now })
+      continue
+    }
     const plan = expense.sourcePlanId !== undefined ? cardPlans.get(expense.sourcePlanId) : undefined
     if (!plan || expense.occurrenceIndex === undefined || expense.statementPeriod === undefined) {
       others.push(expense)
