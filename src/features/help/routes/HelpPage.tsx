@@ -55,8 +55,8 @@ const SECTIONS: GuideSection[] = [
     icon: CalendarSync,
     title: '4. Automatizá recurrentes y cuotas',
     steps: [
-      'En "Planes" → pestaña Recurrentes, cargá un gasto que se repite (alquiler, suscripción) y se va a generar solo cada vez que abras la app.',
-      'En la pestaña Cuotas, cargá una compra en cuotas una sola vez con el monto total y la cantidad — Moneta arma todo el cronograma. Las cuotas que todavía no vencieron aparecen como "Proyectado" en Movimientos.',
+      'En "Planes" → pestaña Recurrentes, cargá un gasto que se repite (alquiler, suscripción) y se va a generar solo cada vez que abras la app. Si se debita de una cuenta o se paga con tarjeta, elegilo en "Medio de pago".',
+      'En la pestaña Cuotas, cargá una compra en cuotas una sola vez con el monto total y la cantidad — Moneta arma todo el cronograma. Si la hiciste con tarjeta, elegila: cada cuota cae en un resumen, empezando por el de la compra. Las cuotas que todavía no vencieron aparecen como "Proyectado" en Movimientos.',
     ],
     link: { to: '/planes', label: 'Ir a Planes' },
   },

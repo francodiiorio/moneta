@@ -2,12 +2,36 @@ import { db } from '../db'
 import type { ExpenseTemplate, RecurrenceRule, RecurringPlan } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
+import { firstPendingOccurrence } from '@/domain/recurrence'
 import type { DateStamp } from '@/lib/dates'
 import { deleteAllBySourcePlanId, saveExpense, type ExpenseInput } from './expenses.repo'
+import { assertAccountAccepts } from './accounts.repo'
+import { getCardCalendar } from './creditCards.repo'
 
 export interface CreateRecurringPlanInput {
   template: ExpenseTemplate
   rule: RecurrenceRule
+}
+
+/** A plan's payment method has to accept every gasto it will still
+ *  generate — checked at the first of them (`firstPendingOccurrence`):
+ *  the debit account must share the template's currency and be open by
+ *  then, and the card must exist. Dates already generated are history, so
+ *  adding a debit to an old plan only needs the account open from now on.
+ *  Otherwise every app open would fail to materialize it. */
+async function assertPaymentMethod(input: CreateRecurringPlanInput, lastMaterializedDate?: DateStamp): Promise<void> {
+  const { accountId, cardId, currency } = input.template
+  if (accountId !== undefined) {
+    const firstPending = firstPendingOccurrence(input.rule, lastMaterializedDate)
+    if (firstPending !== undefined) {
+      await assertAccountAccepts(accountId, { date: firstPending, currency })
+    } else {
+      const account = await db.accounts.get(accountId)
+      invariant(account, `Cuenta no encontrada: ${accountId}`)
+      invariant(account.currency === currency, `La cuenta "${account.name}" es en ${account.currency}, el recurrente es en ${currency}`)
+    }
+  }
+  if (cardId !== undefined) await getCardCalendar(cardId)
 }
 
 export async function listRecurringPlans(): Promise<RecurringPlan[]> {
@@ -26,7 +50,10 @@ export async function createRecurringPlan(input: CreateRecurringPlanInput): Prom
     createdAt: now,
     updatedAt: now,
   }
-  await db.recurringPlans.add(plan)
+  await db.transaction('rw', [db.recurringPlans, db.accounts, db.creditCards, db.cardStatements], async () => {
+    await assertPaymentMethod(input)
+    await db.recurringPlans.add(plan)
+  })
   return plan
 }
 
@@ -49,10 +76,15 @@ export async function createRecurringPlan(input: CreateRecurringPlanInput): Prom
 export async function updateRecurringPlan(id: string, input: CreateRecurringPlanInput): Promise<RecurringPlan> {
   invariant(input.template.amount > 0, `El monto debe ser mayor a cero, recibido: ${input.template.amount}`)
 
-  const updated = await db.recurringPlans.update(id, {
-    template: input.template,
-    rule: input.rule,
-    updatedAt: new Date().toISOString(),
+  const updated = await db.transaction('rw', [db.recurringPlans, db.accounts, db.creditCards, db.cardStatements], async () => {
+    const existing = await db.recurringPlans.get(id)
+    invariant(existing, `No se encontró el recurrente: ${id}`)
+    await assertPaymentMethod(input, existing.lastMaterializedDate)
+    return db.recurringPlans.update(id, {
+      template: input.template,
+      rule: input.rule,
+      updatedAt: new Date().toISOString(),
+    })
   })
   invariant(updated === 1, `No se encontró el recurrente: ${id}`)
 
@@ -104,7 +136,10 @@ export async function materializePlan(
   throughDate: DateStamp,
 ): Promise<void> {
   if (entries.length === 0) return
-  await db.transaction('rw', db.recurringPlans, db.expenses, db.categories, async () => {
+  // Accounts and card tables too: a template's payment method makes each
+  // generated gasto a debit or a card purchase (saveExpense nests here).
+  const tables = [db.recurringPlans, db.expenses, db.categories, db.accounts, db.creditCards, db.cardStatements]
+  await db.transaction('rw', tables, async () => {
     for (const entry of entries) {
       await saveExpense(entry)
     }

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import {
@@ -18,6 +18,7 @@ import { DateField } from '@/components/DateField'
 import { CURRENCIES } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
+import { usePaymentOptions } from '../hooks/usePaymentOptions'
 import { getInstallmentPreview } from '../installmentPreview'
 import { createInstallmentPlanFromForm } from '../service'
 import { installmentPlanFormSchema, PLAN_CURRENCIES, type InstallmentPlanFormValues } from '../schema'
@@ -37,8 +38,11 @@ function defaultValues(): InstallmentPlanFormValues {
     count: '',
     firstDueDate: today,
     purchaseDate: today,
+    cardId: '',
   }
 }
+
+const NO_CARD = '__none__'
 
 export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPlanFormDialogProps) {
   const categories = useExpenseCategories()
@@ -55,6 +59,8 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
   const totalAmountInput = form.watch('totalAmount')
   const countInput = form.watch('count')
   const currency = form.watch('currency')
+  const cardId = useWatch({ control: form.control, name: 'cardId' })
+  const cards = usePaymentOptions()?.cards.filter((c) => !c.isArchived) ?? []
   const installmentPreview = getInstallmentPreview(totalAmountInput, countInput, currency)
 
   async function onSubmit(values: InstallmentPlanFormValues) {
@@ -177,7 +183,49 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {cards.length > 0 && (
+              <FormField
+                control={form.control}
+                name="cardId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tarjeta (opcional)</FormLabel>
+                    <Select
+                      value={field.value || NO_CARD}
+                      onValueChange={(next) => {
+                        if (next === '') return // spurious Radix value on remount
+                        field.onChange(next === NO_CARD ? '' : next)
+                        // The hidden "Primera cuota" still validates: keep it
+                        // filled (with a card it's the purchase date anyway).
+                        if (next !== NO_CARD) form.setValue('firstDueDate', form.getValues('purchaseDate'))
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value={NO_CARD}>Sin tarjeta</SelectItem>
+                        {cards.map((card) => (
+                          <SelectItem key={card.id} value={card.id}>
+                            {card.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {cardId && (
+                      <p className="text-xs text-muted-foreground">
+                        Cada cuota entra en un resumen, empezando por el de la fecha de compra.
+                      </p>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            <div className={cardId ? 'grid gap-4' : 'grid grid-cols-2 gap-4'}>
               <FormField
                 control={form.control}
                 name="purchaseDate"
@@ -191,19 +239,22 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="firstDueDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Primera cuota</FormLabel>
-                    <FormControl>
-                      <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* With a card the first cuota follows the purchase. */}
+              {!cardId && (
+                <FormField
+                  control={form.control}
+                  name="firstDueDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Primera cuota</FormLabel>
+                      <FormControl>
+                        <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
 
             <DialogFooter>

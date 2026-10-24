@@ -36,7 +36,9 @@ export function RecurringPlanRow({ item, onEdit, onTogglePaused, onDelete }: Rec
           {item.ruleDescription}
           {item.nextOccurrence && ` · Próxima: ${formatShortDate(item.nextOccurrence)}`}
         </p>
-        <p className="truncate text-xs text-muted-foreground">{item.categoryLabel}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {[item.categoryLabel, item.paymentLabel].filter(Boolean).join(' · ')}
+        </p>
       </div>
 
       <p className="shrink-0 text-sm font-semibold">

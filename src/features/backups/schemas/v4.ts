@@ -3,15 +3,19 @@ import {
   assetPriceSchema,
   budgetSchema,
   exchangeRateSchema,
-  installmentPlanSchema,
   investmentAssetSchema,
   investmentHoldingSchema,
-  recurringPlanSchema,
   savingsHoldingSchema,
   settingsSchema,
 } from '@/domain/entities'
 import { BACKUP_FORMAT } from './v1'
-import { legacyCategoryV4Schema, legacyExpenseV4Schema, legacyInvestmentLotV4Schema } from './legacy'
+import {
+  legacyCategoryV4Schema,
+  legacyExpenseV4Schema,
+  legacyInstallmentPlanV4Schema,
+  legacyInvestmentLotV4Schema,
+  legacyRecurringPlanV4Schema,
+} from './legacy'
 
 /**
  * Never edit this schema once it has shipped in a released version —
@@ -28,8 +32,8 @@ export const backupV4Schema = z.object({
   data: z.object({
     categories: z.array(legacyCategoryV4Schema),
     expenses: z.array(legacyExpenseV4Schema),
-    recurringPlans: z.array(recurringPlanSchema),
-    installmentPlans: z.array(installmentPlanSchema),
+    recurringPlans: z.array(legacyRecurringPlanV4Schema),
+    installmentPlans: z.array(legacyInstallmentPlanV4Schema),
     budgets: z.array(budgetSchema),
     exchangeRates: z.array(exchangeRateSchema),
     settings: settingsSchema.optional(),

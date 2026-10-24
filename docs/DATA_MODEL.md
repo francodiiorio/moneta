@@ -129,6 +129,28 @@ Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con ac
   con gastos, para que nunca cambien. Un override tiene que cerrar en su mes o el
   siguiente, entre los cierres vecinos (`statementOverrideProblem`), y un gasto no puede
   ir a un resumen que cerró antes de su fecha.
+- **Cuotas con tarjeta** (Fase 4b, `InstallmentPlan.cardId?`): la cuota *i* va al resumen
+  de la compra + *i* (una por resumen, nunca dos en uno) y se fecha el día de compra *i*
+  meses después, pero no después del cierre de ese resumen
+  (`domain/cards:installmentPlacement`). Con tarjeta, `firstDueDate === purchaseDate`
+  (invariante del repository e import). Al corregir fechas de la tarjeta, las cuotas de
+  resúmenes todavía abiertos se recalculan con esa misma regla (no por fecha); editar el
+  plan deja cada cuota proyectada en su resumen y su fecha.
+- **Recurrentes con medio de pago** (Fase 4b, `ExpenseTemplate.accountId?` / `cardId?`,
+  excluyentes): cada gasto generado sale de la cuenta o entra al resumen de su fecha. Al
+  guardar el plan se valida que la cuenta acepte su primera fecha (moneda, saldo inicial)
+  y que la tarjeta exista — validado contra la **próxima** fecha que el plan va a generar
+  (`domain/recurrence:firstPendingOccurrence`), así un plan con historial puede pasar a
+  débito de una cuenta abierta después. Una cuenta o tarjeta que usa un plan no se puede
+  borrar, y a la cuenta no se le puede cambiar la moneda ni correr el saldo inicial más
+  allá de esa fecha. Import y merge hacen el mismo chequeo.
+- **Dexie v9** (sin índices nuevos, sólo `.upgrade()`): limpia planes de la era del ledger —
+  la versión 4 nunca tocó `recurringPlans`/`installmentPlans`, que seguían guardando el
+  `template.accountId` de una cuenta borrada (más `kind`/`toAccountId`). Descarta los
+  recurrentes que no eran de gasto y les saca esos campos a los demás.
+- **Backup v9**: plantilla con `accountId`/`cardId` y plan de cuotas con `cardId`. La forma
+  de v4–v8 queda congelada en `legacyRecurringPlanV4Schema`/`legacyInstallmentPlanV4Schema`,
+  que descartan ese `accountId` muerto si un archivo viejo lo trae.
 - Pagar un resumen (Fase 5) nunca creará un gasto: cada compra ya se contó en su fecha.
 - Borrar una tarjeta sólo se puede sin gastos; si no, se archiva.
 
@@ -419,7 +441,7 @@ Las versiones de `db.version(N).stores(...)` en `src/database/db.ts` son **appen
 ```jsonc
 {
   "format": "moneta-backup",
-  "version": 8,
+  "version": 9,
   "exportedAt": "2026-08-23T14:03:11.000Z",
   "app": { "name": "moneta", "version": "0.0.0" },
   "checksum": "sha256 hex sobre `data` canonicalizado",

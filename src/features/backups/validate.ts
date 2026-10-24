@@ -1,6 +1,7 @@
 import { movementAccountProblem, transferProblem } from '@/domain/accounts'
 import { statementOverrideProblem, statementPeriodFor, type CardCalendar } from '@/domain/cards'
 import { isValidMonthStamp } from '@/lib/dates'
+import { firstPendingOccurrence } from '@/domain/recurrence'
 import type { LatestBackupData } from './migrations'
 
 /** Sin partida doble no hay nada que balancear — lo que queda son las
@@ -71,6 +72,33 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
       if (expense.statementPeriod < statementPeriodFor(calendar, expense.date)) {
         throw new Error(`${label}: su resumen cerró antes de la fecha del gasto`)
       }
+    }
+  }
+
+  // A plan's payment method must point at something in the file — every
+  // gasto it generates would otherwise fail (or be invalid) later.
+  for (const plan of data.installmentPlans) {
+    if (plan.cardId === undefined) continue
+    if (!calendarByCard.has(plan.cardId)) {
+      throw new Error(`Compra en cuotas "${plan.description}" (${plan.id}): la tarjeta ${plan.cardId} no existe en el backup`)
+    }
+    if (plan.firstDueDate !== plan.purchaseDate) {
+      throw new Error(`Compra en cuotas "${plan.description}" (${plan.id}): con tarjeta, la primera cuota es la fecha de compra`)
+    }
+  }
+  for (const plan of data.recurringPlans) {
+    const { accountId, cardId, description } = plan.template
+    if (cardId !== undefined && !calendarByCard.has(cardId)) {
+      throw new Error(`Recurrente "${description}" (${plan.id}): la tarjeta ${cardId} no existe en el backup`)
+    }
+    if (accountId !== undefined) {
+      const account = accountById.get(accountId)
+      if (!account) throw new Error(`Recurrente "${description}" (${plan.id}): la cuenta ${accountId} no existe en el backup`)
+      // Same check as saving the plan: the account must accept the next
+      // gasto it will generate, or the plan fails on every app open.
+      const next = firstPendingOccurrence(plan.rule, plan.lastMaterializedDate)
+      const problem = movementAccountProblem(account, { date: next ?? account.openingDate, currency: plan.template.currency })
+      if (problem) throw new Error(`Recurrente "${description}" (${plan.id}): ${problem}`)
     }
   }
 

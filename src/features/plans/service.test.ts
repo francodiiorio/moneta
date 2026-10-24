@@ -51,6 +51,7 @@ function recurringPlanFormValues(categoryId: string, overrides: Record<string, s
     startDate: '2026-01-01',
     endDate: '',
     maxOccurrences: '',
+    paymentMethod: '',
     ...overrides,
   }
 }
@@ -492,5 +493,66 @@ describe('materializeDue after a backup merge', () => {
 
     const planExpenses = await db.expenses.where('sourcePlanId').equals(plan.id).toArray()
     expect(planExpenses.map((e) => e.date).sort()).toEqual(['2026-01-01', '2026-02-01', '2026-03-01'])
+  })
+})
+
+describe('planes con medio de pago (Fase 4b)', () => {
+  afterEach(async () => {
+    await Promise.all([db.creditCards.clear(), db.cardStatements.clear(), db.accounts.clear()])
+  })
+
+  it('a recurring plan with a debit account generates gastos from that account', async () => {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
+    const category = await createCategory({ kind: 'expense', name: 'Servicios' })
+    const plan = await createRecurringPlanFromForm({
+      ...recurringPlanFormValues(category.id),
+      paymentMethod: `account:${account.id}`,
+    })
+    expect(plan.template.accountId).toBe(account.id)
+    const generated = await db.expenses.where('sourcePlanId').equals(plan.id).toArray()
+    expect(generated.length).toBeGreaterThan(0)
+    expect(generated.every((e) => e.accountId === account.id)).toBe(true)
+  })
+
+  it('an installment purchase with a card ignores the first-cuota date and starts at the purchase', async () => {
+    const { createCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const { createInstallmentPlanFromForm } = await import('./service')
+    const card = await createCreditCard({ name: 'Visa', closingDay: 25, dueDay: 5 })
+    const category = await createCategory({ kind: 'expense', name: 'Hogar' })
+    const plan = await createInstallmentPlanFromForm({
+      description: 'Sillón',
+      categoryId: category.id,
+      currency: 'ARS',
+      totalAmount: '90.000',
+      count: '3',
+      firstDueDate: '2099-01-01',
+      purchaseDate: '2026-07-15',
+      cardId: card.id,
+    })
+    expect(plan).toMatchObject({ firstDueDate: '2026-07-15', cardId: card.id })
+    const cuotas = await db.expenses.where('sourcePlanId').equals(plan.id).sortBy('date')
+    expect(cuotas.map((c) => c.statementPeriod)).toEqual(['2026-07', '2026-08', '2026-09'])
+  })
+})
+
+describe('recurrente con débito: validaciones', () => {
+  afterEach(async () => {
+    await db.accounts.clear()
+  })
+
+  it('rejects a start before the account’s opening date, or another currency', async () => {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-06-01' })
+    const category = await createCategory({ kind: 'expense', name: 'Servicios' })
+    await expect(
+      createRecurringPlanFromForm({ ...recurringPlanFormValues(category.id), paymentMethod: `account:${account.id}` }),
+    ).rejects.toThrow(/saldo inicial/)
+    await expect(
+      createRecurringPlanFromForm({
+        ...recurringPlanFormValues(category.id, { startDate: '2026-06-01', currency: 'USD' }),
+        paymentMethod: `account:${account.id}`,
+      }),
+    ).rejects.toThrow(/es en ARS/)
   })
 })

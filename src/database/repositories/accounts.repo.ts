@@ -2,6 +2,7 @@ import Dexie from 'dexie'
 import { db } from '../db'
 import type { Account, AccountAdjustment, Expense, Income, InvestmentLot, Transfer } from '@/domain/entities'
 import { movementAccountProblem } from '@/domain/accounts'
+import { firstPendingOccurrence } from '@/domain/recurrence'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import { formatFullDate, type DateStamp } from '@/lib/dates'
@@ -120,6 +121,13 @@ export async function createAccount(input: CreateAccountInput): Promise<Account>
   })
 }
 
+/** Recurring plans that debit `accountId` — they generate gastos against it
+ *  later, so the account must keep accepting them. Must run inside a
+ *  transaction covering `db.recurringPlans`. */
+async function recurringPlansDebiting(accountId: string) {
+  return db.recurringPlans.filter((p) => p.template.accountId === accountId).toArray()
+}
+
 /**
  * Rejects the two edits that would silently rewrite history: changing the
  * currency of an account that already has movements (they'd all be in
@@ -128,9 +136,23 @@ export async function createAccount(input: CreateAccountInput): Promise<Account>
  */
 export async function updateAccount(id: string, input: UpdateAccountInput): Promise<void> {
   invariant(Number.isInteger(input.openingBalance), `El saldo inicial debe ser un entero en unidades menores: ${input.openingBalance}`)
-  await db.transaction('rw', movementTables(), async () => {
+  await db.transaction('rw', [...movementTables(), db.recurringPlans], async () => {
     const existing = await db.accounts.get(id)
     invariant(existing, `Cuenta no encontrada: ${id}`)
+
+    // Recurring plans that debit it must keep working: same currency, and
+    // open by the next gasto each one will generate.
+    for (const plan of await recurringPlansDebiting(id)) {
+      invariant(
+        input.currency === existing.currency,
+        `No se puede cambiar la moneda: el recurrente "${plan.template.description}" debita de esta cuenta`,
+      )
+      const next = firstPendingOccurrence(plan.rule, plan.lastMaterializedDate)
+      invariant(
+        next === undefined || input.openingDate <= next,
+        `El recurrente "${plan.template.description}" debita de esta cuenta desde ${formatFullDate(next ?? input.openingDate)}: el saldo inicial no puede ser posterior`,
+      )
+    }
 
     const earliest = await earliestMovementDate(id)
     if (earliest !== undefined) {
@@ -169,9 +191,14 @@ export async function setAccountArchived(id: string, isArchived: boolean): Promi
  *  history gets archived instead, so no income/gasto/ajuste is ever left
  *  pointing at an account that no longer exists. */
 export async function deleteAccount(id: string): Promise<void> {
-  await db.transaction('rw', movementTables(), async () => {
+  await db.transaction('rw', [...movementTables(), db.recurringPlans], async () => {
     const earliest = await earliestMovementDate(id)
     invariant(earliest === undefined, 'La cuenta tiene movimientos — archivala en vez de borrarla')
+    const plans = await recurringPlansDebiting(id)
+    invariant(
+      plans.length === 0,
+      `Hay recurrentes que debitan de esta cuenta (${plans.map((p) => p.template.description).join(', ')}) — cambiales el medio de pago primero`,
+    )
     await db.accounts.delete(id)
   })
 }

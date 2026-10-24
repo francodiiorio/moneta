@@ -237,3 +237,44 @@ export const legacyExpenseV5Schema = legacyExpenseV4Schema.extend({
   accountId: id.optional(),
 })
 export type LegacyExpenseV5 = z.infer<typeof legacyExpenseV5Schema>
+
+/** `RecurringPlan` and `InstallmentPlan` as `schemas/v4.ts`…`v8.ts`
+ *  shipped them: a template without a payment method, a plan without a
+ *  card (Etapa 8, Fase 4b added both). Frozen so those versions keep
+ *  validating — and stripping unknown keys — exactly as before. That
+ *  matters beyond strictness: a database from the ledger era still kept
+ *  the old `template.accountId` (a deleted ledger account) until Dexie v9
+ *  cleaned it, so files exported from it carry that dead id, which must
+ *  keep being dropped on import, never read as a debit. */
+const legacyExpenseTemplateV4Schema = z.object({
+  description: z.string().min(1),
+  categoryId: id,
+  amount: minorAmount.positive(),
+  currency: currencyCode,
+})
+
+export const legacyRecurringPlanV4Schema = z.object({
+  id,
+  template: legacyExpenseTemplateV4Schema,
+  rule: legacyRecurrenceRuleSchema,
+  lastMaterializedDate: dateStamp.optional(),
+  isPaused: z.boolean(),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type LegacyRecurringPlanV4 = z.infer<typeof legacyRecurringPlanV4Schema>
+
+export const legacyInstallmentPlanV4Schema = z.object({
+  id,
+  description: z.string().min(1),
+  categoryId: id,
+  totalAmount: minorAmount,
+  currency: currencyCode,
+  count: z.number().int().positive(),
+  firstDueDate: dateStamp,
+  purchaseDate: dateStamp,
+  scheduleCache: z.array(minorAmount),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type LegacyInstallmentPlanV4 = z.infer<typeof legacyInstallmentPlanV4Schema>

@@ -20,7 +20,9 @@ export function InstallmentPlanRow({ item, onEdit, onDelete }: InstallmentPlanRo
           <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} />
           <div className="min-w-0">
             <p className="truncate font-medium">{item.description}</p>
-            <p className="truncate text-xs text-muted-foreground">{item.categoryLabel}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {[item.categoryLabel, item.paymentLabel].filter(Boolean).join(' · ')}
+            </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">

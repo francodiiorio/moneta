@@ -29,7 +29,7 @@ export interface StatementOverrideInput {
  * transaction. Returns how many expenses moved to another statement.
  */
 export async function setStatementOverride(input: StatementOverrideInput): Promise<number> {
-  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses], async () => {
+  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans], async () => {
     const before = await getCardCalendar(input.cardId)
     const problem = statementOverrideProblem(before, input.period, input.closeDate, input.dueDate)
     invariant(problem === undefined, problem ?? '')
@@ -51,7 +51,7 @@ export async function setStatementOverride(input: StatementOverrideInput): Promi
 
 /** Goes back to the card's default days for `period`. */
 export async function removeStatementOverride(cardId: string, period: MonthStamp): Promise<number> {
-  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses], async () => {
+  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans], async () => {
     const before = await getCardCalendar(cardId)
     await db.cardStatements.where('[cardId+period]').equals([cardId, period]).delete()
     return reassignCardExpenses(cardId, before, await getCardCalendar(cardId))

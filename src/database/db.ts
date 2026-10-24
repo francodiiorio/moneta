@@ -238,6 +238,40 @@ export class MonetaDatabase extends Dexie {
       cardStatements: 'id, cardId, &[cardId+period]',
       expenses: 'id, date, categoryId, status, sourcePlanId, accountId, cardId, [cardId+statementPeriod], [status+date]',
     })
+    // Etapa 8, Fase 4b: limpieza de planes que vienen de antes de la Etapa 7.
+    // El .upgrade() de la versión 4 rearmó `expenses` pero nunca tocó
+    // `recurringPlans`/`installmentPlans`: sus plantillas siguen guardando
+    // la forma del ledger viejo (`kind`, `toAccountId`, y un `accountId`
+    // que apunta a una cuenta que la versión 4 borró). Mientras nadie leía
+    // `template.accountId` daba igual; desde la Fase 4b es el débito del
+    // recurrente, y ese id muerto haría fallar cada gasto que genere. Mismo
+    // criterio que la migración de backup v3→v4: un recurrente que no era
+    // de gasto se descarta, y a los demás se les sacan los campos viejos.
+    this.version(9)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx
+          .table<{ template: Record<string, unknown> }>('recurringPlans')
+          .toCollection()
+          .modify((plan, ref) => {
+            const { template } = plan
+            if (template['kind'] !== undefined && template['kind'] !== 'expense') {
+              delete (ref as { value?: unknown }).value
+              return
+            }
+            if (template['kind'] !== undefined) {
+              delete template['kind']
+              delete template['toAccountId']
+              delete template['accountId']
+            }
+          })
+        await tx
+          .table<Record<string, unknown>>('installmentPlans')
+          .toCollection()
+          .modify((plan) => {
+            delete plan['accountId']
+          })
+      })
   }
 }
 

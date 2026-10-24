@@ -1346,3 +1346,24 @@ ni cuotas), y reasignar todo lo de períodos abiertos (pisaría las correcciones
 **Avisos:** el Dashboard muestra, por tarjeta, el resumen en curso (cuándo cierra, cuánto
 lleva) y el anterior (cuándo vence, cuánto es). Sin backend no hay notificaciones push
 programables: el aviso aparece al abrir la app.
+
+## Cuotas y recurrentes con medio de pago (Etapa 8, Fase 4b)
+
+**Cuotas con tarjeta:** la cuota *i* se ubica con una sola regla
+(`domain/cards:installmentPlacement`): resumen de la compra + *i*, fechada el día de compra
+*i* meses después pero nunca después de ese cierre. Se usa al crear el plan y cuando una
+corrección de fechas reubica cuotas de resúmenes abiertos, así crear el plan antes o
+después de corregir un cierre da lo mismo. La alternativa revisada y descartada (mover las
+cuotas "por fecha", como un gasto suelto) dejaba dos cuotas en un resumen y ninguna en otro
+apenas un cierre se corría unos días — y el banco factura una cuota por ciclo.
+
+**Recurrentes con débito/tarjeta:** el medio de pago se valida contra la próxima fecha que
+el plan va a generar (no contra su `startDate`: lo ya generado es historia), y una cuenta o
+tarjeta que usa un plan queda protegida (no se borra, no cambia de moneda ni corre su saldo
+inicial más allá). Si no, el plan fallaría en silencio cada vez que se abre la app.
+
+**Planes de la era del ledger:** la migración Dexie v4 nunca limpió `recurringPlans`: sus
+plantillas guardaban un `accountId` de una cuenta que esa misma versión borró. Mientras nadie
+lo leía era inofensivo; desde que `template.accountId` es un débito, hacía fallar cada gasto
+generado y rompía el round-trip del backup. Dexie v9 lo limpia, y el backup v9 congela la
+forma vieja de v4–v8 para que ese id muerto se descarte al importar.

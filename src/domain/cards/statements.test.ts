@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { money } from '@/domain/money'
 import {
+  installmentPlacement,
   openStatement,
   reassignedPeriods,
   statementDates,
@@ -122,5 +123,38 @@ describe('statementOverrideProblem', () => {
   it('rejects a due date before the close, and invalid dates', () => {
     expect(statementOverrideProblem(visa, '2026-10', '2026-10-25', '2026-10-24')).toMatch(/vencimiento/)
     expect(statementOverrideProblem(visa, '2026-10', '2026-02-31', '2026-03-05')).toMatch(/inválida/)
+  })
+})
+
+describe('installmentPlacement', () => {
+  const all = (cal: CardCalendar, purchase: string, count: number) =>
+    Array.from({ length: count }, (_, i) => installmentPlacement(cal, purchase, i))
+
+  it('one cuota per statement, starting at the purchase’s, dated the purchase day', () => {
+    expect(all(visa, '2026-10-10', 3)).toEqual([
+      { period: '2026-10', date: '2026-10-10' },
+      { period: '2026-11', date: '2026-11-10' },
+      { period: '2026-12', date: '2026-12-10' },
+    ])
+  })
+
+  it('a purchase after the close starts on the next statement', () => {
+    expect(all(visa, '2026-10-26', 2).map((p) => p.period)).toEqual(['2026-11', '2026-12'])
+  })
+
+  it('a close moved before the cuota’s day keeps it in its statement, dated at the close', () => {
+    const cal: CardCalendar = { ...visa, overrides: [{ period: '2026-11', closeDate: '2026-11-08', dueDate: '2026-11-18' }] }
+    expect(all(cal, '2026-10-10', 3)).toEqual([
+      { period: '2026-10', date: '2026-10-10' },
+      { period: '2026-11', date: '2026-11-08' },
+      { period: '2026-12', date: '2026-12-10' },
+    ])
+  })
+
+  it('every cuota stays at or before its statement’s close (never billed in a closed one)', () => {
+    const cal: CardCalendar = { card: { closingDay: 5, dueDay: 15 }, overrides: [] }
+    for (const { period, date } of all(cal, '2026-01-31', 6)) {
+      expect(date <= statementDates(cal, period).closeDate).toBe(true)
+    }
   })
 })

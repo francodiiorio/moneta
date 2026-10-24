@@ -195,12 +195,22 @@ export const recurrenceRuleSchema = z.object({
 })
 export type RecurrenceRule = z.infer<typeof recurrenceRuleSchema>
 
-export const expenseTemplateSchema = z.object({
-  description: z.string().min(1),
-  categoryId: id,
-  amount: minorAmount.positive(),
-  currency: currencyCode,
-})
+// Medio de pago de un recurrente (Etapa 8, Fase 4b): a lo sumo uno —
+// débito de una cuenta o tarjeta de crédito. Cada gasto generado lo hereda;
+// con tarjeta, entra al resumen que corresponde a su fecha.
+export const expenseTemplateSchema = z
+  .object({
+    description: z.string().min(1),
+    categoryId: id,
+    amount: minorAmount.positive(),
+    currency: currencyCode,
+    accountId: id.optional(),
+    cardId: id.optional(),
+  })
+  .refine((t) => t.accountId === undefined || t.cardId === undefined, {
+    message: 'Un recurrente se paga con débito o con tarjeta, no con los dos',
+    path: ['cardId'],
+  })
 export type ExpenseTemplate = z.infer<typeof expenseTemplateSchema>
 
 export const recurringPlanSchema = z.object({
@@ -224,6 +234,9 @@ export const installmentPlanSchema = z.object({
   firstDueDate: dateStamp,
   purchaseDate: dateStamp,
   scheduleCache: z.array(minorAmount),
+  // Etapa 8, Fase 4b: comprada con tarjeta — la cuota i va al resumen de la
+  // compra + i (domain/cards:installmentStatementPeriod).
+  cardId: id.optional(),
   createdAt: isoInstant,
   updatedAt: isoInstant,
 })

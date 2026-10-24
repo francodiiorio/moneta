@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecurrenceRule } from '@/domain/entities'
-import { describeRule, generateOccurrences, nextOccurrenceAfter } from './occurrences'
+import { describeRule, generateOccurrences, nextOccurrenceAfter, firstPendingOccurrence } from './occurrences'
 
 function rule(overrides: Partial<RecurrenceRule> & Pick<RecurrenceRule, 'freq' | 'startDate'>): RecurrenceRule {
   return { interval: 1, ...overrides }
@@ -86,5 +86,21 @@ describe('describeRule', () => {
 
   it('describes a rule with interval > 1', () => {
     expect(describeRule(rule({ freq: 'weekly', interval: 2, startDate: '2026-01-01' }))).toBe('Cada 2 semanas')
+  })
+})
+
+describe('firstPendingOccurrence', () => {
+  const rule = { freq: 'monthly' as const, interval: 1, dayOfMonth: 5, startDate: '2025-01-05' }
+
+  it('is the very first occurrence when nothing was generated yet', () => {
+    expect(firstPendingOccurrence(rule, undefined)).toBe('2025-01-05')
+  })
+
+  it('is the next one after the last generated date', () => {
+    expect(firstPendingOccurrence(rule, '2026-06-05')).toBe('2026-07-05')
+  })
+
+  it('is undefined once the rule is exhausted', () => {
+    expect(firstPendingOccurrence({ ...rule, maxOccurrences: 2 }, '2025-02-05')).toBeUndefined()
   })
 })

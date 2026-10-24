@@ -1,9 +1,17 @@
-import { categoriesRepo, expensesRepo, installmentPlansRepo, recurringPlansRepo } from '@/database/repositories'
-import type { ExpenseTemplate, Category, InstallmentPlan, RecurringPlan } from '@/domain/entities'
+import {
+  accountsRepo,
+  categoriesRepo,
+  creditCardsRepo,
+  expensesRepo,
+  installmentPlansRepo,
+  recurringPlansRepo,
+} from '@/database/repositories'
+import type { Account, Category, CreditCard, ExpenseTemplate, InstallmentPlan, RecurringPlan } from '@/domain/entities'
 import type { ExpenseInput } from '@/database/repositories/expenses.repo'
 import { describeRule, generateOccurrences, nextOccurrenceAfter } from '@/domain/recurrence'
 import { money, parseAmount, sub, sumMoney, type Money } from '@/domain/money'
 import { todayStamp, type DateStamp } from '@/lib/dates'
+import { parsePaymentMethod } from './schema'
 import type { InstallmentPlanEditFormValues, InstallmentPlanFormValues, RecurringPlanFormValues } from './schema'
 
 /** Thrown by createRecurringPlanFromForm/updateRecurringPlanFromForm/
@@ -36,6 +44,10 @@ function buildTemplateEntry(
     status: 'confirmed',
     sourcePlanId,
     occurrenceIndex,
+    // The template's payment method: a debit from an account, or a card
+    // purchase placed in its statement by date (no statementPeriod given).
+    ...(template.accountId !== undefined && { accountId: template.accountId }),
+    ...(template.cardId !== undefined && { cardId: template.cardId }),
   }
 }
 
@@ -134,6 +146,8 @@ export interface RecurringPlanListItem {
   categoryLabel?: string
   categoryColor?: string
   categoryIcon?: string
+  /** "Débito · Galicia" / "Tarjeta · Visa" — absent when unspecified. */
+  paymentLabel?: string
   amount: Money
   ruleDescription: string
   isPaused: boolean
@@ -145,12 +159,15 @@ export interface RecurringPlanListItem {
 }
 
 export async function listRecurringPlansWithNext(): Promise<RecurringPlanListItem[]> {
-  const [plans, categories, planExpenses] = await Promise.all([
+  const [plans, categories, planExpenses, { accounts, cards }] = await Promise.all([
     recurringPlansRepo.listRecurringPlans(),
     categoriesRepo.listCategories(),
     expensesRepo.listPlanExpenses(),
+    listPaymentOptions(),
   ])
   const categoryById = new Map(categories.map((c) => [c.id, c] as [string, Category]))
+  const accountName = new Map(accounts.map((a) => [a.id, a.name]))
+  const cardName = new Map(cards.map((c) => [c.id, c.name]))
   const today = todayStamp()
 
   const generatedCountByPlanId = new Map<string, number>()
@@ -170,6 +187,8 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
       categoryLabel: category?.name ?? '—',
       ...(category?.color !== undefined && { categoryColor: category.color }),
       ...(category?.icon !== undefined && { categoryIcon: category.icon }),
+      ...(template.accountId !== undefined && { paymentLabel: `Débito · ${accountName.get(template.accountId) ?? 'cuenta'}` }),
+      ...(template.cardId !== undefined && { paymentLabel: `Tarjeta · ${cardName.get(template.cardId) ?? 'tarjeta'}` }),
       amount: money(template.amount, template.currency),
       ruleDescription: describeRule(plan.rule),
       isPaused: plan.isPaused,
@@ -189,6 +208,7 @@ function buildRecurringPlanWrite(values: RecurringPlanFormValues): { template: E
     categoryId: values.categoryId,
     amount: amount.amount,
     currency: values.currency,
+    ...parsePaymentMethod(values.paymentMethod),
   }
 
   const interval = Number(values.interval)
@@ -280,6 +300,8 @@ export interface InstallmentPlanListItem {
   categoryLabel: string
   categoryColor?: string
   categoryIcon?: string
+  /** "Tarjeta · Visa" when bought with a card. */
+  paymentLabel?: string
   totalAmount: Money
   count: number
   confirmedCount: number
@@ -287,11 +309,13 @@ export interface InstallmentPlanListItem {
 }
 
 export async function listInstallmentPlansWithProgress(): Promise<InstallmentPlanListItem[]> {
-  const [plans, categories, planExpenses] = await Promise.all([
+  const [plans, categories, planExpenses, { cards }] = await Promise.all([
     installmentPlansRepo.listInstallmentPlans(),
     categoriesRepo.listCategories(),
     expensesRepo.listPlanExpenses(),
+    listPaymentOptions(),
   ])
+  const cardName = new Map(cards.map((c) => [c.id, c.name]))
   const categoryById = new Map(categories.map((c) => [c.id, c] as [string, Category]))
 
   // Indexed by occurrenceIndex, not just counted, so that deleting or
@@ -323,6 +347,7 @@ export async function listInstallmentPlansWithProgress(): Promise<InstallmentPla
       plan,
       description: plan.description,
       categoryLabel: category?.name ?? 'Categoría eliminada',
+      ...(plan.cardId !== undefined && { paymentLabel: `Tarjeta · ${cardName.get(plan.cardId) ?? 'tarjeta'}` }),
       ...(category?.color !== undefined && { categoryColor: category.color }),
       ...(category?.icon !== undefined && { categoryIcon: category.icon }),
       totalAmount,
@@ -342,9 +367,19 @@ export async function createInstallmentPlanFromForm(values: InstallmentPlanFormV
     currency: values.currency,
     totalAmount: totalAmount.amount,
     count: Number(values.count),
-    firstDueDate: values.firstDueDate,
+    // With a card, cuotas follow the purchase (one per statement from it
+    // on), so the first one is dated the purchase day.
+    firstDueDate: values.cardId ? values.purchaseDate : values.firstDueDate,
     purchaseDate: values.purchaseDate,
+    ...(values.cardId && { cardId: values.cardId }),
   })
+}
+
+/** Accounts and cards for the plans' payment method pickers — archived
+ *  ones included, so an existing plan keeps showing its own. */
+export async function listPaymentOptions(): Promise<{ accounts: Account[]; cards: CreditCard[] }> {
+  const [accounts, cards] = await Promise.all([accountsRepo.listAccounts(), creditCardsRepo.listCreditCards()])
+  return { accounts, cards }
 }
 
 /** Narrower than createInstallmentPlanFromForm — see

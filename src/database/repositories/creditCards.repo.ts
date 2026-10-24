@@ -1,6 +1,12 @@
 import { db } from '../db'
 import type { CreditCard } from '@/domain/entities'
-import { reassignedPeriods, statementDates, statementPeriodFor, type CardCalendar } from '@/domain/cards'
+import {
+  installmentPlacement,
+  reassignedPeriods,
+  statementDates,
+  statementPeriodFor,
+  type CardCalendar,
+} from '@/domain/cards'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import { todayStamp } from '@/lib/dates'
@@ -38,16 +44,46 @@ export async function getCardCalendar(cardId: string): Promise<CardCalendar> {
   return { card, overrides }
 }
 
-/** Moves the card's automatically placed expenses whose statement changed
- *  between two calendars (domain/cards:reassignedPeriods). Must run inside
- *  a transaction covering `db.expenses`. */
+/**
+ * Re-places the card's gastos after its calendar changed (an override
+ * added/edited/removed, or new default days), in the caller's transaction
+ * (which must cover `db.expenses` and `db.installmentPlans`). Returns how
+ * many moved.
+ *
+ * - Cuotas of a card installment plan follow their own rule
+ *   (domain/cards:installmentPlacement — purchase's statement + i, dated
+ *   within it), recomputed with the new calendar; only ones whose
+ *   statement is still open move, a closed one was already billed.
+ * - Everything else: only the ones that were where automatic placement
+ *   put them under the old calendar move (domain/cards:reassignedPeriods);
+ *   the ones pinned by hand stay.
+ */
 export async function reassignCardExpenses(cardId: string, before: CardCalendar, after: CardCalendar): Promise<number> {
+  const today = todayStamp()
+  const now = new Date().toISOString()
   const expenses = await db.expenses.where('cardId').equals(cardId).toArray()
-  const moves = reassignedPeriods(expenses, before, after)
-  for (const move of moves) {
-    await db.expenses.update(move.id, { statementPeriod: move.statementPeriod, updatedAt: new Date().toISOString() })
+  const cardPlans = new Map((await db.installmentPlans.filter((p) => p.cardId === cardId).toArray()).map((p) => [p.id, p]))
+
+  let moved = 0
+  const others = []
+  for (const expense of expenses) {
+    const plan = expense.sourcePlanId !== undefined ? cardPlans.get(expense.sourcePlanId) : undefined
+    if (!plan || expense.occurrenceIndex === undefined || expense.statementPeriod === undefined) {
+      others.push(expense)
+      continue
+    }
+    if (statementDates(before, expense.statementPeriod).closeDate < today) continue
+    const placement = installmentPlacement(after, plan.purchaseDate, expense.occurrenceIndex)
+    if (placement.period === expense.statementPeriod && placement.date === expense.date) continue
+    await db.expenses.update(expense.id, { statementPeriod: placement.period, date: placement.date, updatedAt: now })
+    moved += 1
   }
-  return moves.length
+
+  for (const move of reassignedPeriods(others, before, after)) {
+    await db.expenses.update(move.id, { statementPeriod: move.statementPeriod, updatedAt: now })
+    moved += 1
+  }
+  return moved
 }
 
 export async function createCreditCard(input: CreditCardInput): Promise<CreditCard> {
@@ -86,7 +122,7 @@ export async function updateCreditCard(
   input: Omit<CreditCardInput, 'notes'> & { notes: string | undefined },
 ): Promise<number> {
   assertDays(input)
-  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses], async () => {
+  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans], async () => {
     const existing = await db.creditCards.get(id)
     invariant(existing, `Tarjeta no encontrada: ${id}`)
     const before = await getCardCalendar(id)
@@ -126,9 +162,14 @@ export async function setCreditCardArchived(id: string, isArchived: boolean): Pr
  *  archived instead (same rule as accounts). Its period overrides go with
  *  it. */
 export async function deleteCreditCard(id: string): Promise<void> {
-  await db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses], async () => {
+  const tables = [db.creditCards, db.cardStatements, db.expenses, db.recurringPlans, db.installmentPlans]
+  await db.transaction('rw', tables, async () => {
     const used = await db.expenses.where('cardId').equals(id).count()
     invariant(used === 0, 'La tarjeta tiene gastos — archivala en vez de borrarla')
+    // A plan pointing at it would fail on every future gasto.
+    const plans = await db.recurringPlans.filter((p) => p.template.cardId === id).count()
+    const installments = await db.installmentPlans.filter((p) => p.cardId === id).count()
+    invariant(plans + installments === 0, 'Hay planes que usan esta tarjeta — cambiales el medio de pago primero')
     await db.cardStatements.where('cardId').equals(id).delete()
     await db.creditCards.delete(id)
   })

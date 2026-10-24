@@ -6,6 +6,8 @@ import { minor, type CurrencyCode } from '@/domain/money'
 import { buildInstallmentSchedule, installmentAmounts } from '@/domain/installments'
 import { todayStamp, type DateStamp } from '@/lib/dates'
 import { deleteProjectedBySourcePlanId, saveExpense } from './expenses.repo'
+import { getCardCalendar } from './creditCards.repo'
+import { installmentPlacement } from '@/domain/cards'
 
 export interface CreateInstallmentPlanInput {
   description: string
@@ -15,6 +17,8 @@ export interface CreateInstallmentPlanInput {
   count: number
   firstDueDate: DateStamp
   purchaseDate: DateStamp
+  /** Bought with a credit card: each cuota goes into its statement. */
+  cardId?: string
 }
 
 export async function listInstallmentPlans(): Promise<InstallmentPlan[]> {
@@ -32,6 +36,12 @@ export async function createInstallmentPlan(
 ): Promise<InstallmentPlan> {
   invariant(input.totalAmount > 0, `El monto debe ser mayor a cero, recibido: ${input.totalAmount}`)
   invariant(input.count > 0, `La cantidad de cuotas debe ser mayor a cero, recibido: ${input.count}`)
+  // With a card the cuotas follow the purchase, one per statement: a
+  // separate first-cuota date would place them somewhere else.
+  invariant(
+    input.cardId === undefined || input.firstDueDate === input.purchaseDate,
+    'Con tarjeta, la primera cuota es la fecha de compra',
+  )
 
   const now = new Date().toISOString()
   const plan: InstallmentPlan = {
@@ -46,21 +56,30 @@ export async function createInstallmentPlan(
     scheduleCache: installmentAmounts(minor(input.totalAmount), input.count),
     createdAt: now,
     updatedAt: now,
+    ...(input.cardId !== undefined && { cardId: input.cardId }),
   }
   const schedule = buildInstallmentSchedule(plan)
 
-  await db.transaction('rw', db.installmentPlans, db.expenses, db.categories, async () => {
+  const tables = [db.installmentPlans, db.expenses, db.categories, db.creditCards, db.cardStatements]
+  await db.transaction('rw', tables, async () => {
+    const calendar = plan.cardId !== undefined ? await getCardCalendar(plan.cardId) : undefined
     await db.installmentPlans.add(plan)
     for (const occurrence of schedule) {
+      // On a card, each cuota is placed in its own statement (and dated
+      // within it) — see domain/cards:installmentPlacement.
+      const placement =
+        calendar !== undefined ? installmentPlacement(calendar, plan.purchaseDate, occurrence.index) : undefined
+      const date = placement?.date ?? occurrence.dueDate
       await saveExpense({
-        date: occurrence.dueDate,
+        date,
         description: `${plan.description} (cuota ${occurrence.index + 1}/${plan.count})`,
         categoryId: plan.categoryId,
         amount: occurrence.amount,
         currency: plan.currency,
-        status: occurrence.dueDate <= today ? 'confirmed' : 'projected',
+        status: date <= today ? 'confirmed' : 'projected',
         sourcePlanId: plan.id,
         occurrenceIndex: occurrence.index,
+        ...(plan.cardId !== undefined && placement !== undefined && { cardId: plan.cardId, statementPeriod: placement.period }),
       })
     }
   })
@@ -97,7 +116,8 @@ export interface UpdateInstallmentPlanInput {
  * historical-immutability rule as `deleteInstallmentPlan`.
  */
 export async function updateInstallmentPlan(id: string, input: UpdateInstallmentPlanInput): Promise<InstallmentPlan> {
-  return db.transaction('rw', db.installmentPlans, db.expenses, db.categories, async () => {
+  const tables = [db.installmentPlans, db.expenses, db.categories, db.creditCards, db.cardStatements]
+  return db.transaction('rw', tables, async () => {
     const existing = await db.installmentPlans.get(id)
     invariant(existing, `No se encontró la compra en cuotas: ${id}`)
 
@@ -123,7 +143,9 @@ export async function updateInstallmentPlan(id: string, input: UpdateInstallment
       invariant(occurrence, `No se encontró la cuota ${String(expense.occurrenceIndex)} en el cronograma`)
       await saveExpense(
         {
-          date: occurrence.dueDate,
+          // A card cuota keeps the date it was placed with (inside its
+          // statement); the plain schedule date could fall after its close.
+          date: expense.cardId !== undefined ? expense.date : occurrence.dueDate,
           description: `${plan.description} (cuota ${occurrence.index + 1}/${plan.count})`,
           categoryId: plan.categoryId,
           amount: occurrence.amount,
@@ -131,6 +153,12 @@ export async function updateInstallmentPlan(id: string, input: UpdateInstallment
           status: 'projected',
           sourcePlanId: plan.id,
           occurrenceIndex: occurrence.index,
+          // A cuota stays in the statement it was billed in.
+          ...(expense.cardId !== undefined &&
+            expense.statementPeriod !== undefined && {
+              cardId: expense.cardId,
+              statementPeriod: expense.statementPeriod,
+            }),
         },
         expense.id,
       )

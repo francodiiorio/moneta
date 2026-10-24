@@ -224,8 +224,9 @@ Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
    períodos con fechas corregidas), `Expense.cardId` + `statementPeriod` guardado;
    "Medio de pago" en el formulario de gasto con el resumen elegible; `/tarjetas` y
    `/tarjetas/:cardId` (resumen por período, total por moneda, corregir fechas); aviso de
-   cierre/vencimiento en el Dashboard. Dexie v8 + backup v8. (4b, pendiente) cuotas y
-   recurrentes con tarjeta: la cuota *i* cae en el resumen de la compra + *i*.
+   cierre/vencimiento en el Dashboard. Dexie v8 + backup v8. (4b, hecho) cuotas con
+   tarjeta (la cuota *i* cae en el resumen de la compra + *i*) y recurrentes con medio de
+   pago (débito o tarjeta).
 5. **Pago de resumen desde cuentas** — por moneda, con la cotización usada si la cuenta
    es de otra moneda. Sólo pago total.
 6. **CSV a cuenta o tarjeta + conciliación** contra el total real del banco.

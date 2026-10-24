@@ -221,3 +221,65 @@ describe('db.version(5) upgrade — categories get kind, accounts come back', ()
     }
   })
 })
+
+// Fase 4b: plans that come from the ledger era keep the old template shape
+// (kind/accountId/toAccountId) — version(4) never cleaned them. Once
+// template.accountId means "debit this account", that dead id would make
+// every generated gasto fail.
+describe('db.version(9) upgrade — legacy plan templates are cleaned', () => {
+  it('drops non-expense recurring plans and strips the ledger fields from the rest', async () => {
+    const name = `moneta-test-upgrade-v9-${Date.now()}`
+    const legacyDb = new Dexie(name)
+    legacyDb.version(1).stores(V1_STORES)
+    legacyDb.version(2).stores(V2_STORES)
+    legacyDb.version(3).stores({ investmentLots: 'id, assetId, date' })
+    await legacyDb.open()
+    const now = '2026-01-01T00:00:00.000Z'
+    const rule = { freq: 'monthly', interval: 1, startDate: '2026-01-01' }
+    await legacyDb.table('recurringPlans').bulkAdd([
+      {
+        id: 'rent',
+        template: { description: 'Alquiler', kind: 'expense', accountId: 'acc-old', categoryId: 'c1', amount: 100, currency: 'ARS' },
+        rule,
+        isPaused: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'salary',
+        template: { description: 'Sueldo', kind: 'income', accountId: 'acc-old', categoryId: 'c2', amount: 100, currency: 'ARS' },
+        rule,
+        isPaused: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
+    await legacyDb.table('installmentPlans').add({
+      id: 'tv',
+      description: 'Tele',
+      accountId: 'acc-old',
+      categoryId: 'c1',
+      totalAmount: 100,
+      currency: 'ARS',
+      count: 1,
+      firstDueDate: '2026-01-01',
+      purchaseDate: '2026-01-01',
+      scheduleCache: [100],
+      createdAt: now,
+      updatedAt: now,
+    })
+    legacyDb.close()
+
+    const upgraded = new MonetaDatabase(name)
+    try {
+      await upgraded.open()
+      const plans = await upgraded.recurringPlans.toArray()
+      expect(plans.map((p) => p.id)).toEqual(['rent'])
+      expect(plans[0]?.template).toEqual({ description: 'Alquiler', categoryId: 'c1', amount: 100, currency: 'ARS' })
+      expect(await upgraded.installmentPlans.get('tv')).not.toHaveProperty('accountId')
+    } finally {
+      upgraded.close()
+      await Dexie.delete(name)
+    }
+  })
+})

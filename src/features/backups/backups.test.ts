@@ -193,8 +193,9 @@ async function seedFullDatabase() {
       categoryId: category.id,
       amount: 200_000,
       currency: 'ARS',
+      accountId: account.id,
     },
-    rule: { freq: 'monthly' as const, interval: 1, startDate: '2026-01-01' },
+    rule: { freq: 'monthly' as const, interval: 1, startDate: '2026-08-01' },
     isPaused: false,
     createdAt: now,
     updatedAt: now,
@@ -207,9 +208,10 @@ async function seedFullDatabase() {
     totalAmount: 300_000,
     currency: 'ARS',
     count: 3,
-    firstDueDate: '2026-08-01',
+    firstDueDate: '2026-07-15',
     purchaseDate: '2026-07-15',
     scheduleCache: [100_000, 100_000, 100_000],
+    cardId: card.id,
     createdAt: now,
     updatedAt: now,
   })
@@ -799,10 +801,10 @@ describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
     expect(await db.expenses.count()).toBe(1)
   })
 
-  it('exports as version 8', async () => {
+  it('exports as version 9', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
-    expect(payload.version).toBe(8)
+    expect(payload.version).toBe(9)
     expect(payload.data.accounts).toHaveLength(2)
     expect(payload.data.incomes).toHaveLength(1)
     expect(payload.data.accountAdjustments).toHaveLength(1)
@@ -1105,5 +1107,68 @@ describe('revisión de la Fase 4a — backups', () => {
     await importBackup(file, { mode: 'merge' })
     expect(await db.cardStatements.where('cardId').equals(card!.id).count()).toBe(1)
     expect((await db.expenses.get(zapatillas.id))?.statementPeriod).toBe('2026-08')
+  })
+})
+
+describe('planes con medio de pago en el backup (Fase 4b)', () => {
+  it('rejects a recurring plan paid from an account that is not in the file', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.recurringPlans[0]!.template.accountId = 'ghost'
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/cuenta ghost no existe/)
+  })
+})
+
+describe('planes de antes de la Etapa 7 en el backup (Fase 4b)', () => {
+  it('a v8 file with a ledger-era template.accountId imports, dropping that dead id', () => {
+    const now = '2026-09-10T12:00:00.000Z'
+    const v8 = {
+      ...v4Payload(),
+      version: 8 as const,
+      data: {
+        ...v4Payload().data,
+        categories: v4Payload().data.categories.map((c) => ({ ...c, kind: 'expense' as const })),
+        recurringPlans: [
+          {
+            id: 'rent',
+            template: { description: 'Alquiler', categoryId: 'cat1', amount: 100, currency: 'ARS', accountId: 'acc-ledger' },
+            rule: { freq: 'monthly' as const, interval: 1, startDate: '2026-01-01' },
+            isPaused: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        accounts: [],
+        incomes: [],
+        accountAdjustments: [],
+        transfers: [],
+        creditCards: [],
+        cardStatements: [],
+      },
+    }
+    const migrated = migrateToLatest(v8)
+    expect(migrated.recurringPlans[0]?.template).toEqual({ description: 'Alquiler', categoryId: 'cat1', amount: 100, currency: 'ARS' })
+  })
+})
+
+describe('revisión de la Fase 4b — backups', () => {
+  it('rejects a debit recurring plan whose next gasto falls before its account’s opening date', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.recurringPlans[0]!.rule.startDate = '2026-01-01'
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/saldo inicial/)
+  })
+
+  it('rejects a card installment plan whose first cuota is not the purchase date', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.installmentPlans[0]!.firstDueDate = '2026-09-01'
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/primera cuota es la fecha de compra/)
   })
 })

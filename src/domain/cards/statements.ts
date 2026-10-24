@@ -1,12 +1,15 @@
 import type { CardStatement, CreditCard, Expense } from '@/domain/entities'
 import { money, sumMoney, type Money } from '@/domain/money'
+import { addMonths } from 'date-fns'
 import {
   dayOfMonth,
   formatMonthLabel,
+  fromDateStamp,
   isValidDateStamp,
   monthOf,
   monthRange,
   shiftMonth,
+  toDateStamp,
   type DateStamp,
   type MonthStamp,
 } from '@/lib/dates'
@@ -137,4 +140,25 @@ export function statementOverrideProblem(
     return 'El cierre tiene que quedar después del cierre del resumen anterior y antes del siguiente'
   }
   return undefined
+}
+
+export interface InstallmentPlacement {
+  period: MonthStamp
+  date: DateStamp
+}
+
+/**
+ * Where cuota `index` (0-based) of a card purchase on `purchaseDate`
+ * goes: the purchase's own statement + `index` — a card bills one cuota
+ * per cycle, never two in one statement nor none in another — dated the
+ * purchase day `index` months later, but never after that statement's
+ * close (a cuota can't sit in a statement that closed before it). Used
+ * both when the plan is created and when corrected dates re-place its
+ * cuotas, so both paths always agree.
+ */
+export function installmentPlacement(calendar: CardCalendar, purchaseDate: DateStamp, index: number): InstallmentPlacement {
+  const period = shiftMonth(statementPeriodFor(calendar, purchaseDate), index)
+  const sameDay = toDateStamp(addMonths(fromDateStamp(purchaseDate), index))
+  const close = statementDates(calendar, period).closeDate
+  return { period, date: sameDay <= close ? sameDay : close }
 }

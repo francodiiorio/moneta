@@ -27,6 +27,8 @@ export const recurringPlanFormSchema = z.object({
   startDate: z.string().min(1, 'Elegí una fecha de inicio'),
   endDate: z.string().optional(),
   maxOccurrences: z.string().optional(),
+  /** '' = sin especificar; 'account:<id>' = débito; 'card:<id>' = tarjeta. */
+  paymentMethod: z.string().refine((v) => v === '' || /^(account|card):.+$/.test(v), { message: 'Medio de pago inválido' }),
 })
 export type RecurringPlanFormValues = z.infer<typeof recurringPlanFormSchema>
 
@@ -38,6 +40,9 @@ export const installmentPlanFormSchema = z.object({
   count: positiveIntString,
   firstDueDate: z.string().min(1, 'Elegí la fecha de la primera cuota'),
   purchaseDate: z.string().min(1, 'Elegí la fecha de compra'),
+  /** '' = no card. With one, the first cuota's date is the purchase date
+   *  and each cuota goes into its statement. */
+  cardId: z.string(),
 })
 export type InstallmentPlanFormValues = z.infer<typeof installmentPlanFormSchema>
 
@@ -49,3 +54,20 @@ export const installmentPlanEditFormSchema = z.object({
   categoryId: z.string().min(1, 'Elegí una categoría'),
 })
 export type InstallmentPlanEditFormValues = z.infer<typeof installmentPlanEditFormSchema>
+
+/** The recurring form's single payment-method value: '' (none),
+ *  'account:<id>' (debit) or 'card:<id>' (credit card). One place to build
+ *  and read it, so the two kinds of id can never be confused. */
+export function encodePaymentMethod(method: { accountId?: string | undefined; cardId?: string | undefined }): string {
+  if (method.cardId) return `card:${method.cardId}`
+  if (method.accountId) return `account:${method.accountId}`
+  return ''
+}
+
+export function parsePaymentMethod(value: string): { accountId?: string; cardId?: string } {
+  const [type, id] = value.split(/:(.*)/s)
+  if (!id) return {}
+  if (type === 'account') return { accountId: id }
+  if (type === 'card') return { cardId: id }
+  return {}
+}

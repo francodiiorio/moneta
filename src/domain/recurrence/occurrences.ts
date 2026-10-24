@@ -80,6 +80,15 @@ export function nextOccurrenceAfter(rule: RecurrenceRule, after: DateStamp): Dat
   return undefined
 }
 
+/** The first occurrence the plan will still generate: the one after
+ *  `lastMaterializedDate`, or its very first one if it never generated
+ *  anything. `undefined` once the rule is exhausted. What a payment
+ *  method has to accept — dates already generated are history. */
+export function firstPendingOccurrence(rule: RecurrenceRule, lastMaterializedDate: DateStamp | undefined): DateStamp | undefined {
+  if (lastMaterializedDate !== undefined) return nextOccurrenceAfter(rule, lastMaterializedDate)
+  return generateOccurrences(rule, rule.startDate)[0] ?? nextOccurrenceAfter(rule, rule.startDate)
+}
+
 const FREQ_LABELS: Record<RecurrenceRule['freq'], { one: string; many: (n: number) => string }> = {
   daily: { one: 'Todos los días', many: (n) => `Cada ${n} días` },
   weekly: { one: 'Todas las semanas', many: (n) => `Cada ${n} semanas` },

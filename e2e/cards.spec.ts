@@ -102,3 +102,39 @@ test('cambiar de pestaña con una tarjeta elegida no deja dos medios de pago', a
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(page.getByText('Otros · Galicia')).toBeVisible()
 })
+
+// Etapa 8, Fase 4b: una compra en cuotas con tarjeta reparte una cuota por
+// resumen, empezando por el de la compra.
+test('una compra en cuotas con tarjeta pone una cuota en cada resumen', async ({ page }) => {
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('Visa')
+  await page.getByLabel('Día de cierre').fill('25')
+  await page.getByLabel('Día de vencimiento').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/planes')
+  await page.getByRole('tab', { name: 'Cuotas' }).click()
+  await page.getByRole('button', { name: 'Nueva compra en cuotas' }).first().click()
+  await page.getByLabel('Descripción').fill('Heladera')
+  await page.getByLabel('Monto total').fill('300.000')
+  await page.getByLabel('Cantidad de cuotas').fill('3')
+  await page.getByLabel('Categoría').click()
+  await page.getByRole('option', { name: 'Vivienda' }).click()
+  await page.getByLabel('Tarjeta (opcional)').click()
+  await page.getByRole('option', { name: 'Visa' }).click()
+  // With a card the first cuota follows the purchase date.
+  await expect(page.getByLabel('Primera cuota')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('link', { name: 'Ver resúmenes' }).click()
+  await expect(page.getByText('Heladera (cuota 1/3)')).toBeVisible()
+  await page.getByRole('button', { name: 'Resumen siguiente' }).click()
+  await expect(page.getByText('Heladera (cuota 2/3)')).toBeVisible()
+  await expect(page.getByText('Proyectado')).toBeVisible()
+  await page.getByRole('button', { name: 'Resumen siguiente' }).click()
+  await expect(page.getByText('Heladera (cuota 3/3)')).toBeVisible()
+})

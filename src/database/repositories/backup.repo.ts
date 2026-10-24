@@ -1,6 +1,7 @@
 import type { EntityTable } from 'dexie'
 import { db } from '../db'
 import { movementAccountProblem, transferProblem } from '@/domain/accounts'
+import { firstPendingOccurrence } from '@/domain/recurrence'
 import { reassignCardExpenses, getCardCalendar } from './creditCards.repo'
 import type { CardCalendar } from '@/domain/cards'
 import type {
@@ -242,6 +243,8 @@ async function assertMergedMovementsFit(added: {
   adjustments: readonly AccountAdjustment[]
   transfers: readonly Transfer[]
   investmentLots: readonly InvestmentLot[]
+  installmentPlans: readonly InstallmentPlan[]
+  recurringPlans: readonly RecurringPlan[]
 }): Promise<void> {
   const accountById = new Map((await db.accounts.toArray()).map((a) => [a.id, a]))
   const categoryKindById = new Map((await db.categories.toArray()).map((c) => [c.id, c.kind]))
@@ -271,6 +274,24 @@ async function assertMergedMovementsFit(added: {
     check(`Ajuste de saldo (${adjustment.id})`, adjustment.accountId, adjustment)
   }
   const cardIds = new Set((await db.creditCards.toArray()).map((c) => c.id))
+  for (const plan of added.installmentPlans) {
+    if (plan.cardId !== undefined && !cardIds.has(plan.cardId)) {
+      throw new Error(`Compra en cuotas "${plan.description}" (${plan.id}): la tarjeta ${plan.cardId} no existe`)
+    }
+  }
+  for (const plan of added.recurringPlans) {
+    const { accountId, cardId, description } = plan.template
+    if (cardId !== undefined && !cardIds.has(cardId)) {
+      throw new Error(`Recurrente "${description}" (${plan.id}): la tarjeta ${cardId} no existe`)
+    }
+    if (accountId !== undefined) {
+      const account = accountById.get(accountId)
+      if (!account) throw new Error(`Recurrente "${description}" (${plan.id}): la cuenta ${accountId} no existe`)
+      const next = firstPendingOccurrence(plan.rule, plan.lastMaterializedDate)
+      const problem = movementAccountProblem(account, { date: next ?? account.openingDate, currency: plan.template.currency })
+      if (problem) throw new Error(`Recurrente "${description}" (${plan.id}): ${problem} (en tu base local)`)
+    }
+  }
   for (const expense of added.expenses) {
     if (expense.cardId !== undefined && !cardIds.has(expense.cardId)) {
       throw new Error(`Gasto "${expense.description}" (${expense.id}): la tarjeta ${expense.cardId} no existe`)
@@ -430,6 +451,8 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       adjustments: accountAdjustments.added,
       transfers: transfers.added,
       investmentLots: investmentLots.added,
+      installmentPlans: installmentPlans.added,
+      recurringPlans: recurringPlans.added,
     })
     const expenses: MergeCounts = {
       added: newExpenses.length,
