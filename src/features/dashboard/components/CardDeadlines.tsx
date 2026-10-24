@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { CreditCard } from 'lucide-react'
+import { Check, CreditCard } from 'lucide-react'
 import { MoneyTotals } from '@/components/MoneyTotals'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { formatShortDate, relativeDays } from '@/lib/dates'
@@ -40,19 +40,26 @@ export function CardDeadlines() {
               </span>
               <MoneyTotals totals={current.totals} />
             </span>
-            {/* Past its due date it's no longer "what I'm about to pay"
-                (paying it gets tracked in Fase 5); nor when it's empty. */}
-            {previous.expenseCount === 0 || daysToDue < 0 ? (
-              <span className="text-xs text-muted-foreground">Nada por vencer del resumen anterior</span>
+            {previous.due === 'empty' ? (
+              <span className="text-xs text-muted-foreground">Nada por pagar del resumen anterior</span>
+            ) : previous.due === 'paid' ? (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Check className="size-3.5" />
+                Resumen anterior pagado
+              </span>
+            ) : previous.due === 'mismatch' ? (
+              <span className="text-xs font-medium text-negative">Resumen anterior pagado con diferencia</span>
             ) : (
               <span className="text-sm">
                 <span
                   className={cn(
                     'block text-xs text-muted-foreground',
-                    daysToDue >= 0 && daysToDue <= SOON && 'font-medium text-negative',
+                    (previous.due === 'overdue' || daysToDue <= SOON) && 'font-medium text-negative',
                   )}
                 >
-                  {daysToDue >= 0 ? 'Vence' : 'Venció'} el {formatShortDate(previous.dueDate)} ({relativeDays(daysToDue)})
+                  {previous.due === 'overdue'
+                    ? `Venció el ${formatShortDate(previous.dueDate)} sin pagar`
+                    : `Vence el ${formatShortDate(previous.dueDate)} (${relativeDays(daysToDue)})`}
                 </span>
                 <MoneyTotals totals={previous.totals} />
               </span>

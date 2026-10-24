@@ -3,6 +3,7 @@ import {
   add,
   applyRate,
   formatAxisAmount,
+  tryParsePositiveAmount,
   formatAmountInput,
   formatMoney,
   magnitude,
@@ -260,5 +261,15 @@ describe('percentChange', () => {
   it('rejects a negative amount, e.g. a signed net balance instead of a non-negative total', () => {
     expect(() => percentChange(money(-1000, 'ARS'), money(-500, 'ARS'))).toThrow(/non-negative/)
     expect(() => percentChange(money(1000, 'ARS'), money(-500, 'ARS'))).toThrow(/non-negative/)
+  })
+})
+
+describe('tryParsePositiveAmount', () => {
+  it('reads what parseAmount reads, only positive, and never throws', () => {
+    expect(tryParsePositiveAmount('12.500', 'ARS')).toEqual(money(12_500_00, 'ARS'))
+    expect(tryParsePositiveAmount('', 'ARS')).toBeUndefined()
+    expect(tryParsePositiveAmount('abc', 'ARS')).toBeUndefined()
+    expect(tryParsePositiveAmount('0', 'ARS')).toBeUndefined()
+    expect(tryParsePositiveAmount('-5', 'ARS')).toBeUndefined()
   })
 })

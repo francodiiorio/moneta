@@ -1,5 +1,5 @@
 import { movementAccountProblem, transferProblem } from '@/domain/accounts'
-import { statementOverrideProblem, statementPeriodFor, type CardCalendar } from '@/domain/cards'
+import { statementOverrideProblem, statementPaymentProblem, statementPeriodFor, type CardCalendar } from '@/domain/cards'
 import { isValidMonthStamp } from '@/lib/dates'
 import { firstPendingOccurrence } from '@/domain/recurrence'
 import type { LatestBackupData } from './migrations'
@@ -100,6 +100,21 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
       const problem = movementAccountProblem(account, { date: next ?? account.openingDate, currency: plan.template.currency })
       if (problem) throw new Error(`Recurrente "${description}" (${plan.id}): ${problem}`)
     }
+  }
+
+  const paymentKeys = new Set<string>()
+  for (const payment of data.statementPayments) {
+    const label = `Pago de resumen inválido (${payment.id})`
+    if (!calendarByCard.has(payment.cardId)) throw new Error(`${label}: la tarjeta ${payment.cardId} no existe en el backup`)
+    const invalidPeriod = `${label}: período ${payment.period} inválido`
+    if (!isValidMonthStamp(payment.period)) throw new Error(invalidPeriod)
+    const key = `${payment.cardId}:${payment.period}:${payment.currency}`
+    if (paymentKeys.has(key)) throw new Error(`${label}: el resumen ya tiene un pago en ${payment.currency}`)
+    paymentKeys.add(key)
+    const account = accountById.get(payment.accountId)
+    if (!account) throw new Error(`${label}: la cuenta ${payment.accountId} no existe en el backup`)
+    const problem = statementPaymentProblem(payment, account)
+    if (problem) throw new Error(`${label}: ${problem}`)
   }
 
   for (const income of data.incomes) {

@@ -111,8 +111,8 @@ export async function createCreditCard(input: CreditCardInput): Promise<CreditCa
  * Changing the default days re-places the expenses that were where the
  * OLD days put them (see `reassignCardExpenses`) — same rule as
  * correcting one period by hand — but never a statement that already
- * closed: those were billed (and, from Fase 5, paid) with the old days.
- * So first, every closed period with gastos and no corrected dates gets
+ * closed: those were billed (and maybe paid) with the old days.
+ * So first, every closed period with gastos or payments and no corrected dates gets
  * its OLD dates written down as an override, freezing it: the new days
  * only apply from the statement still open today on. Returns how many
  * gastos moved.
@@ -122,14 +122,18 @@ export async function updateCreditCard(
   input: Omit<CreditCardInput, 'notes'> & { notes: string | undefined },
 ): Promise<number> {
   assertDays(input)
-  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans], async () => {
+  const tables = [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans, db.statementPayments]
+  return db.transaction('rw', tables, async () => {
     const existing = await db.creditCards.get(id)
     invariant(existing, `Tarjeta no encontrada: ${id}`)
     const before = await getCardCalendar(id)
     const openPeriod = statementPeriodFor(before, todayStamp())
     const expenses = await db.expenses.where('cardId').equals(id).toArray()
+    const payments = await db.statementPayments.where('cardId').equals(id).toArray()
     const closedPeriods = new Set(
-      expenses.map((e) => e.statementPeriod).filter((p): p is string => p !== undefined && p < openPeriod),
+      [...expenses.map((e) => e.statementPeriod), ...payments.map((p) => p.period)].filter(
+        (p): p is string => p !== undefined && p < openPeriod,
+      ),
     )
     const now = new Date().toISOString()
     for (const period of closedPeriods) {
@@ -162,10 +166,12 @@ export async function setCreditCardArchived(id: string, isArchived: boolean): Pr
  *  archived instead (same rule as accounts). Its period overrides go with
  *  it. */
 export async function deleteCreditCard(id: string): Promise<void> {
-  const tables = [db.creditCards, db.cardStatements, db.expenses, db.recurringPlans, db.installmentPlans]
+  const tables = [db.creditCards, db.cardStatements, db.expenses, db.recurringPlans, db.installmentPlans, db.statementPayments]
   await db.transaction('rw', tables, async () => {
     const used = await db.expenses.where('cardId').equals(id).count()
     invariant(used === 0, 'La tarjeta tiene gastos — archivala en vez de borrarla')
+    const payments = await db.statementPayments.where('cardId').equals(id).count()
+    invariant(payments === 0, 'La tarjeta tiene resúmenes pagados — archivala en vez de borrarla')
     // A plan pointing at it would fail on every future gasto.
     const plans = await db.recurringPlans.filter((p) => p.template.cardId === id).count()
     const installments = await db.installmentPlans.filter((p) => p.cardId === id).count()

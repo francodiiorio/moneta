@@ -1,18 +1,32 @@
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { ChevronLeft, ChevronRight, Receipt } from 'lucide-react'
+import { toast } from 'sonner'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { negate } from '@/domain/money'
 import { formatFullDate, formatMonthLabel, formatShortDate, isValidMonthStamp, shiftMonth, type MonthStamp } from '@/lib/dates'
 import { StatementDatesDialog } from '../components/StatementDatesDialog'
+import { PayStatementDialog } from '../components/PayStatementDialog'
+import { DueBadge } from '../components/DueBadge'
 import { MoneyTotals } from '@/components/MoneyTotals'
 import { useOpenPeriod } from '../hooks/useOpenPeriod'
 import { useStatementDetail } from '../hooks/useStatementDetail'
-import type { StatementStatus } from '../service'
+import { undoStatementPayment, type StatementStatus } from '../service'
 
 const STATUS_LABEL: Record<StatementStatus, string> = {
   open: 'En curso',
@@ -37,6 +51,20 @@ function StatementBrowser({ cardId }: { cardId: string }) {
   const period: MonthStamp | undefined = param && isValidMonthStamp(param) ? param : (openPeriod ?? undefined)
   const detail = useStatementDetail(cardId, period)
   const [editingDates, setEditingDates] = useState(false)
+  const [paying, setPaying] = useState(false)
+  const [confirmingUndo, setConfirmingUndo] = useState(false)
+
+  async function handleUndo() {
+    if (!period) return
+    try {
+      const removed = await undoStatementPayment(cardId, period)
+      toast.success(removed > 0 ? 'Pago deshecho · el débito volvió a la cuenta' : 'Ese pago ya se había deshecho')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo deshacer el pago')
+    } finally {
+      setConfirmingUndo(false)
+    }
+  }
 
   function goTo(next: MonthStamp) {
     setSearchParams(next === openPeriod ? {} : { resumen: next }, { replace: true })
@@ -91,6 +119,8 @@ function StatementBrowser({ cardId }: { cardId: string }) {
                 <div className="flex items-center gap-2">
                   <p className="text-xs text-muted-foreground">Total del resumen</p>
                   <Badge variant={detail.status === 'open' ? 'default' : 'secondary'}>{STATUS_LABEL[detail.status]}</Badge>
+                  {/* Unpaid means nothing until the statement closes. */}
+                  {(detail.status === 'closed' || detail.payments.length > 0) && <DueBadge due={detail.due} />}
                 </div>
                 <MoneyTotals totals={detail.totals} className="mt-1 text-2xl font-semibold" />
                 {detail.projectedCount > 0 && (
@@ -113,6 +143,50 @@ function StatementBrowser({ cardId }: { cardId: string }) {
               </div>
             </CardContent>
           </Card>
+
+          {detail.payments.length > 0 ? (
+            <Card>
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-1 text-sm">
+                  {detail.payments.map((payment) => (
+                    <p key={payment.id}>
+                      Pagaste <MoneyText value={payment.amount} className="font-medium" />
+                      {payment.debited.currency !== payment.amount.currency && (
+                        <>
+                          {' '}
+                          (<MoneyText value={payment.debited} />)
+                        </>
+                      )}{' '}
+                      desde {payment.accountName} el {formatShortDate(payment.date)}
+                    </p>
+                  ))}
+                  {detail.payment.status === 'mismatch' && (
+                    <p className="text-negative">
+                      El total cambió después del pago:{' '}
+                      {detail.payment.differences.map((difference, i) => (
+                        <span key={difference.currency}>
+                          {i > 0 && ' y '}
+                          {difference.amount > 0 ? 'faltan ' : 'sobran '}
+                          <MoneyText value={difference.amount > 0 ? difference : negate(difference)} />
+                        </span>
+                      ))}
+                      . Deshacé el pago y volvé a cargarlo con el total actual.
+                    </p>
+                  )}
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setConfirmingUndo(true)}>
+                  Deshacer pago
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            detail.status === 'closed' &&
+            detail.totals.length > 0 && (
+              <Button className="w-full sm:w-fit" onClick={() => setPaying(true)}>
+                Pagar resumen
+              </Button>
+            )
+          )}
 
           {detail.expenses.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">No hay gastos en este resumen.</p>
@@ -139,6 +213,28 @@ function StatementBrowser({ cardId }: { cardId: string }) {
           )}
         </>
       )}
+
+      <PayStatementDialog
+        cardId={cardId}
+        cardName={detail?.card.name ?? ''}
+        statement={paying && detail ? detail : undefined}
+        onOpenChange={(open) => (open ? undefined : setPaying(false))}
+      />
+
+      <AlertDialog open={confirmingUndo} onOpenChange={setConfirmingUndo}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Deshacer el pago de este resumen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El débito vuelve al saldo de la cuenta y el resumen queda sin pagar. Los gastos no cambian.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleUndo()}>Deshacer pago</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <StatementDatesDialog
         cardId={cardId}

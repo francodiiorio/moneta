@@ -151,7 +151,32 @@ Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con ac
 - **Backup v9**: plantilla con `accountId`/`cardId` y plan de cuotas con `cardId`. La forma
   de v4–v8 queda congelada en `legacyRecurringPlanV4Schema`/`legacyInstallmentPlanV4Schema`,
   que descartan ese `accountId` muerto si un archivo viejo lo trae.
-- Pagar un resumen (Fase 5) nunca creará un gasto: cada compra ya se contó en su fecha.
+- **StatementPayment** (Fase 5): `{ id, cardId, period, currency, amount, accountId,
+  debitedAmount, debitedCurrency, date, createdAt, updatedAt }` — **uno por moneda** del
+  resumen, único por `[cardId+period+currency]`. `amount` es lo pagado del resumen (en su
+  moneda); `debitedAmount` lo que salió de la cuenta, en la moneda de la cuenta (dos
+  montos reales, como una transferencia: la cotización implícita sólo se muestra). En la
+  misma moneda, `amount === debitedAmount` (`domain/cards:statementPaymentProblem`, que
+  también aplica `movementAccountProblem` al débito). Para el saldo es un movimiento
+  `−debitedAmount` de la cuenta en `date`. **Nunca crea un gasto**: cada compra ya se
+  contó en su fecha.
+- **Sólo pago total:** `payStatement` exige pagar todas las monedas del resumen, cada una
+  por su total actual (leído en la misma transacción; si cambió desde que el usuario lo
+  vio, rechaza), con fecha no anterior al cierre (`statementPaymentDateProblem` — se
+  chequea al pagar, no al importar: una corrección de fechas posterior no puede invalidar
+  historia). No se puede pagar dos veces: se deshace (borra los pagos del período) y se
+  vuelve a cargar. Corregir las fechas de un resumen pagado o del anterior (lo que mueve
+  gastos entre los dos) se bloquea hasta deshacer el pago; cambiar los días de la tarjeta
+  congela también los resúmenes cerrados con pagos. Estado (`domain/cards:statementPaymentState`): sin pagar, pagado, o
+  *pagado con diferencia* si el total cambió después del pago (una presentación tardía
+  fijada en ese resumen, un gasto editado) — con la diferencia por moneda. Sin pagar y
+  vencido, sólo el último resumen cerrado se marca "Venció sin pagar"; los anteriores
+  quedan "Sin pago registrado" (historia de antes de registrar pagos, o pagada por fuera).
+- **Dexie v10** (`statementPayments: 'id, cardId, accountId, date, &[cardId+period+currency]'`)
+  y **backup v10** (v9 + `statementPayments`; la migración v9→v10 agrega la lista vacía).
+  Import valida tarjeta, período, unicidad por moneda, y la cuenta con
+  `statementPaymentProblem`; merge además lo valida contra la cuenta **local**. Una
+  tarjeta con pagos no se borra; una cuenta con pagos tampoco (es un movimiento).
 - Borrar una tarjeta sólo se puede sin gastos; si no, se archiva.
 
 - **Compra de inversión con cuenta de origen** (Fase 3): `InvestmentLot` suma
@@ -407,6 +432,13 @@ cardStatements:      id, cardId, &[cardId+period]
 expenses:            id, date, categoryId, status, sourcePlanId, accountId, cardId, [cardId+statementPeriod], [status+date]
 ```
 
+**Versión 10** (Etapa 8, Fase 5 — pago de resumen; tabla nueva vacía, sin `.upgrade()`.
+La v9 sólo tiene `.upgrade()`, sin índices):
+
+```
+statementPayments:   id, cardId, accountId, date, &[cardId+period+currency]
+```
+
 Dexie omite del índice las claves `undefined`, así que `[status+date]` sólo contiene
 gastos con ambos campos seteados (siempre, en la práctica) y `sourcePlanId` sólo aquellos
 materializados por un plan — eso es lo que permite `db.expenses.where('sourcePlanId')...`
@@ -485,7 +517,11 @@ Reglas (ver `src/features/backups/`):
   `cardStatements` y `Expense.cardId`/`statementPeriod`; como `expenseSchema` ganó campos
   y `refine`s, la forma del gasto de v5–v7 quedó congelada en `legacyExpenseV5Schema`
   (`migrations/v7_to_v8.ts` arranca las tablas vacías). En modo merge, un período
-  corregido que el dispositivo local ya tiene (aunque con otro id) se saltea.
+  corregido que el dispositivo local ya tiene (aunque con otro id) se saltea. La v10
+  (Fase 5) suma `statementPayments` (vacío al migrar un v9, `migrations/v9_to_v10.ts`);
+  en merge, un resumen que el local ya pagó (en cualquier moneda) conserva sus pagos y
+  saltea todos los del archivo; uno nuevo se valida contra la cuenta local, y un período
+  corregido que movería el cierre de un resumen pagado acá se saltea.
 - Como una migración vieja (`schemas/v1.ts`, `v2.ts`, `v3.ts`) tiene que seguir validando
   un archivo `.finance` exactamente como lo hacía cuando esa versión era la última, esos
   schemas **no** pueden depender de los tipos de dominio actuales una vez que el dominio

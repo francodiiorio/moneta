@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { ArrowDownLeft, ArrowLeftRight, Landmark, MoreVertical, Receipt, Scale } from 'lucide-react'
+import { ArrowDownLeft, ArrowLeftRight, CreditCard, Landmark, MoreVertical, Receipt, Scale } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -29,6 +29,10 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
       ) : item.kind === 'investment' ? (
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Landmark className="size-4.5" />
+        </div>
+      ) : item.kind === 'cardPayment' ? (
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <CreditCard className="size-4.5" />
         </div>
       ) : item.kind === 'transfer' ? (
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -87,6 +91,14 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
             <DropdownMenuItem asChild>
               <Link to="/patrimonio?tab=inversiones">Ver en Patrimonio</Link>
             </DropdownMenuItem>
+          ) : item.kind === 'cardPayment' ? (
+            // Paid and undone from the statement itself.
+            item.cardId !== undefined &&
+            item.statementPeriod !== undefined && (
+              <DropdownMenuItem asChild>
+                <Link to={`/tarjetas/${item.cardId}?resumen=${item.statementPeriod}`}>Ver resumen</Link>
+              </DropdownMenuItem>
+            )
           ) : (
             <>
               {item.kind !== 'adjustment' && <DropdownMenuItem onSelect={onEdit}>Editar</DropdownMenuItem>}

@@ -138,3 +138,65 @@ test('una compra en cuotas con tarjeta pone una cuota en cada resumen', async ({
   await page.getByRole('button', { name: 'Resumen siguiente' }).click()
   await expect(page.getByText('Heladera (cuota 3/3)')).toBeVisible()
 })
+
+// Etapa 8, Fase 5: pagar un resumen cerrado desde una cuenta baja su saldo
+// (sin crear un gasto), se ve en Movimientos, y se puede deshacer.
+test('pagar el resumen cerrado desde una cuenta y deshacerlo', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Galicia')
+  await page.getByLabel('Saldo inicial').fill('100.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('Visa')
+  await page.getByLabel('Día de cierre').fill('28')
+  await page.getByLabel('Día de vencimiento').fill('5')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // A purchase on the 15th of the month whose statement already closed:
+  // last month while today is up to the 28th, this month after it.
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByLabel('Descripción').fill('Zapatillas')
+  await page.getByLabel('Monto').fill('30.000')
+  await page.getByLabel('Fecha', { exact: true }).click()
+  if (new Date().getDate() <= 28) await page.getByRole('button', { name: 'Ir al mes anterior' }).click()
+  await page.locator('.rdp-day:not(.rdp-outside) .rdp-day_button', { hasText: /^15$/ }).click()
+  await page.getByLabel('Medio de pago').click()
+  await page.getByRole('option', { name: 'Visa' }).click()
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Ropa' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog', { name: 'Nuevo gasto' })).not.toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Pagar', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: /^Pagar Visa/ })
+  // The account in the statement's currency is picked by default.
+  await expect(dialog.getByLabel('Desde')).toContainText('Galicia')
+  await dialog.getByRole('button', { name: 'Pagar', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByText('Pagado', { exact: true })).toBeVisible()
+
+  await page.goto('/cuentas')
+  await expect(page.getByText(/70[.,]000,00/).first()).toBeVisible()
+
+  await page.goto('/movimientos')
+  await expect(page.getByText(/^Resumen Visa de /)).toBeVisible()
+  await expect(page.getByText('Pago de tarjeta · Galicia')).toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('link', { name: 'Ver resúmenes' }).click()
+  await page.getByRole('button', { name: 'Resumen anterior' }).click()
+  await expect(page.getByText(/Pagaste .* desde Galicia/)).toBeVisible()
+  await page.getByRole('button', { name: 'Deshacer pago' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Deshacer pago' }).click()
+  await expect(page.getByRole('button', { name: 'Pagar resumen' })).toBeVisible()
+
+  await page.goto('/cuentas')
+  await expect(page.getByText(/100[.,]000,00/).first()).toBeVisible()
+})

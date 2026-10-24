@@ -5,7 +5,7 @@ import { isZero, money, type CurrencyCode, type Money } from '@/domain/money'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import { formatFullDate, type DateStamp } from '@/lib/dates'
-import { assertAccountAccepts, listAccountMovementRecords } from './accounts.repo'
+import { assertAccountAccepts, listAccountMovementRecords, movementTables } from './accounts.repo'
 
 export interface CreateAdjustmentInput {
   accountId: string
@@ -69,9 +69,7 @@ export interface AdjustToReachInput {
 export async function createAdjustmentToReach(input: AdjustToReachInput): Promise<Money | undefined> {
   invariant(Number.isInteger(input.target), `El saldo debe ser un entero en unidades menores: ${input.target}`)
 
-  // Every table a movement lives in — the same ones listAccountMovementRecords reads.
-  const tables = [db.accounts, db.incomes, db.expenses, db.accountAdjustments, db.transfers, db.investmentLots]
-  return db.transaction('rw', tables, async () => {
+  return db.transaction('rw', movementTables(), async () => {
     const account = await db.accounts.get(input.accountId)
     invariant(account, `Cuenta no encontrada: ${input.accountId}`)
     const current = accountBalanceAt(account, toAccountMovements(await listAccountMovementRecords()), input.date)

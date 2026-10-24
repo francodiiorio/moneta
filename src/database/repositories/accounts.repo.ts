@@ -1,6 +1,14 @@
 import Dexie from 'dexie'
 import { db } from '../db'
-import type { Account, AccountAdjustment, Expense, Income, InvestmentLot, Transfer } from '@/domain/entities'
+import type {
+  Account,
+  AccountAdjustment,
+  Expense,
+  Income,
+  InvestmentLot,
+  StatementPayment,
+  Transfer,
+} from '@/domain/entities'
 import { movementAccountProblem } from '@/domain/accounts'
 import { firstPendingOccurrence } from '@/domain/recurrence'
 import { generateId } from '@/lib/ids'
@@ -33,12 +41,21 @@ export interface AccountMovementRecords {
   adjustments: AccountAdjustment[]
   transfers: Transfer[]
   investmentLots: InvestmentLot[]
+  statementPayments: StatementPayment[]
 }
 
 /** Every table a movement of an account lives in — the scope any write
  *  that must see "does this account have movements?" needs. */
-function movementTables() {
-  return [db.accounts, db.incomes, db.expenses, db.accountAdjustments, db.transfers, db.investmentLots] as const
+export function movementTables() {
+  return [
+    db.accounts,
+    db.incomes,
+    db.expenses,
+    db.accountAdjustments,
+    db.transfers,
+    db.investmentLots,
+    db.statementPayments,
+  ] as const
 }
 
 export async function listAccounts(): Promise<Account[]> {
@@ -55,28 +72,32 @@ export async function getAccount(id: string): Promise<Account | undefined> {
  *  Dexie leaves `undefined` out of, so credit-card/unspecified gastos are
  *  never even read. */
 export async function listAccountMovementRecords(): Promise<AccountMovementRecords> {
-  const [incomes, expenses, adjustments, transfers, investmentLots] = await Promise.all([
+  const [incomes, expenses, adjustments, transfers, investmentLots, statementPayments] = await Promise.all([
     db.incomes.toArray(),
     db.expenses.where('accountId').above(Dexie.minKey).toArray(),
     db.accountAdjustments.toArray(),
     db.transfers.toArray(),
     db.investmentLots.where('sourceAccountId').above(Dexie.minKey).toArray(),
+    db.statementPayments.toArray(),
   ])
-  return { incomes, expenses, adjustments, transfers, investmentLots }
+  return { incomes, expenses, adjustments, transfers, investmentLots, statementPayments }
 }
 
 /** Earliest date of any movement of `accountId`, or `undefined` if it
  *  has none. Must run inside a transaction covering `movementTables()`. */
 async function earliestMovementDate(accountId: string): Promise<DateStamp | undefined> {
-  const [incomes, expenses, adjustments, transfersOut, transfersIn, lots] = await Promise.all([
+  const [incomes, expenses, adjustments, transfersOut, transfersIn, lots, payments] = await Promise.all([
     db.incomes.where('accountId').equals(accountId).toArray(),
     db.expenses.where('accountId').equals(accountId).toArray(),
     db.accountAdjustments.where('accountId').equals(accountId).toArray(),
     db.transfers.where('fromAccountId').equals(accountId).toArray(),
     db.transfers.where('toAccountId').equals(accountId).toArray(),
     db.investmentLots.where('sourceAccountId').equals(accountId).toArray(),
+    db.statementPayments.where('accountId').equals(accountId).toArray(),
   ])
-  const dates = [...incomes, ...expenses, ...adjustments, ...transfersOut, ...transfersIn, ...lots].map((m) => m.date)
+  const dates = [...incomes, ...expenses, ...adjustments, ...transfersOut, ...transfersIn, ...lots, ...payments].map(
+    (m) => m.date,
+  )
   return dates.length === 0 ? undefined : dates.reduce((min, d) => (d < min ? d : min))
 }
 

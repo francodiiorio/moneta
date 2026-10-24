@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '@/database/db'
 import { createCategory } from '@/database/repositories/categories.repo'
 import { saveExpense } from '@/database/repositories/expenses.repo'
+import { createAccount } from '@/database/repositories/accounts.repo'
 import { money } from '@/domain/money'
 import {
   correctStatementDates,
@@ -9,13 +10,22 @@ import {
   getOpenPeriod,
   getStatementDetail,
   listCardSummaries,
+  payStatementFromForm,
   resetStatementDates,
   statementChoices,
+  undoStatementPayment,
   updateCardFromForm,
 } from './service'
 
 afterEach(async () => {
-  await Promise.all([db.creditCards.clear(), db.cardStatements.clear(), db.expenses.clear(), db.categories.clear()])
+  await Promise.all([
+    db.creditCards.clear(),
+    db.cardStatements.clear(),
+    db.statementPayments.clear(),
+    db.expenses.clear(),
+    db.categories.clear(),
+    db.accounts.clear(),
+  ])
 })
 
 async function seed() {
@@ -97,5 +107,107 @@ describe('statementChoices / getOpenPeriod / form helpers', () => {
     await correctStatementDates(card.id, '2026-10', { closeDate: '2026-10-22', dueDate: '2026-11-03' })
     await resetStatementDates(card.id, '2026-10')
     expect(await db.cardStatements.count()).toBe(0)
+  })
+})
+
+describe('paying a statement (Fase 5)', () => {
+  async function seedWithAccounts() {
+    const card = await seed()
+    const base = { type: 'bank' as const, openingBalance: 0, openingDate: '2026-01-01' }
+    const pesos = await createAccount({ ...base, name: 'Galicia', currency: 'ARS' })
+    const dollars = await createAccount({ ...base, name: 'Caja USD', currency: 'USD' })
+    const shown = (totals: Parameters<typeof payStatementFromForm>[3]['totals']) => ({
+      totals,
+      accountCurrency: new Map([
+        [pesos.id, 'ARS'],
+        [dollars.id, 'USD'],
+      ]),
+    })
+    return { card, pesos, dollars, shown }
+  }
+
+  it('an unpaid closed statement is pending until its due date, overdue after', async () => {
+    const { card } = await seedWithAccounts()
+    expect((await getStatementDetail(card.id, '2026-09', '2026-10-05'))?.due).toBe('pending')
+    expect((await getStatementDetail(card.id, '2026-09', '2026-10-06'))?.due).toBe('overdue')
+    expect((await getStatementDetail(card.id, '2026-12', '2026-10-23'))?.due).toBe('empty')
+    // Two closes later it's history: no longer flagged as overdue.
+    expect((await getStatementDetail(card.id, '2026-09', '2026-11-26'))?.due).toBe('unrecorded')
+  })
+
+  it('pays each currency — the dollars from the peso account at the real debit — and shows it as paid', async () => {
+    const { card, pesos, shown } = await seedWithAccounts()
+    const totals = [money(50_000_00, 'ARS'), money(10_00, 'USD')]
+    await payStatementFromForm(
+      card.id,
+      '2026-09',
+      {
+        date: '2026-10-04',
+        lines: [
+          { currency: 'ARS', accountId: pesos.id, debitedAmount: '' },
+          { currency: 'USD', accountId: pesos.id, debitedAmount: '12.500' },
+        ],
+      },
+      shown(totals),
+    )
+    const detail = await getStatementDetail(card.id, '2026-09', '2026-10-23')
+    expect(detail?.due).toBe('paid')
+    expect(detail?.payments).toEqual([
+      expect.objectContaining({ accountName: 'Galicia', amount: money(50_000_00, 'ARS'), debited: money(50_000_00, 'ARS') }),
+      expect.objectContaining({ accountName: 'Galicia', amount: money(10_00, 'USD'), debited: money(12_500_00, 'ARS') }),
+    ])
+    const [summary] = await listCardSummaries('2026-10-23')
+    expect(summary?.previous.due).toBe('paid')
+  })
+
+  it('a gasto billed into a paid statement leaves it "paid with a difference"; undoing makes it unpaid again', async () => {
+    const { card, pesos, dollars, shown } = await seedWithAccounts()
+    const totals = [money(50_000_00, 'ARS'), money(10_00, 'USD')]
+    await payStatementFromForm(
+      card.id,
+      '2026-09',
+      {
+        date: '2026-10-04',
+        lines: [
+          { currency: 'ARS', accountId: pesos.id, debitedAmount: '' },
+          { currency: 'USD', accountId: dollars.id, debitedAmount: '' },
+        ],
+      },
+      shown(totals),
+    )
+    const category = await createCategory({ kind: 'expense', name: 'Tarde' })
+    await saveExpense({
+      date: '2026-09-15',
+      description: 'Presentación tardía',
+      categoryId: category.id,
+      amount: 2_000_00,
+      currency: 'ARS',
+      status: 'confirmed',
+      cardId: card.id,
+    })
+    const detail = await getStatementDetail(card.id, '2026-09', '2026-10-23')
+    expect(detail?.due).toBe('mismatch')
+    expect(detail?.payment.differences).toEqual([money(2_000_00, 'ARS')])
+
+    await undoStatementPayment(card.id, '2026-09')
+    expect((await getStatementDetail(card.id, '2026-09', '2026-10-23'))?.due).toBe('overdue')
+  })
+
+  it('across currencies the debited amount is required', async () => {
+    const { card, pesos, shown } = await seedWithAccounts()
+    await expect(
+      payStatementFromForm(
+        card.id,
+        '2026-09',
+        {
+          date: '2026-10-04',
+          lines: [
+            { currency: 'ARS', accountId: pesos.id, debitedAmount: '' },
+            { currency: 'USD', accountId: pesos.id, debitedAmount: '' },
+          ],
+        },
+        shown([money(50_000_00, 'ARS'), money(10_00, 'USD')]),
+      ),
+    ).rejects.toThrow(/cuánto se debitó/)
   })
 })

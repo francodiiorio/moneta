@@ -23,3 +23,16 @@ export const statementDatesFormSchema = z
     message: 'El vencimiento no puede ser anterior al cierre',
   })
 export type StatementDatesFormValues = z.infer<typeof statementDatesFormSchema>
+
+export const paymentFormSchema = z.object({
+  date: z.string().min(1, 'Ingresá la fecha del pago'),
+  lines: z.array(
+    z.object({
+      currency: z.string(),
+      accountId: z.string().min(1, 'Elegí una cuenta'),
+      /** Only asked for when the account is in another currency. */
+      debitedAmount: z.string(),
+    }),
+  ),
+})
+export type PaymentFormValues = z.infer<typeof paymentFormSchema>

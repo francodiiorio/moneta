@@ -7,6 +7,7 @@ import {
   incomesRepo,
   investmentLotsRepo,
   investmentsRepo,
+  statementPaymentsRepo,
   transfersRepo,
 } from '@/database/repositories'
 import type { Account, Category, CategoryKind, Expense } from '@/domain/entities'
@@ -22,15 +23,17 @@ export interface TransactionFilters {
 }
 
 /** What a Movimientos row can be: what the form creates (gasto, ingreso,
- *  transferencia), plus two things listed so every change to an account
+ *  transferencia), plus three things listed so every change to an account
  *  balance is visible here: an "Ajustar saldo" adjustment (created from
- *  Cuentas, only deleted here) and an investment purchase paid from an
- *  account (created and edited in Patrimonio, read-only here). */
-export type TransactionKind = MovementKind | 'transfer' | 'adjustment' | 'investment'
+ *  Cuentas, only deleted here), an investment purchase paid from an
+ *  account (created and edited in Patrimonio, read-only here) and a card
+ *  statement payment (paid and undone in Tarjetas, read-only here). */
+export type TransactionKind = MovementKind | 'transfer' | 'adjustment' | 'investment' | 'cardPayment'
 
 export const ADJUSTMENT_LABEL = 'Ajuste de saldo'
 export const TRANSFER_LABEL = 'Transferencia'
 export const INVESTMENT_LABEL = 'Compra de inversión'
+export const CARD_PAYMENT_LABEL = 'Pago de tarjeta'
 
 /** Both sides of a transfer row, as stored — what the edit form needs. */
 export interface TransferDetails {
@@ -70,7 +73,8 @@ export interface TransactionListItem {
   /** The account, card ("Visa · resumen de octubre 2026") or both
    *  accounts of a transfer ("Galicia → Caja USD"). */
   accountLabel?: string
-  /** Only for a gasto paid with a credit card. */
+  /** For a gasto paid with a credit card, and for a statement payment
+   *  (with the period it paid). */
   cardId?: string
   statementPeriod?: MonthStamp
   /** True when the gasto sits in a statement other than the one its date
@@ -85,7 +89,7 @@ export interface TransactionListItem {
 export type EditableTransactionItem = TransactionListItem & { kind: MovementKind | 'transfer' }
 
 export function isEditableTransaction(item: TransactionListItem): item is EditableTransactionItem {
-  return item.kind !== 'adjustment' && item.kind !== 'investment'
+  return item.kind !== 'adjustment' && item.kind !== 'investment' && item.kind !== 'cardPayment'
 }
 
 /** Gastos, ingresos, transferencias and saldo adjustments of `month`,
@@ -101,12 +105,13 @@ export async function listTransactionsForMonth(
   filters: TransactionFilters = {},
 ): Promise<TransactionListItem[]> {
   const { start, end } = monthRange(month)
-  const [expenses, incomes, adjustments, transfers, lots, assets, categories, accounts, cards] = await Promise.all([
+  const [expenses, incomes, adjustments, transfers, lots, payments, assets, categories, accounts, cards] = await Promise.all([
     expensesRepo.listExpensesInRange(start, end),
     incomesRepo.listIncomesInRange(start, end),
     accountAdjustmentsRepo.listAdjustmentsInRange(start, end),
     transfersRepo.listTransfersInRange(start, end),
     investmentLotsRepo.listLotsWithSourceInRange(start, end),
+    statementPaymentsRepo.listStatementPaymentsInRange(start, end),
     investmentsRepo.listInvestmentAssets(),
     categoriesRepo.listCategories(),
     accountsRepo.listAccounts(),
@@ -230,6 +235,23 @@ export async function listTransactionsForMonth(
         },
       ]
     }),
+    // One row per currency paid: each is its own debit, maybe from
+    // different accounts. Never a gasto — the purchases already were.
+    ...payments.map((payment) => ({
+      id: payment.id,
+      kind: 'cardPayment' as const,
+      date: payment.date,
+      createdAt: payment.createdAt,
+      description: `Resumen ${cardName.get(payment.cardId) ?? 'de tarjeta'} de ${formatMonthLabel(payment.period).toLowerCase()}`,
+      status: 'confirmed' as const,
+      amount: negate(money(payment.debitedAmount, payment.debitedCurrency)),
+      signed: true,
+      ...(payment.currency !== payment.debitedCurrency && { counterpart: money(payment.amount, payment.currency) }),
+      ...decorate('', payment.accountId),
+      categoryLabel: CARD_PAYMENT_LABEL,
+      cardId: payment.cardId,
+      statementPeriod: payment.period,
+    })),
   ]
 
   return items
@@ -334,6 +356,8 @@ export async function removeTransaction(id: string, kind: TransactionKind): Prom
     await transfersRepo.deleteTransfer(id)
   } else if (kind === 'investment') {
     invariant(false, 'Una compra de inversión se edita o borra desde Patrimonio')
+  } else if (kind === 'cardPayment') {
+    invariant(false, 'Un pago de resumen se deshace desde Tarjetas')
   } else if (kind === 'adjustment') {
     await accountAdjustmentsRepo.deleteAdjustment(id)
   } else {

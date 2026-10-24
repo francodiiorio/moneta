@@ -51,6 +51,12 @@ const DELETE_COPY: Record<TransactionKind, { title: string; deleted: string; fai
     deleted: 'Compra eliminada',
     failed: 'No se pudo eliminar la compra',
   },
+  // Never shown either: a statement payment is undone in Tarjetas.
+  cardPayment: {
+    title: '¿Eliminar este pago?',
+    deleted: 'Pago eliminado',
+    failed: 'No se pudo eliminar el pago',
+  },
   adjustment: {
     title: '¿Eliminar este ajuste de saldo?',
     deleted: 'Ajuste de saldo eliminado',

@@ -1,7 +1,9 @@
 import type { EntityTable } from 'dexie'
 import { db } from '../db'
 import { movementAccountProblem, transferProblem } from '@/domain/accounts'
+import { statementPaymentProblem } from '@/domain/cards'
 import { firstPendingOccurrence } from '@/domain/recurrence'
+import { shiftMonth } from '@/lib/dates'
 import { reassignCardExpenses, getCardCalendar } from './creditCards.repo'
 import type { CardCalendar } from '@/domain/cards'
 import type {
@@ -22,6 +24,7 @@ import type {
   RecurringPlan,
   SavingsHolding,
   Settings,
+  StatementPayment,
   Transfer,
 } from '@/domain/entities'
 
@@ -44,6 +47,7 @@ export interface AllTablesData {
   transfers: Transfer[]
   creditCards: CreditCard[]
   cardStatements: CardStatement[]
+  statementPayments: StatementPayment[]
 }
 
 /** Every table a full backup touches — shared by replaceAllTables and
@@ -69,6 +73,7 @@ function allTables() {
     db.transfers,
     db.creditCards,
     db.cardStatements,
+    db.statementPayments,
   ] as const
 }
 
@@ -92,6 +97,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     transfers,
     creditCards,
     cardStatements,
+    statementPayments,
   ] = await Promise.all([
     db.categories.toArray(),
     db.expenses.toArray(),
@@ -111,6 +117,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     db.transfers.toArray(),
     db.creditCards.toArray(),
     db.cardStatements.toArray(),
+    db.statementPayments.toArray(),
   ])
   return {
     categories,
@@ -130,6 +137,7 @@ export async function readAllTables(): Promise<AllTablesData> {
     transfers,
     creditCards,
     cardStatements,
+    statementPayments,
     ...(settings !== undefined && { settings }),
   }
 }
@@ -158,6 +166,7 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.transfers.clear(),
       db.creditCards.clear(),
       db.cardStatements.clear(),
+      db.statementPayments.clear(),
     ])
     await Promise.all([
       db.categories.bulkAdd(data.categories),
@@ -178,6 +187,7 @@ export async function replaceAllTables(data: AllTablesData): Promise<void> {
       db.transfers.bulkAdd(data.transfers),
       db.creditCards.bulkAdd(data.creditCards),
       db.cardStatements.bulkAdd(data.cardStatements),
+      db.statementPayments.bulkAdd(data.statementPayments),
     ])
   })
 }
@@ -211,6 +221,7 @@ export interface MergeSummary {
   transfers: MergeCounts
   creditCards: MergeCounts
   cardStatements: MergeCounts
+  statementPayments: MergeCounts
 }
 
 /** Adds only the rows of `incoming` whose id isn't already present in
@@ -397,8 +408,15 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
     // incoming row for a period this device already corrected — even under
     // another id — loses, same "local wins" rule as everything else.
     const localPeriods = new Set((await db.cardStatements.toArray()).flatMap((s) => [s.id, `${s.cardId}:${s.period}`]))
+    // Nor may it move the close of a statement this device already paid
+    // (or the one before it) — same rule as correcting dates in the app.
+    const localPayments = await db.statementPayments.toArray()
+    const paidStatements = new Set(localPayments.map((p) => `${p.cardId}:${p.period}`))
     const newStatements = data.cardStatements.filter((s) => {
       if (localPeriods.has(s.id) || localPeriods.has(`${s.cardId}:${s.period}`)) return false
+      if (paidStatements.has(`${s.cardId}:${s.period}`) || paidStatements.has(`${s.cardId}:${shiftMonth(s.period, 1)}`)) {
+        return false
+      }
       localPeriods.add(`${s.cardId}:${s.period}`)
       return true
     })
@@ -415,6 +433,29 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
     const cardStatements: MergeCounts = {
       added: newStatements.length,
       skipped: data.cardStatements.length - newStatements.length,
+    }
+
+    // A statement is paid as a whole (one payment per currency): one this
+    // device already paid in any currency keeps its local payments and
+    // skips every incoming one — local wins, and a statement never ends up
+    // with payments from two devices.
+    const localPaymentIds = new Set(localPayments.map((p) => p.id))
+    const newPayments = data.statementPayments.filter(
+      (p) => !localPaymentIds.has(p.id) && !paidStatements.has(`${p.cardId}:${p.period}`),
+    )
+    for (const payment of newPayments) {
+      const account = await db.accounts.get(payment.accountId)
+      if (!account) throw new Error(`Pago de resumen (${payment.id}): la cuenta ${payment.accountId} no existe`)
+      const problem = statementPaymentProblem(payment, account)
+      if (problem) throw new Error(`Pago de resumen (${payment.id}): ${problem} (en tu base local)`)
+      if (!(await db.creditCards.get(payment.cardId))) {
+        throw new Error(`Pago de resumen (${payment.id}): la tarjeta ${payment.cardId} no existe`)
+      }
+    }
+    if (newPayments.length > 0) await db.statementPayments.bulkAdd(newPayments)
+    const statementPayments: MergeCounts = {
+      added: newPayments.length,
+      skipped: data.statementPayments.length - newPayments.length,
     }
 
     if (data.settings && !(await db.settings.get('singleton'))) {
@@ -489,6 +530,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       transfers: { added: transfers.added.length, skipped: transfers.skipped },
       creditCards: { added: creditCards.added.length, skipped: creditCards.skipped },
       cardStatements,
+      statementPayments,
     }
   })
 }

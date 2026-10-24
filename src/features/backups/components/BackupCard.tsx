@@ -46,6 +46,7 @@ const MERGE_LABELS: Record<keyof MergeSummary, [string, string]> = {
   transfers: ['transferencia', 'transferencias'],
   creditCards: ['tarjeta', 'tarjetas'],
   cardStatements: ['fecha de resumen corregida', 'fechas de resumen corregidas'],
+  statementPayments: ['pago de resumen', 'pagos de resumen'],
 }
 
 function joinList(parts: string[]): string {

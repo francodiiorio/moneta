@@ -1,20 +1,39 @@
-import { cardStatementsRepo, categoriesRepo, creditCardsRepo } from '@/database/repositories'
+import {
+  accountsRepo,
+  cardStatementsRepo,
+  categoriesRepo,
+  creditCardsRepo,
+  statementPaymentsRepo,
+} from '@/database/repositories'
 import {
   openStatement,
   statementDates,
+  statementPaymentState,
   statementPeriodFor,
   statementTotals,
   type CardCalendar,
   type StatementDates,
+  type StatementPaymentState,
 } from '@/domain/cards'
-import type { CreditCard, Expense } from '@/domain/entities'
-import { money, type Money } from '@/domain/money'
+import type { CreditCard, Expense, StatementPayment } from '@/domain/entities'
+import { money, parseAmount, type Money } from '@/domain/money'
 import { daysBetween, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
-import type { CardFormValues, StatementDatesFormValues } from './schema'
+import { invariant } from '@/lib/invariant'
+import type { CardFormValues, PaymentFormValues, StatementDatesFormValues } from './schema'
 
 export { setCreditCardArchived, deleteCreditCard, listCreditCards } from '@/database/repositories/creditCards.repo'
+export { listAccounts } from '@/database/repositories/accounts.repo'
 
 export type StatementStatus = 'open' | 'closed' | 'upcoming'
+
+/** Where a statement stands on being paid: nothing to pay ('empty'),
+ *  paid in full, paid but its total changed afterwards ('mismatch'), or
+ *  unpaid — before its due date ('pending') or past it ('overdue').
+ *  Unpaid statements older than the last closed one are 'unrecorded': most
+ *  were paid before Moneta tracked payments (or outside it), and the bank
+ *  rolls a really unpaid one into the next statement anyway — so they're
+ *  not flagged as overdue forever. */
+export type DueState = 'empty' | 'paid' | 'mismatch' | 'pending' | 'overdue' | 'unrecorded'
 
 export interface StatementView {
   period: MonthStamp
@@ -28,6 +47,8 @@ export interface StatementView {
   expenseCount: number
   /** Future installments already billed into this statement. */
   projectedCount: number
+  payment: StatementPaymentState
+  due: DueState
 }
 
 function statusOf(calendar: CardCalendar, period: MonthStamp, today: DateStamp): StatementStatus {
@@ -36,20 +57,41 @@ function statusOf(calendar: CardCalendar, period: MonthStamp, today: DateStamp):
   return period < open ? 'closed' : 'upcoming'
 }
 
+function dueStateOf(
+  calendar: CardCalendar,
+  period: MonthStamp,
+  payment: StatementPaymentState,
+  totals: readonly Money[],
+  dueDate: DateStamp,
+  today: DateStamp,
+): DueState {
+  if (payment.status === 'paid') return 'paid'
+  if (payment.status === 'mismatch') return 'mismatch'
+  if (totals.length === 0) return 'empty'
+  if (today <= dueDate) return 'pending'
+  const lastClosed = shiftMonth(statementPeriodFor(calendar, today), -1)
+  return period < lastClosed ? 'unrecorded' : 'overdue'
+}
+
 function buildView(
   calendar: CardCalendar,
   period: MonthStamp,
   expenses: readonly Expense[],
+  payments: readonly StatementPayment[],
   today: DateStamp,
 ): StatementView {
   const dates = statementDates(calendar, period)
+  const totals = statementTotals(expenses)
+  const payment = statementPaymentState(totals, payments)
   return {
     ...dates,
     isCorrected: calendar.overrides.some((o) => o.period === period),
     status: statusOf(calendar, period, today),
-    totals: statementTotals(expenses),
+    totals,
     expenseCount: expenses.length,
     projectedCount: expenses.filter((e) => e.status === 'projected').length,
+    payment,
+    due: dueStateOf(calendar, period, payment, totals, dates.dueDate, today),
   }
 }
 
@@ -72,12 +114,14 @@ export async function listCardSummaries(today: DateStamp = todayStamp()): Promis
       const calendar = await creditCardsRepo.getCardCalendar(card.id)
       const open = openStatement(calendar, today)
       const previousPeriod = shiftMonth(open.period, -1)
-      const [currentExpenses, previousExpenses] = await Promise.all([
+      const [currentExpenses, previousExpenses, payments] = await Promise.all([
         cardStatementsRepo.listCardExpenses(card.id, open.period),
         cardStatementsRepo.listCardExpenses(card.id, previousPeriod),
+        statementPaymentsRepo.listStatementPayments(card.id),
       ])
-      const current = buildView(calendar, open.period, currentExpenses, today)
-      const previous = buildView(calendar, previousPeriod, previousExpenses, today)
+      const paymentsOf = (period: MonthStamp) => payments.filter((p) => p.period === period)
+      const current = buildView(calendar, open.period, currentExpenses, paymentsOf(open.period), today)
+      const previous = buildView(calendar, previousPeriod, previousExpenses, paymentsOf(previousPeriod), today)
       return {
         card,
         current,
@@ -98,9 +142,20 @@ export interface StatementExpenseRow {
   status: 'confirmed' | 'projected'
 }
 
+export interface StatementPaymentRow {
+  id: string
+  date: DateStamp
+  accountName: string
+  /** What it paid of the statement, in the statement's currency. */
+  amount: Money
+  /** What left the account — differs from `amount` only across currencies. */
+  debited: Money
+}
+
 export interface StatementDetail extends StatementView {
   card: CreditCard
   expenses: StatementExpenseRow[]
+  payments: StatementPaymentRow[]
 }
 
 export async function getStatementDetail(
@@ -110,16 +165,28 @@ export async function getStatementDetail(
 ): Promise<StatementDetail | undefined> {
   const card = await creditCardsRepo.getCreditCard(cardId)
   if (!card) return undefined
-  const [calendar, expenses, categories] = await Promise.all([
+  const [calendar, expenses, payments, categories, accounts] = await Promise.all([
     creditCardsRepo.getCardCalendar(cardId),
     cardStatementsRepo.listCardExpenses(cardId, period),
+    statementPaymentsRepo.listStatementPayments(cardId, period),
     categoriesRepo.listCategories(),
+    accountsRepo.listAccounts(),
   ])
   const categoryName = new Map(categories.map((c) => [c.id, c.name]))
-  const view = buildView(calendar, period, expenses, today)
+  const accountName = new Map(accounts.map((a) => [a.id, a.name]))
+  const view = buildView(calendar, period, expenses, payments, today)
   return {
     ...view,
     card,
+    payments: payments
+      .map((p) => ({
+        id: p.id,
+        date: p.date,
+        accountName: accountName.get(p.accountId) ?? '—',
+        amount: money(p.amount, p.currency),
+        debited: money(p.debitedAmount, p.debitedCurrency),
+      }))
+      .sort((a, b) => a.amount.currency.localeCompare(b.amount.currency)),
     expenses: expenses.map((e) => ({
       id: e.id,
       date: e.date,
@@ -183,4 +250,48 @@ export async function correctStatementDates(cardId: string, period: MonthStamp, 
 
 export async function resetStatementDates(cardId: string, period: MonthStamp): Promise<number> {
   return cardStatementsRepo.removeStatementOverride(cardId, period)
+}
+
+/**
+ * Pays the statement in full from the form: one line per currency of the
+ * totals the user was shown. Each debited amount is parsed in the currency
+ * the form showed for its account; in the statement's own currency the
+ * account is debited exactly the total, so nothing is asked. The
+ * repository re-reads the totals and rejects if they changed since.
+ */
+export async function payStatementFromForm(
+  cardId: string,
+  period: MonthStamp,
+  values: PaymentFormValues,
+  shown: { totals: readonly Money[]; accountCurrency: ReadonlyMap<string, string> },
+): Promise<void> {
+  const lines = await Promise.all(
+    values.lines.map(async (line) => {
+      const total = shown.totals.find((t) => t.currency === line.currency)
+      invariant(total, `El resumen no tiene saldo en ${line.currency}`)
+      const account = await accountsRepo.getAccount(line.accountId)
+      invariant(account, `Cuenta no encontrada: ${line.accountId}`)
+      const accountCurrency = shown.accountCurrency.get(account.id) ?? account.currency
+      if (accountCurrency === line.currency) {
+        return { currency: line.currency, expectedAmount: total.amount, accountId: account.id, expectedAccountCurrency: accountCurrency }
+      }
+      invariant(line.debitedAmount.trim() !== '', `Ingresá cuánto se debitó en ${accountCurrency}`)
+      const debited = parseAmount(line.debitedAmount, accountCurrency).amount
+      invariant(debited > 0, 'El monto debitado tiene que ser mayor a cero')
+      return {
+        currency: line.currency,
+        expectedAmount: total.amount,
+        accountId: account.id,
+        debitedAmount: debited,
+        expectedAccountCurrency: accountCurrency,
+      }
+    }),
+  )
+  await statementPaymentsRepo.payStatement({ cardId, period, date: values.date, lines })
+}
+
+/** Returns how many payments were removed — 0 if another tab already
+ *  undid it. */
+export async function undoStatementPayment(cardId: string, period: MonthStamp): Promise<number> {
+  return statementPaymentsRepo.undoStatementPayment(cardId, period)
 }

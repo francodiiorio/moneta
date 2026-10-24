@@ -379,3 +379,49 @@ describe('gastos con tarjeta en Movimientos (Fase 4)', () => {
     expect(pinned).toMatchObject({ statementPeriod: '2026-09', statementPinned: true })
   })
 })
+
+describe('statement payments in Movimientos (Fase 5)', () => {
+  afterEach(async () => {
+    await Promise.all([db.accounts.clear(), db.creditCards.clear(), db.statementPayments.clear()])
+  })
+
+  it('lists each currency paid as a read-only debit of its account, with what it paid of the statement', async () => {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const { createCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const { payStatement } = await import('@/database/repositories/statementPayments.repo')
+    const { saveExpense: saveExpenseRecord } = await import('@/database/repositories/expenses.repo')
+    const category = await createCategory({ kind: 'expense', name: 'Varios' })
+    const card = await createCreditCard({ name: 'Visa', closingDay: 25, dueDay: 5 })
+    const pesos = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
+    await saveExpenseRecord({
+      date: '2026-09-10',
+      description: 'Netflix',
+      categoryId: category.id,
+      amount: 10_00,
+      currency: 'USD',
+      status: 'confirmed',
+      cardId: card.id,
+    })
+    await payStatement({
+      cardId: card.id,
+      period: '2026-09',
+      date: '2026-10-04',
+      lines: [{ currency: 'USD', expectedAmount: 10_00, accountId: pesos.id, debitedAmount: 12_500_00, expectedAccountCurrency: 'ARS' }],
+    })
+
+    const rows = await listTransactionsForMonth('2026-10', { accountId: pesos.id })
+    expect(rows).toEqual([
+      expect.objectContaining({
+        kind: 'cardPayment',
+        description: 'Resumen Visa de septiembre 2026',
+        amount: { amount: -12_500_00, currency: 'ARS' },
+        counterpart: { amount: 10_00, currency: 'USD' },
+        accountLabel: 'Galicia',
+        cardId: card.id,
+        statementPeriod: '2026-09',
+      }),
+    ])
+    const { isEditableTransaction } = await import('./service')
+    expect(rows[0] && isEditableTransaction(rows[0])).toBe(false)
+  })
+})

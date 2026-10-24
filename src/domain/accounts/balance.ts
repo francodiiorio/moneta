@@ -1,4 +1,4 @@
-import type { Account, AccountAdjustment, Expense, Income, InvestmentLot, Transfer } from '@/domain/entities'
+import type { Account, AccountAdjustment, Expense, Income, InvestmentLot, StatementPayment, Transfer } from '@/domain/entities'
 import { add, getCurrency, money, negate, sub, type Money } from '@/domain/money'
 import { formatFullDate, type DateStamp } from '@/lib/dates'
 
@@ -19,6 +19,9 @@ export interface AccountMovementSources {
   /** Only lots with a source account move a balance; the rest are
    *  ignored. */
   investmentLots: readonly InvestmentLot[]
+  /** Paying a card statement debits its `debitedAmount` (never a gasto:
+   *  the purchases were already counted). */
+  statementPayments: readonly StatementPayment[]
 }
 
 /** Flattens every record that touches an account into signed movements.
@@ -27,8 +30,8 @@ export interface AccountMovementSources {
  *  without `accountId` (credit card, or unspecified) never touched an
  *  account. A transfer is two movements: its `fromAmount` leaves one
  *  account, its `toAmount` enters the other. An investment purchase with a
- *  source account takes its `sourceAmount` out of it. Card payments join
- *  here in a later phase of Etapa 8 (see docs/ROADMAP.md). */
+ *  source account takes its `sourceAmount` out of it, and paying a card
+ *  statement its `debitedAmount`. */
 export function toAccountMovements(sources: AccountMovementSources): AccountMovement[] {
   const movements: AccountMovement[] = []
   for (const income of sources.incomes) {
@@ -67,6 +70,13 @@ export function toAccountMovements(sources: AccountMovementSources): AccountMove
       accountId: lot.sourceAccountId,
       date: lot.date,
       amount: negate(money(lot.sourceAmount, lot.sourceCurrency)),
+    })
+  }
+  for (const payment of sources.statementPayments) {
+    movements.push({
+      accountId: payment.accountId,
+      date: payment.date,
+      amount: negate(money(payment.debitedAmount, payment.debitedCurrency)),
     })
   }
   return movements
@@ -156,6 +166,13 @@ export interface ImpliedRate {
   base: string
   quote: string
   rate: number
+}
+
+const rateFormatter = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 })
+
+/** "1 USD = 1.250 ARS" — for display only, like the rate itself. */
+export function formatImpliedRate(rate: ImpliedRate): string {
+  return `1 ${rate.base} = ${rateFormatter.format(rate.rate)} ${rate.quote}`
 }
 
 /** The exchange rate a cross-currency transfer actually got. Display only

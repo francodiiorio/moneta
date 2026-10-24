@@ -8,9 +8,9 @@ import { DateField } from '@/components/DateField'
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { transferImpliedRate } from '@/domain/accounts'
+import { formatImpliedRate, transferImpliedRate } from '@/domain/accounts'
 import type { Account } from '@/domain/entities'
-import { formatAmountInput, parseAmount, type Money } from '@/domain/money'
+import { formatAmountInput, tryParsePositiveAmount } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { amountString, transferFormSchema, type TransferFormValues } from '../schema'
@@ -25,20 +25,6 @@ interface TransferFormProps {
 function emptyValues(): TransferFormValues {
   return { date: todayStamp(), description: '', fromAccountId: '', toAccountId: '', fromAmount: '', toAmount: '' }
 }
-
-/** Parses for the live rate preview only — the real parse happens again
- *  in the service, against the accounts as stored. */
-function tryParse(value: string, currency: string): Money | undefined {
-  if (!/\d/.test(value)) return undefined
-  try {
-    const parsed = parseAmount(value, currency)
-    return parsed.amount > 0 ? parsed : undefined
-  } catch {
-    return undefined
-  }
-}
-
-const rateFormatter = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 })
 
 export function TransferForm({ item, onSaved, onCancel }: TransferFormProps) {
   const accounts = useAccounts()
@@ -79,8 +65,9 @@ export function TransferForm({ item, onSaved, onCancel }: TransferFormProps) {
   const to = accounts?.find((a) => a.id === toAccountId)
   const crossCurrency = !!from && !!to && from.currency !== to.currency
 
-  const fromParsed = from ? tryParse(fromAmountText, from.currency) : undefined
-  const toParsed = to && crossCurrency ? tryParse(toAmountText, to.currency) : undefined
+  // Parsed for the live rate preview only — the service parses again.
+  const fromParsed = from ? tryParsePositiveAmount(fromAmountText, from.currency) : undefined
+  const toParsed = to && crossCurrency ? tryParsePositiveAmount(toAmountText, to.currency) : undefined
   const impliedRate =
     fromParsed && toParsed
       ? transferImpliedRate({
@@ -204,8 +191,7 @@ export function TransferForm({ item, onSaved, onCancel }: TransferFormProps) {
 
         {impliedRate && (
           <p className="-mt-2 text-sm text-muted-foreground">
-            Cotización de esta operación: 1 {impliedRate.base} = {rateFormatter.format(impliedRate.rate)}{' '}
-            {impliedRate.quote}
+            Cotización de esta operación: {formatImpliedRate(impliedRate)}
           </p>
         )}
 

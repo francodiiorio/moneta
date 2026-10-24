@@ -227,8 +227,12 @@ Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
    cierre/vencimiento en el Dashboard. Dexie v8 + backup v8. (4b, hecho) cuotas con
    tarjeta (la cuota *i* cae en el resumen de la compra + *i*) y recurrentes con medio de
    pago (débito o tarjeta).
-5. **Pago de resumen desde cuentas** — por moneda, con la cotización usada si la cuenta
-   es de otra moneda. Sólo pago total.
+5. **Pago de resumen desde cuentas** (hecho) — `StatementPayment`, uno por moneda del
+   resumen, desde cualquier cuenta (si es de otra moneda se cargan los dos montos reales
+   y se muestra la cotización). Sólo pago total; se deshace y se vuelve a cargar. Estado
+   pagado / sin pagar / vencido sin pagar / pagado con diferencia en el resumen, en
+   Tarjetas y en el Dashboard; el pago se lista, de sólo lectura, en Movimientos. Nunca
+   crea un gasto. Dexie v10 + backup v10.
 6. **CSV a cuenta o tarjeta + conciliación** contra el total real del banco.
 
 Pendiente de definir dentro de la etapa: "Ingresos" y "Balance neto" en Reportes y en

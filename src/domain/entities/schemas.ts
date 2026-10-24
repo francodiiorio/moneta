@@ -182,6 +182,27 @@ export const cardStatementSchema = z
   })
 export type CardStatement = z.infer<typeof cardStatementSchema>
 
+// Etapa 8, Fase 5: el pago de un resumen, una fila por moneda del resumen
+// (un resumen trae ARS y USD por separado). `amount` está en `currency` (la
+// del resumen); `debitedAmount` en `debitedCurrency` (la de la cuenta) — los
+// DOS montos reales, nunca una tasa (mismo criterio que Transfer). Pagar un
+// resumen nunca crea un gasto: cada compra ya se contó en su fecha; sólo
+// baja el saldo de la cuenta. Sólo pago total (ver ADR).
+export const statementPaymentSchema = z.object({
+  id,
+  cardId: id,
+  period: monthStamp,
+  currency: currencyCode,
+  amount: minorAmount.positive(),
+  accountId: id,
+  debitedAmount: minorAmount.positive(),
+  debitedCurrency: currencyCode,
+  date: dateStamp,
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+})
+export type StatementPayment = z.infer<typeof statementPaymentSchema>
+
 export const recurrenceFrequencySchema = z.enum(['daily', 'weekly', 'monthly', 'yearly'])
 
 export const recurrenceRuleSchema = z.object({

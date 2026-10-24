@@ -20,6 +20,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import type { CreditCard } from '@/domain/entities'
 import { formatShortDate, relativeDays } from '@/lib/dates'
 import { CardFormDialog } from '../components/CardFormDialog'
+import { PayStatementDialog } from '../components/PayStatementDialog'
+import { DueBadge } from '../components/DueBadge'
 import { MoneyTotals } from '@/components/MoneyTotals'
 import { useCardSummaries } from '../hooks/useCardSummaries'
 import { deleteCreditCard, setCreditCardArchived, type CardSummary } from '../service'
@@ -30,6 +32,8 @@ export function CardsPage() {
   const { formOpen, editingCardId, showArchived, openCreateDialog, openEditDialog, closeDialog, toggleShowArchived } =
     useCardsUiStore()
   const [pendingDelete, setPendingDelete] = useState<CreditCard | null>(null)
+  const [payingCardId, setPayingCardId] = useState<string | null>(null)
+  const paying = summaries?.find((s) => s.card.id === payingCardId)
 
   const editingCard = summaries?.find((s) => s.card.id === editingCardId)?.card
   const active = summaries?.filter((s) => !s.card.isArchived) ?? []
@@ -92,12 +96,23 @@ export function CardsPage() {
             <MoneyTotals totals={current.totals} className="mt-1 text-lg font-semibold" />
           </div>
 
-          <div className="px-1">
-            <p className="text-xs text-muted-foreground">
-              Resumen cerrado · {daysToDue >= 0 ? 'vence' : 'venció'} el {formatShortDate(previous.dueDate)} (
-              {relativeDays(daysToDue)})
-            </p>
-            <MoneyTotals totals={previous.totals} className="mt-0.5 font-medium" />
+          <div className="flex items-end justify-between gap-2 px-1">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">
+                Resumen cerrado · {daysToDue >= 0 ? 'vence' : 'venció'} el {formatShortDate(previous.dueDate)} (
+                {relativeDays(daysToDue)})
+              </p>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                <MoneyTotals totals={previous.totals} className="font-medium" />
+                <DueBadge due={previous.due} />
+              </div>
+            </div>
+            {/* Archived too: a cancelled card still has its last statement to pay. */}
+            {(previous.due === 'pending' || previous.due === 'overdue') && (
+              <Button size="sm" onClick={() => setPayingCardId(card.id)}>
+                Pagar
+              </Button>
+            )}
           </div>
 
           <Button variant="outline" size="sm" className="w-full" asChild>
@@ -150,6 +165,13 @@ export function CardsPage() {
           )}
         </>
       )}
+
+      <PayStatementDialog
+        cardId={paying?.card.id ?? ''}
+        cardName={paying?.card.name ?? ''}
+        statement={paying?.previous}
+        onOpenChange={(open) => (open ? undefined : setPayingCardId(null))}
+      />
 
       <CardFormDialog open={formOpen} card={editingCard} onOpenChange={(open) => (open ? undefined : closeDialog())} />
 

@@ -1367,3 +1367,33 @@ plantillas guardaban un `accountId` de una cuenta que esa misma versión borró.
 lo leía era inofensivo; desde que `template.accountId` es un débito, hacía fallar cada gasto
 generado y rompía el round-trip del backup. Dexie v9 lo limpia, y el backup v9 congela la
 forma vieja de v4–v8 para que ese id muerto se descarte al importar.
+
+## Pago de resumen: un registro por moneda, sólo total, sin gasto (Etapa 8, Fase 5)
+
+**Qué es:** pagar un resumen guarda un `StatementPayment` por cada moneda del resumen (ARS y
+USD se pagan por separado, como en el banco, y pueden salir de cuentas distintas). Baja el
+saldo de la cuenta y nada más: las compras ya se contaron como gastos en su fecha, así que
+un gasto "Pago de tarjeta" las contaría dos veces en presupuestos y reportes.
+
+**Dos montos reales, como una transferencia:** pagar dólares desde una cuenta en pesos
+guarda lo pagado (USD) y lo debitado (ARS); la cotización se deriva para mostrar y nunca
+se guarda. En la misma moneda los dos montos tienen que coincidir.
+
+**Sólo pago total, y no se edita:** el usuario lo pidió así. El pago se guarda con el total
+leído en la misma transacción, y se rechaza si cambió desde que el usuario lo vio. Para
+corregirlo se deshace (vuelve el débito) y se carga de nuevo. Si después del pago el total
+cambia — un gasto fijado tarde en ese resumen, una edición —, el resumen queda "pagado con
+diferencia" y muestra cuánto falta o sobra por moneda, en vez de recalcular nada solo.
+Corregir las fechas de un resumen pagado (o del anterior) se bloquea hasta deshacer el pago:
+reubicaría gastos bajo un pago que ya fue por otro total.
+
+**Resúmenes viejos sin pago:** sólo el último resumen cerrado se marca "Venció sin pagar".
+Los anteriores quedan "Sin pago registrado", en gris: casi todos se pagaron antes de que
+Moneta registrara pagos (o por fuera), y registrarlos ahora desde una cuenta descontaría dos
+veces lo que su saldo inicial ya refleja. Si de verdad no se pagó, el banco lo arrastra al
+resumen siguiente.
+
+**Descartado:** pago parcial/mínimo (fuera de alcance, cambia el estado a "saldo
+arrastrado" entre resúmenes) y restar la deuda de tarjeta no pagada del patrimonio (el
+patrimonio sigue siendo base caja: cuentas + ahorros + inversiones; queda para más
+adelante si se pide).

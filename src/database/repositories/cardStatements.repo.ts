@@ -5,6 +5,7 @@ import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import type { DateStamp, MonthStamp } from '@/lib/dates'
 import { getCardCalendar, reassignCardExpenses } from './creditCards.repo'
+import { assertCloseCanMove } from './statementPayments.repo'
 
 /** Expenses of one card, newest first — optionally only one statement. */
 export async function listCardExpenses(cardId: string, period?: MonthStamp): Promise<Expense[]> {
@@ -29,7 +30,9 @@ export interface StatementOverrideInput {
  * transaction. Returns how many expenses moved to another statement.
  */
 export async function setStatementOverride(input: StatementOverrideInput): Promise<number> {
-  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans], async () => {
+  const tables = [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans, db.statementPayments]
+  return db.transaction('rw', tables, async () => {
+    await assertCloseCanMove(input.cardId, input.period)
     const before = await getCardCalendar(input.cardId)
     const problem = statementOverrideProblem(before, input.period, input.closeDate, input.dueDate)
     invariant(problem === undefined, problem ?? '')
@@ -51,7 +54,9 @@ export async function setStatementOverride(input: StatementOverrideInput): Promi
 
 /** Goes back to the card's default days for `period`. */
 export async function removeStatementOverride(cardId: string, period: MonthStamp): Promise<number> {
-  return db.transaction('rw', [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans], async () => {
+  const tables = [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans, db.statementPayments]
+  return db.transaction('rw', tables, async () => {
+    await assertCloseCanMove(cardId, period)
     const before = await getCardCalendar(cardId)
     await db.cardStatements.where('[cardId+period]').equals([cardId, period]).delete()
     return reassignCardExpenses(cardId, before, await getCardCalendar(cardId))

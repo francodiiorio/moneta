@@ -232,3 +232,16 @@ export function formatAxisAmount(rawMinorValue: number, currency: CurrencyCode):
 export function formatAmountInput(value: Money): string {
   return formatMoney(value).replace(/[^\d,.-]/g, '')
 }
+
+/** `parseAmount` for live previews while the user types: a positive
+ *  amount, or `undefined` for anything not (yet) readable — never throws.
+ *  Saving parses again with `parseAmount`. */
+export function tryParsePositiveAmount(input: string, currency: CurrencyCode): Money | undefined {
+  if (!/\d/.test(input)) return undefined
+  try {
+    const parsed = parseAmount(input, currency)
+    return parsed.amount > 0 ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}

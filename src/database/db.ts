@@ -17,6 +17,7 @@ import type {
   RecurringPlan,
   SavingsHolding,
   Settings,
+  StatementPayment,
   Transfer,
 } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
@@ -77,6 +78,7 @@ export class MonetaDatabase extends Dexie {
   transfers!: EntityTable<Transfer, 'id'>
   creditCards!: EntityTable<CreditCard, 'id'>
   cardStatements!: EntityTable<CardStatement, 'id'>
+  statementPayments!: EntityTable<StatementPayment, 'id'>
 
   constructor(name = 'moneta') {
     super(name)
@@ -272,6 +274,11 @@ export class MonetaDatabase extends Dexie {
             delete plan['accountId']
           })
       })
+    // Etapa 8, Fase 5: pagos de resúmenes — tabla nueva, nace vacía. Una
+    // fila por moneda de cada resumen, de ahí el índice único compuesto.
+    this.version(10).stores({
+      statementPayments: 'id, cardId, accountId, date, &[cardId+period+currency]',
+    })
   }
 }
 

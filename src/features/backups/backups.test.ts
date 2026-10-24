@@ -26,6 +26,7 @@ afterEach(async () => {
     db.transfers.clear(),
     db.creditCards.clear(),
     db.cardStatements.clear(),
+    db.statementPayments.clear(),
   ])
 })
 
@@ -149,6 +150,20 @@ async function seedFullDatabase() {
     status: 'confirmed' as const,
     cardId: card.id,
     statementPeriod: '2026-08',
+    createdAt: now,
+    updatedAt: now,
+  })
+  // August's statement, paid in full from the peso account.
+  await db.statementPayments.add({
+    id: generateId(),
+    cardId: card.id,
+    period: '2026-08',
+    currency: 'ARS',
+    amount: 30_000_00,
+    accountId: account.id,
+    debitedAmount: 30_000_00,
+    debitedCurrency: 'ARS',
+    date: '2026-09-05',
     createdAt: now,
     updatedAt: now,
   })
@@ -306,6 +321,7 @@ async function snapshotAllTables() {
     transfers: sortById(await db.transfers.toArray()),
     creditCards: sortById(await db.creditCards.toArray()),
     cardStatements: sortById(await db.cardStatements.toArray()),
+    statementPayments: sortById(await db.statementPayments.toArray()),
     settings: await db.settings.get('singleton'),
   }
 }
@@ -330,6 +346,7 @@ async function clearAllTables() {
     db.transfers.clear(),
     db.creditCards.clear(),
     db.cardStatements.clear(),
+    db.statementPayments.clear(),
   ])
 }
 
@@ -517,6 +534,7 @@ describe('backup round-trip — merge', () => {
       transfers: { added: 1, skipped: 0 },
       creditCards: { added: 1, skipped: 0 },
       cardStatements: { added: 1, skipped: 0 },
+      statementPayments: { added: 1, skipped: 0 },
     })
 
     const categoryIds = (await db.categories.toArray()).map((c) => c.id).sort()
@@ -558,6 +576,7 @@ describe('backup round-trip — merge', () => {
       transfers: { added: 0, skipped: 1 },
       creditCards: { added: 0, skipped: 1 },
       cardStatements: { added: 0, skipped: 1 },
+      statementPayments: { added: 0, skipped: 1 },
     })
     expect(await db.expenses.count()).toBe(countBefore)
   })
@@ -801,10 +820,10 @@ describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
     expect(await db.expenses.count()).toBe(1)
   })
 
-  it('exports as version 9', async () => {
+  it('exports as version 10', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
-    expect(payload.version).toBe(9)
+    expect(payload.version).toBe(10)
     expect(payload.data.accounts).toHaveLength(2)
     expect(payload.data.incomes).toHaveLength(1)
     expect(payload.data.accountAdjustments).toHaveLength(1)
@@ -1097,9 +1116,10 @@ describe('revisión de la Fase 4a — backups', () => {
     const exported = await exportBackup()
     const file = new File([exported.blob], exported.filename, { type: 'application/json' })
     const [card] = await db.creditCards.toArray()
-    // Locally: no corrected dates, and a gasto on Aug 26 (after the default
-    // 25th close) automatically in September.
+    // Locally: no corrected dates, nothing paid, and a gasto on Aug 26
+    // (after the default 25th close) automatically in September.
     await db.cardStatements.clear()
+    await db.statementPayments.clear()
     const zapatillas = (await db.expenses.toArray()).find((e) => e.description === 'Zapatillas')!
     await db.expenses.update(zapatillas.id, { date: '2026-08-26', statementPeriod: '2026-09' })
 
@@ -1170,5 +1190,83 @@ describe('revisión de la Fase 4b — backups', () => {
     payload.data.installmentPlans[0]!.firstDueDate = '2026-09-01'
     const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
     await expect(importBackup(file)).rejects.toThrow(/primera cuota es la fecha de compra/)
+  })
+})
+
+describe('pagos de resúmenes en el backup (Fase 5)', () => {
+  it('a v9 file migrates to v10 with every statement unpaid', () => {
+    const v9 = {
+      ...v4Payload(),
+      version: 9 as const,
+      data: {
+        ...v4Payload().data,
+        categories: v4Payload().data.categories.map((c) => ({ ...c, kind: 'expense' as const })),
+        accounts: [],
+        incomes: [],
+        accountAdjustments: [],
+        transfers: [],
+        creditCards: [],
+        cardStatements: [],
+      },
+    }
+    expect(migrateToLatest(v9).statementPayments).toEqual([])
+  })
+
+  it('rejects a payment whose card, account or currency key is wrong', async () => {
+    for (const [tamper, message] of [
+      [(p: Awaited<ReturnType<typeof buildBackupPayload>>) => (p.data.statementPayments[0]!.cardId = 'ghost'), /tarjeta ghost no existe/],
+      [(p: Awaited<ReturnType<typeof buildBackupPayload>>) => (p.data.statementPayments[0]!.accountId = 'ghost'), /cuenta ghost no existe/],
+      [
+        (p: Awaited<ReturnType<typeof buildBackupPayload>>) =>
+          p.data.statementPayments.push({ ...p.data.statementPayments[0]!, id: 'twin' }),
+        /ya tiene un pago en ARS/,
+      ],
+    ] as const) {
+      await seedFullDatabase()
+      const payload = await buildBackupPayload()
+      await clearAllTables()
+      tamper(payload)
+      const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+      await expect(importBackup(file)).rejects.toThrow(message)
+    }
+  })
+
+  it('merge: a statement paid locally keeps its payment — the file’s, even under another id, is skipped', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    const [local] = await db.statementPayments.toArray()
+    payload.data.statementPayments = [{ ...local!, id: 'other-device', date: '2026-09-06' }]
+    const file = new File([JSON.stringify(payload)], 'other.finance', { type: 'application/json' })
+    const result = await importBackup(file, { mode: 'merge' })
+    expect(result.merged?.statementPayments).toEqual({ added: 0, skipped: 1 })
+    expect(await db.statementPayments.toArray()).toEqual([local])
+  })
+
+  it('merge: a new payment must fit the LOCAL account (its currency changed here)', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    const [local] = await db.statementPayments.toArray()
+    await db.statementPayments.clear()
+    await db.accounts.update(local!.accountId, { currency: 'USD' })
+    const file = new File([JSON.stringify(payload)], 'other.finance', { type: 'application/json' })
+    await expect(importBackup(file, { mode: 'merge' })).rejects.toThrow(/en tu base local/)
+  })
+
+  it('merge: corrected dates from the file never move the close of a statement paid here', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await db.cardStatements.clear()
+    const file = new File([JSON.stringify(payload)], 'other.finance', { type: 'application/json' })
+    const result = await importBackup(file, { mode: 'merge' })
+    expect(result.merged?.cardStatements).toEqual({ added: 0, skipped: 1 })
+  })
+
+  it('rejects a same-currency payment that debited a different amount', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.statementPayments[0]!.debitedAmount = 1
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/misma moneda/)
   })
 })
