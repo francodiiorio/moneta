@@ -3,6 +3,7 @@ import {
   categoriesRepo,
   exchangeRatesRepo,
   expensesRepo,
+  incomesRepo,
   investmentLotsRepo,
   investmentsRepo,
   savingsHoldingsRepo,
@@ -13,7 +14,7 @@ import { convert, MissingRateError } from '@/domain/currency'
 import type { ExchangeRate, InvestmentAsset, InvestmentLot, SavingsHolding } from '@/domain/entities'
 import { holdingsAsOf } from '@/domain/investments'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
-import { add, money, type CurrencyCode, type Money, zero } from '@/domain/money'
+import { add, money, sub, type CurrencyCode, type Money, zero } from '@/domain/money'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 // Cuentas (Etapa 8) suman al patrimonio — re-using another feature's
 // service is the established exception, see docs/DECISIONS.md "Un feature
@@ -21,8 +22,19 @@ import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, 
 import { getAccountBalancesAt } from '@/features/accounts/service'
 
 export interface MonthSummary {
+  /** Confirmed gastos of the month, by purchase date. */
   expense: Money
+  /** Ingresos of the month. */
+  income: Money
+  /** Ingresos − gastos: what the month left (or cost) — not how the
+   *  accounts' balances moved (transfers, card payments, investment
+   *  purchases and adjustments are neither). */
+  net: Money
+  /** Gastos and ingresos left out for lack of an exchange rate. With any,
+   *  `net` is partial — a missing ingreso can even flip its sign. */
   missingRateCount: number
+  /** Of those, only gastos — for screens that show gastos alone. */
+  expenseMissingRateCount: number
 }
 
 /** Converts `amount` to `baseCurrency`, or returns undefined if no rate is
@@ -45,55 +57,76 @@ function tryConvert(
 
 export async function getMonthSummary(month: MonthStamp): Promise<MonthSummary> {
   const { start, end } = monthRange(month)
-  const [settings, expenses, rates] = await Promise.all([
+  const [settings, expenses, incomes, rates] = await Promise.all([
     settingsRepo.getSettings(),
     expensesRepo.listExpensesInRange(start, end),
+    incomesRepo.listIncomesInRange(start, end),
     exchangeRatesRepo.listExchangeRates(),
   ])
   const baseCurrency = settings.baseCurrency
   const profile = settings.rateProfile
 
-  let expense = zero(baseCurrency)
-  let missingRateCount = 0
-
-  for (const item of expenses) {
-    if (item.status !== 'confirmed') continue
-
-    const converted = tryConvert(money(item.amount, item.currency), baseCurrency, rates, item.date, profile)
-    if (!converted) {
-      missingRateCount += 1
-      continue
+  function total(items: readonly { amount: number; currency: string; date: DateStamp }[]): { sum: Money; misses: number } {
+    let sum = zero(baseCurrency)
+    let misses = 0
+    for (const item of items) {
+      const converted = tryConvert(money(item.amount, item.currency), baseCurrency, rates, item.date, profile)
+      if (!converted) {
+        misses += 1
+        continue
+      }
+      sum = add(sum, converted)
     }
-
-    expense = add(expense, converted)
+    return { sum, misses }
   }
 
-  return { expense, missingRateCount }
+  const expense = total(expenses.filter((e) => e.status === 'confirmed'))
+  const income = total(incomes)
+  return {
+    expense: expense.sum,
+    income: income.sum,
+    net: sub(income.sum, expense.sum),
+    missingRateCount: expense.misses + income.misses,
+    expenseMissingRateCount: expense.misses,
+  }
 }
 
-export interface CategoryExpense {
+export interface CategoryTotal {
   categoryId: string
   categoryName: string
   amount: Money
 }
 
-export interface ExpenseByCategory {
-  items: CategoryExpense[]
+export interface CategoryBreakdown {
+  items: CategoryTotal[]
   missingRateCount: number
 }
 
-export async function getExpenseByCategory(month: MonthStamp): Promise<ExpenseByCategory> {
+export async function getExpenseByCategory(month: MonthStamp): Promise<CategoryBreakdown> {
   const { start, end } = monthRange(month)
   return getExpenseByCategoryInRange(start, end)
+}
+
+/** Ingresos of the month by income category — same shape as gastos. */
+export async function getIncomeByCategory(month: MonthStamp): Promise<CategoryBreakdown> {
+  const { start, end } = monthRange(month)
+  return byCategory(await incomesRepo.listIncomesInRange(start, end))
 }
 
 /** Same as getExpenseByCategory, but over an arbitrary date range — lets
  *  features/budgets reuse this for a yearly budget's spend-to-date
  *  without duplicating the expense scan + currency conversion. */
-export async function getExpenseByCategoryInRange(start: DateStamp, end: DateStamp): Promise<ExpenseByCategory> {
-  const [settings, expenses, rates, categories] = await Promise.all([
+export async function getExpenseByCategoryInRange(start: DateStamp, end: DateStamp): Promise<CategoryBreakdown> {
+  const expenses = await expensesRepo.listExpensesInRange(start, end)
+  return byCategory(expenses.filter((e) => e.status === 'confirmed'))
+}
+
+/** Totals `items` per category in the base currency, biggest first. */
+async function byCategory(
+  items: readonly { amount: number; currency: string; date: DateStamp; categoryId: string }[],
+): Promise<CategoryBreakdown> {
+  const [settings, rates, categories] = await Promise.all([
     settingsRepo.getSettings(),
-    expensesRepo.listExpensesInRange(start, end),
     exchangeRatesRepo.listExchangeRates(),
     categoriesRepo.listCategories(),
   ])
@@ -104,19 +137,17 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
   const totals = new Map<string, number>()
   let missingRateCount = 0
 
-  for (const item of expenses) {
-    if (item.status !== 'confirmed') continue
-
+  for (const item of items) {
     const converted = tryConvert(money(item.amount, item.currency), baseCurrency, rates, item.date, profile)
     if (!converted) {
       missingRateCount += 1
       continue
     }
 
-    totals.set(item.categoryId, (totals.get(item.categoryId) ?? 0) + converted.amount)
+    totals.set(item.categoryId, add(money(totals.get(item.categoryId) ?? 0, baseCurrency), converted).amount)
   }
 
-  const result: CategoryExpense[] = [...totals.entries()]
+  const result: CategoryTotal[] = [...totals.entries()]
     .map(([categoryId, amountMinor]) => ({
       categoryId,
       categoryName: categoryById.get(categoryId)?.name ?? 'Categoría eliminada',
@@ -243,33 +274,48 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
   return { points, missingRateCount, missingPriceCount }
 }
 
-export interface ExpenseHistoryPoint {
+export interface MonthFlowPoint {
   month: MonthStamp
   expense: Money
+  income: Money
+  net: Money
+  /** Some movement of the month couldn't be converted: the figures are
+   *  partial. */
+  partial: boolean
 }
 
-export interface ExpenseHistory {
-  points: ExpenseHistoryPoint[]
+export interface MonthFlowHistory {
+  points: MonthFlowPoint[]
   missingRateCount: number
 }
 
 /** One point per month for the `monthsBack` months ending at `anchorMonth`
  *  (defaults to the current month) — same shape/monthsBack default as
- *  getNetWorthHistory, for a "Gastos" trend chart. `anchorMonth` lets the
+ *  getNetWorthHistory, for the Dashboard's "Gastos" trend chart and the
+ *  Reportes ingresos/gastos/balance table. `anchorMonth` lets the
  *  Dashboard re-run this ending at whatever month its own month selector
  *  is set to, instead of always "now". Reuses getMonthSummary per month
  *  rather than re-deriving its scan+conversion logic; same accepted-cost
  *  tradeoff as getMonthlyReport (a few redundant settings/rates reads for
  *  one local user, in exchange for reusing already-tested code). */
-export async function getExpenseHistory(monthsBack = 6, anchorMonth: MonthStamp = currentMonthStamp()): Promise<ExpenseHistory> {
-  const points: ExpenseHistoryPoint[] = []
+export async function getMonthFlowHistory(
+  monthsBack = 6,
+  anchorMonth: MonthStamp = currentMonthStamp(),
+): Promise<MonthFlowHistory> {
+  const points: MonthFlowPoint[] = []
   let missingRateCount = 0
 
   for (let i = monthsBack - 1; i >= 0; i--) {
     const month = shiftMonth(anchorMonth, -i)
     const summary = await getMonthSummary(month)
     missingRateCount += summary.missingRateCount
-    points.push({ month, expense: summary.expense })
+    points.push({
+      month,
+      expense: summary.expense,
+      income: summary.income,
+      net: summary.net,
+      partial: summary.missingRateCount > 0,
+    })
   }
 
   return { points, missingRateCount }
@@ -279,7 +325,7 @@ export interface ReportCategoryRow {
   categoryId: string
   categoryName: string
   amount: Money
-  /** This category's share of the month's total expense (0..1) — a
+  /** This category's share of the month's total — gastos or ingresos (0..1) — a
    *  display ratio, computed here so no component does arithmetic on a
    *  Minor amount (CLAUDE.md "Reglas financieras"). */
   share: number
@@ -305,18 +351,21 @@ export interface MonthlyReport {
   isCurrentMonth: boolean
   generatedOn: DateStamp
   summary: MonthSummary
-  categories: ReportCategoryRow[]
+  expenseCategories: ReportCategoryRow[]
+  /** Ingresos by category, `share` of the month's total income. */
+  incomeCategories: ReportCategoryRow[]
   /** Absent when nothing is tracked at all (no open accounts, savings or
    *  investment positions) — the report then has no net worth section. */
   netWorth?: ReportNetWorth
   missingRateCount: number
 }
 
-/** Composes a "photo" of a single month — gastos, gasto por categoría, y
+/** Composes a "photo" of a single month — ingresos, gastos y balance, cada
+ *  uno por categoría, y
  *  (cuando hay algo que valuar) una foto del patrimonio — para el
  *  informe mensual imprimible. Pure composition over already-tested functions; no
- *  new domain logic. Accepted cost: getMonthSummary and getExpenseByCategory
- *  each independently re-read settings/rates/the month's expenses, so this
+ *  new domain logic. Accepted cost: getMonthSummary and the by-category
+ *  functions each independently re-read settings/rates/the month's expenses, so this
  *  does a few redundant local IndexedDB reads — reusing already-tested
  *  functions beats micro-optimizing reads that cost nothing noticeable for
  *  one local user. */
@@ -326,10 +375,11 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   // DateStamps compare lexicographically — never value into the future.
   const coverageEnd = monthEnd > today ? today : monthEnd
 
-  const [settings, summary, expenses, rates, savings, holdings, assets, accountBalances, sourcedLots] = await Promise.all([
+  const [settings, summary, expenses, incomes, rates, savings, holdings, assets, accountBalances, sourcedLots] = await Promise.all([
     settingsRepo.getSettings(),
     getMonthSummary(month),
     getExpenseByCategory(month),
+    getIncomeByCategory(month),
     exchangeRatesRepo.listExchangeRates(),
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
@@ -349,11 +399,10 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   ])
   const tracksNetWorth = accounts.length > 0 || savings.length > 0 || holdings.length > 0
 
-  const totalExpense = summary.expense.amount
-  const categories: ReportCategoryRow[] = expenses.items.map((item) => ({
-    ...item,
-    share: totalExpense > 0 ? item.amount.amount / totalExpense : 0,
-  }))
+  const withShare = (items: readonly CategoryTotal[], total: Money): ReportCategoryRow[] =>
+    items.map((item) => ({ ...item, share: total.amount > 0 ? item.amount.amount / total.amount : 0 }))
+  const expenseCategories = withShare(expenses.items, summary.expense)
+  const incomeCategories = withShare(incomes.items, summary.income)
 
   const netWorth: ReportNetWorth | undefined = tracksNetWorth
     ? {
@@ -373,10 +422,11 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
     isCurrentMonth: month === currentMonthStamp(),
     generatedOn: today,
     summary,
-    categories,
-    // Same reasoning as ReportsPage: expenses' misses are a subset of
-    // summary's (same scan, same conversion) — adding both would
-    // double-count the same expense. The ARS and USD valuations are
+    expenseCategories,
+    incomeCategories,
+    // Same reasoning as ReportsPage: the by-category misses are a subset of
+    // summary's (same scans, same conversion) — adding both would
+    // double-count the same movement. The ARS and USD valuations are
     // independent conversions, though, so a rate missing for one but not
     // the other is two distinct misses, not a double-count.
     missingRateCount: summary.missingRateCount + valuationArs.missingRateCount + valuationUsd.missingRateCount,

@@ -10,7 +10,16 @@ import { updateSettings } from '@/database/repositories/settings.repo'
 import { QUANTITY_SCALE } from '@/domain/decimal'
 import { money } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
-import { getExpenseByCategory, getExpenseHistory, getMonthlyReport, getMonthSummary, getNetWorthHistory } from './service'
+import { createAccount } from '@/database/repositories/accounts.repo'
+import { saveIncome } from '@/database/repositories/incomes.repo'
+import {
+  getExpenseByCategory,
+  getIncomeByCategory,
+  getMonthFlowHistory,
+  getMonthlyReport,
+  getMonthSummary,
+  getNetWorthHistory,
+} from './service'
 
 afterEach(async () => {
   await Promise.all([
@@ -22,6 +31,8 @@ afterEach(async () => {
     db.investmentAssets.clear(),
     db.investmentHoldings.clear(),
     db.assetPrices.clear(),
+    db.incomes.clear(),
+    db.accounts.clear(),
   ])
 })
 
@@ -83,7 +94,7 @@ describe('getMonthSummary', () => {
   })
 })
 
-describe('getExpenseHistory', () => {
+describe('getMonthFlowHistory', () => {
   it('anchors the trailing window to anchorMonth instead of always the current month', async () => {
     const foodCat = await createCategory({ kind: 'expense', name: 'Comida' })
     await saveExpense({ date: '2025-01-10', description: 'Super', categoryId: foodCat.id, amount: 1000, currency: 'ARS', status: 'confirmed' })
@@ -91,7 +102,7 @@ describe('getExpenseHistory', () => {
     // must not leak in just because it's a real expense elsewhere.
     await saveExpense({ date: '2026-08-05', description: 'Otro mes', categoryId: foodCat.id, amount: 9999, currency: 'ARS', status: 'confirmed' })
 
-    const history = await getExpenseHistory(3, '2025-01')
+    const history = await getMonthFlowHistory(3, '2025-01')
 
     expect(history.points.map((p) => p.month)).toEqual(['2024-11', '2024-12', '2025-01'])
     expect(history.points[history.points.length - 1]!.expense).toEqual(money(1000, 'ARS'))
@@ -218,7 +229,7 @@ describe('getMonthlyReport', () => {
       expect(report.isCurrentMonth).toBe(false)
       expect(report.coverageEnd).toBe('2026-08-31')
       expect(report.summary.expense).toEqual(money(4000, 'ARS'))
-      expect(report.categories.map((c) => [c.categoryName, c.amount.amount, c.share])).toEqual([
+      expect(report.expenseCategories.map((c) => [c.categoryName, c.amount.amount, c.share])).toEqual([
         ['Comida', 3000, 0.75],
         ['Ocio', 1000, 0.25],
       ])
@@ -347,5 +358,101 @@ describe('Reportes con cuentas (Etapa 8)', () => {
       expect(report.netWorth?.usd.byBucket.accounts).toEqual(money(2, 'USD')) // 15,00 ARS / 1000 = 0,015 USD → 0,02
       expect(report.netWorth?.ars.total).toEqual(money(1_500, 'ARS'))
     })
+  })
+})
+
+describe('ingresos y balance neto (Etapa 8)', () => {
+  async function seed() {
+    await updateSettings({ baseCurrency: 'ARS' })
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
+    const freelance = await createCategory({ kind: 'income', name: 'Freelance' })
+    const base = { type: 'bank' as const, openingBalance: 0, openingDate: '2026-01-01' }
+    const pesos = await createAccount({ ...base, name: 'Galicia', currency: 'ARS' })
+    const dolares = await createAccount({ ...base, name: 'Caja USD', currency: 'USD' })
+    await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1000 })
+    await saveIncome({ date: '2026-08-01', description: 'Sueldo', categoryId: sueldo.id, accountId: pesos.id, amount: 500_000_00, currency: 'ARS' })
+    await saveIncome({ date: '2026-08-15', description: 'Cliente', categoryId: freelance.id, accountId: dolares.id, amount: 100_00, currency: 'USD' })
+    await saveExpense({ date: '2026-08-05', description: 'Super', categoryId: comida.id, amount: 200_000_00, currency: 'ARS', status: 'confirmed' })
+    // Projected gastos never count, same as before.
+    await saveExpense({ date: '2026-08-20', description: 'Cuota', categoryId: comida.id, amount: 50_000_00, currency: 'ARS', status: 'projected' })
+    return { comida, sueldo, pesos }
+  }
+
+  it('the month summary has ingresos (converted) and the balance neto', async () => {
+    await seed()
+    expect(await getMonthSummary('2026-08')).toEqual({
+      expense: money(200_000_00, 'ARS'),
+      income: money(600_000_00, 'ARS'),
+      net: money(400_000_00, 'ARS'),
+      missingRateCount: 0,
+      expenseMissingRateCount: 0,
+    })
+  })
+
+  it('the balance goes negative when the month cost more than came in', async () => {
+    const { comida } = await seed()
+    await saveExpense({ date: '2026-08-06', description: 'Auto', categoryId: comida.id, amount: 500_000_00, currency: 'ARS', status: 'confirmed' })
+    expect((await getMonthSummary('2026-08')).net).toEqual(money(-100_000_00, 'ARS'))
+  })
+
+  it('an ingreso without a rate is counted as missing — not as a gasto miss — and marks the month partial', async () => {
+    await seed()
+    await db.exchangeRates.clear()
+    const summary = await getMonthSummary('2026-08')
+    expect(summary.income).toEqual(money(500_000_00, 'ARS'))
+    expect(summary.missingRateCount).toBe(1)
+    expect(summary.expenseMissingRateCount).toBe(0)
+    expect((await getMonthFlowHistory(1, '2026-08')).points[0]?.partial).toBe(true)
+    expect((await getIncomeByCategory('2026-08')).missingRateCount).toBe(1)
+  })
+
+  it('ingresos count by their own month: the last day is in, the next month’s first day is not', async () => {
+    const { sueldo, pesos } = await seed()
+    await saveIncome({ date: '2026-08-31', description: 'Bono', categoryId: sueldo.id, accountId: pesos.id, amount: 1_00, currency: 'ARS' })
+    await saveIncome({ date: '2026-09-01', description: 'Sueldo sept', categoryId: sueldo.id, accountId: pesos.id, amount: 7_00, currency: 'ARS' })
+    expect((await getMonthSummary('2026-08')).income).toEqual(money(600_001_00, 'ARS'))
+    expect((await getMonthSummary('2026-09')).income).toEqual(money(7_00, 'ARS'))
+  })
+
+  it('ingresos never show up in gastos by category (what budgets read)', async () => {
+    await seed()
+    expect((await getExpenseByCategory('2026-08')).items.map((i) => i.categoryName)).toEqual(['Comida'])
+  })
+
+  it('ingresos by category, biggest first', async () => {
+    await seed()
+    const { items } = await getIncomeByCategory('2026-08')
+    expect(items.map((i) => [i.categoryName, i.amount])).toEqual([
+      ['Sueldo', money(500_000_00, 'ARS')],
+      ['Freelance', money(100_000_00, 'ARS')],
+    ])
+  })
+
+  it('the history carries ingresos and balance per month', async () => {
+    await seed()
+    const history = await getMonthFlowHistory(2, '2026-08')
+    expect(history.points.at(-1)).toMatchObject({ month: '2026-08', income: money(600_000_00, 'ARS'), net: money(400_000_00, 'ARS'), partial: false })
+    expect(history.points[0]).toMatchObject({ month: '2026-07', income: money(0, 'ARS'), net: money(0, 'ARS') })
+  })
+
+  it('the monthly report breaks ingresos down by category with their share', async () => {
+    await seed()
+    const report = await getMonthlyReport('2026-08')
+    expect(report.summary.net).toEqual(money(400_000_00, 'ARS'))
+    expect(report.incomeCategories.map((r) => [r.categoryName, r.share])).toEqual([
+      ['Sueldo', 500 / 600],
+      ['Freelance', 100 / 600],
+    ])
+  })
+
+  it('in the monthly report, a USD ingreso without a rate is one miss in the summary and one valuing its account', async () => {
+    await seed()
+    await db.exchangeRates.clear()
+    const report = await getMonthlyReport('2026-08')
+    // Summary: the ingreso. ARS valuation: the USD account's balance. (The
+    // USD valuation of the peso account is a third, independent miss.)
+    expect(report.summary.missingRateCount).toBe(1)
+    expect(report.missingRateCount).toBe(3)
   })
 })

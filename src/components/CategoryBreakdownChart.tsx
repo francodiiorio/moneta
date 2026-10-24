@@ -8,8 +8,10 @@ export interface CategoryAmount {
   amount: Money
 }
 
-interface ExpenseByCategoryChartProps {
+interface CategoryBreakdownChartProps {
   items: CategoryAmount[]
+  /** Shown instead of the donut when there's nothing to break down. */
+  emptyLabel?: string
 }
 
 interface ChartRow extends CategoryAmount {
@@ -96,11 +98,11 @@ function renderPieSliceLabel({ cx, cy, midAngle, outerRadius, percent }: PieSlic
   )
 }
 
-export function ExpenseByCategoryChart({ items }: ExpenseByCategoryChartProps) {
+export function CategoryBreakdownChart({ items, emptyLabel = 'Sin gastos este mes.' }: CategoryBreakdownChartProps) {
   if (items.length === 0) {
     return (
       <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-        Sin gastos este mes.
+        {emptyLabel}
       </div>
     )
   }

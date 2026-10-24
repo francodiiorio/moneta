@@ -47,3 +47,44 @@ test('un mes inválido en la URL muestra un estado amable en vez de romper', asy
   await page.getByRole('link', { name: 'Volver a Reportes' }).click()
   await expect(page).toHaveURL('/reportes')
 })
+
+// Etapa 8: Reportes y el informe muestran ingresos y el balance neto del mes.
+test('reportes e informe muestran ingresos, gastos y balance neto', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Galicia')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByRole('tab', { name: 'Ingreso' }).click()
+  await page.getByLabel('Descripción').fill('Sueldo')
+  await page.getByLabel('Monto').fill('5000')
+  await page.getByLabel('Cuenta', { exact: true }).click()
+  await page.getByRole('option', { name: /Galicia/ }).click()
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Sueldo' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByLabel('Descripción').fill('Super')
+  await page.getByLabel('Monto').fill('1500')
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Comida' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/reportes')
+  // Scoped to its card: 3.500 has to be the balance, not any amount.
+  const balanceCard = page.locator('[data-slot="card"]', { has: page.getByText('Balance neto', { exact: true }) })
+  await expect(balanceCard.getByText(/3[.,]500,00/)).toBeVisible()
+  await expect(page.getByText('Ingreso por categoría')).toBeVisible()
+  // The 6-month table's row for this month carries the same three figures.
+  await expect(page.getByRole('row').filter({ hasText: /5[.,]000,00/ }).filter({ hasText: /3[.,]500,00/ })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Exportar informe' }).click()
+  await expect(page.getByText('Balance neto', { exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'Sueldo' })).toBeVisible()
+})

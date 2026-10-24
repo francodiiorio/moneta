@@ -241,8 +241,9 @@ Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
    la diferencia; en un resumen cerrado sin pagar, total del banco vs. Moneta → lo que
    el banco cobró de más queda como gasto del resumen. Sin cambios de schema.
 
-Pendiente de definir dentro de la etapa: "Ingresos" y "Balance neto" en Reportes y en
-el informe mensual.
+7. **Ingresos y balance neto en Reportes** (hecho) — Reportes y el informe mensual
+   muestran ingresos, gastos y balance neto (ingresos − gastos) del mes, el ingreso por
+   categoría, y una tabla de los últimos 6 meses. Sin cambios de schema.
 
 ## Backlog / no priorizado
 

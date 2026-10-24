@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ExpenseByCategoryChart } from '@/components/ExpenseByCategoryChart'
+import { CategoryBreakdownChart } from '@/components/CategoryBreakdownChart'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
 import { CategoryIcon } from '@/components/CategoryIcon'
 import { MoneyTrendChart } from '@/components/MoneyTrendChart'
@@ -16,7 +16,7 @@ import { formatMonthLabel, shiftMonth } from '@/lib/dates'
 import { percentChange } from '@/domain/money'
 import { useMonthSummary } from '@/features/reports/hooks/useMonthSummary'
 import { useExpenseByCategory } from '@/features/reports/hooks/useExpenseByCategory'
-import { useExpenseHistory } from '@/features/reports/hooks/useExpenseHistory'
+import { useMonthFlowHistory } from '@/features/reports/hooks/useMonthFlowHistory'
 import { useNetWorthSummary } from '@/features/networth/hooks/useNetWorthSummary'
 import { useNetWorthMonthChange } from '@/features/networth/hooks/useNetWorthMonthChange'
 import { useSavingsAndInvestmentsHistory } from '@/features/networth/hooks/useSavingsAndInvestmentsHistory'
@@ -48,7 +48,7 @@ export function DashboardPage() {
   const hasCategoryData = expenseByCategory !== undefined && expenseByCategory.items.length > 0
 
   const [expenseMonthsBack, setExpenseMonthsBack] = useState(6)
-  const expenseHistory = useExpenseHistory(expenseMonthsBack, month)
+  const expenseHistory = useMonthFlowHistory(expenseMonthsBack, month)
   const expenseHistoryPoints = expenseHistory?.points.map((p) => ({ month: p.month, value: p.expense }))
   const hasExpenseHistory = expenseHistoryPoints !== undefined && expenseHistoryPoints.some((p) => p.value.amount !== 0)
 
@@ -70,7 +70,9 @@ export function DashboardPage() {
   const expenseChange =
     summary && previousSummary ? percentChange(previousSummary.expense, summary.expense) : undefined
 
-  const missingRateCount = (summary?.missingRateCount ?? 0) + (savingsAndInvestments?.missingRateCount ?? 0)
+  // Gastos only: the Dashboard doesn't show ingresos, so a missing rate on
+  // one would warn about nothing visible here.
+  const missingRateCount = (summary?.expenseMissingRateCount ?? 0) + (savingsAndInvestments?.missingRateCount ?? 0)
 
   async function handleToggleHideAmount() {
     try {
@@ -253,7 +255,7 @@ export function DashboardPage() {
                 <CardTitle className="text-base">Gasto por categoría este mes</CardTitle>
               </CardHeader>
               <CardContent>
-                <ExpenseByCategoryChart items={expenseByCategory.items} />
+                <CategoryBreakdownChart items={expenseByCategory.items} />
               </CardContent>
             </Card>
           )}

@@ -1440,3 +1440,20 @@ sin gastos negativos. Sólo en un resumen cerrado y sin pagar.
 **Sin schema nuevo:** no se guarda "el total del banco" ni un estado "conciliado": el
 resultado de conciliar son registros que ya existen (un ajuste, un gasto), y que el total
 coincida se ve en el propio resumen.
+
+## Balance neto = ingresos − gastos del mes (Etapa 8)
+
+**Qué muestra:** Reportes y el informe mensual suman, en la moneda base, los ingresos y los
+gastos confirmados del mes, y su diferencia como "balance neto" — lo que el mes dejó (o
+costó). Cada uno con su desglose por categoría, y una tabla de los últimos 6 meses.
+
+**Qué no es:** no es cuánto cambiaron los saldos de las cuentas. Los gastos con tarjeta
+cuentan en el mes de la compra (como presupuestos), no en el del pago del resumen; y
+transferencias, pagos de resumen, compras de inversión y ajustes de saldo no son gasto ni
+ingreso. Esa otra mirada (flujo de caja de las cuentas) ya la da la evolución del
+patrimonio.
+
+**Alternativa descartada:** calcular el balance como la variación de saldo de las cuentas.
+Mezcla consumo con movimientos que no lo son (pagar la tarjeta del mes anterior, comprar
+dólares) y no se podría desglosar por categoría.
+

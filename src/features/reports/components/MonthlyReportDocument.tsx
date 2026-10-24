@@ -6,6 +6,7 @@ import { MoneyText } from '@/components/MoneyText'
 import type { Money } from '@/domain/money'
 import { formatFullDate, formatMonthLabel, type MonthStamp } from '@/lib/dates'
 import { useMonthlyReport } from '../hooks/useMonthlyReport'
+import type { ReportCategoryRow } from '../service'
 
 interface MonthlyReportDocumentProps {
   month: MonthStamp
@@ -50,7 +51,61 @@ function NetWorthColumn({
   )
 }
 
-/** A printable "photo" of one month — gastos, gasto por categoría, and
+const UNCONVERTED = 'No se pudieron convertir por falta de tasa de cambio.'
+
+const percent = new Intl.NumberFormat('es-AR', { style: 'percent', maximumFractionDigits: 1 })
+
+interface CategoryTableProps {
+  title: string
+  rows: ReportCategoryRow[]
+  total: Money
+  /** Shown instead of the table when `rows` is empty. */
+  empty: string
+}
+
+function CategoryTable({ title, rows, total, empty }: CategoryTableProps) {
+  return (
+    <section className="mb-6 print:break-inside-avoid">
+      <h2 className="mb-2 text-sm font-semibold text-neutral-700">{title}</h2>
+      {rows.length === 0 ? (
+        <p className="text-sm text-neutral-500">{empty}</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-neutral-300 text-left text-xs text-neutral-500">
+              <th className="py-1.5 font-normal">Categoría</th>
+              <th className="py-1.5 text-right font-normal">%</th>
+              <th className="py-1.5 text-right font-normal">Importe</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-neutral-200">
+            {rows.map((row) => (
+              <tr key={row.categoryId}>
+                <td className="py-1.5">{row.categoryName}</td>
+                <td className="py-1.5 text-right tabular-nums text-neutral-500">{percent.format(row.share)}</td>
+                <td className="py-1.5 text-right">
+                  <MoneyText value={row.amount} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-neutral-300 font-medium">
+              <td className="py-1.5">Total</td>
+              <td className="py-1.5" />
+              <td className="py-1.5 text-right">
+                <MoneyText value={total} />
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </section>
+  )
+}
+
+/** A printable "photo" of one month — ingresos, gastos and balance (each
+ *  by category) and
  *  (when there's anything to value) a net worth snapshot. Exported as
  *  a PDF via the browser's own print dialog (see docs/DECISIONS.md
  *  "Informe mensual").
@@ -82,7 +137,11 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
     )
   }
 
-  const isEmpty = report.summary.expense.amount === 0 && report.netWorth === undefined
+  const isEmpty =
+    report.summary.expense.amount === 0 &&
+    report.summary.income.amount === 0 &&
+    report.summary.missingRateCount === 0 &&
+    report.netWorth === undefined
 
   // coverageEnd is clamped to "today" (report.generatedOn) whenever the
   // month hasn't ended yet — true for the current month, and also for any
@@ -129,52 +188,56 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
         ) : (
           <>
             <section className="mb-6 print:break-inside-avoid">
-              <p className="text-xs text-neutral-500">Gastos</p>
-              <p className="mt-1 text-lg font-semibold">
-                <MoneyText value={report.summary.expense} />
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 print:grid-cols-3">
+                <div>
+                  <p className="text-xs text-neutral-500">Ingresos</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    <MoneyText value={report.summary.income} />
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-500">Gastos</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    <MoneyText value={report.summary.expense} />
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-500">Balance neto</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    <MoneyText value={report.summary.net} />
+                  </p>
+                  {report.summary.missingRateCount > 0 && (
+                    <p className="mt-0.5 text-xs text-neutral-500">Parcial: faltan tasas de cambio.</p>
+                  )}
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-neutral-500">
+                Balance neto = ingresos − gastos del mes (gastos con tarjeta en el mes de la compra).
+                Transferencias, pagos de resumen y compras de inversión no son gasto ni ingreso.
               </p>
             </section>
 
-            <section className="mb-6 print:break-inside-avoid">
-              <h2 className="mb-2 text-sm font-semibold text-neutral-700">Gasto por categoría</h2>
-              {report.categories.length === 0 ? (
-                <p className="text-sm text-neutral-500">Sin gastos registrados en este mes.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-neutral-300 text-left text-xs text-neutral-500">
-                      <th className="py-1.5 font-normal">Categoría</th>
-                      <th className="py-1.5 text-right font-normal">%</th>
-                      <th className="py-1.5 text-right font-normal">Importe</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-200">
-                    {report.categories.map((row) => (
-                      <tr key={row.categoryId}>
-                        <td className="py-1.5">{row.categoryName}</td>
-                        <td className="py-1.5 text-right tabular-nums text-neutral-500">
-                          {new Intl.NumberFormat('es-AR', { style: 'percent', maximumFractionDigits: 1 }).format(
-                            row.share,
-                          )}
-                        </td>
-                        <td className="py-1.5 text-right">
-                          <MoneyText value={row.amount} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-neutral-300 font-medium">
-                      <td className="py-1.5">Total</td>
-                      <td className="py-1.5" />
-                      <td className="py-1.5 text-right">
-                        <MoneyText value={report.summary.expense} />
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              )}
-            </section>
+            <CategoryTable
+              title="Ingreso por categoría"
+              rows={report.incomeCategories}
+              total={report.summary.income}
+              empty={
+                report.summary.income.amount === 0 &&
+                report.summary.missingRateCount > report.summary.expenseMissingRateCount
+                  ? UNCONVERTED
+                  : 'Sin ingresos registrados en este mes.'
+              }
+            />
+            <CategoryTable
+              title="Gasto por categoría"
+              rows={report.expenseCategories}
+              total={report.summary.expense}
+              empty={
+                report.summary.expense.amount === 0 && report.summary.expenseMissingRateCount > 0
+                  ? UNCONVERTED
+                  : 'Sin gastos registrados en este mes.'
+              }
+            />
           </>
         )}
 
@@ -200,8 +263,8 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
               <p>
                 No se{' '}
                 {report.missingRateCount === 1
-                  ? 'pudo convertir 1 gasto'
-                  : `pudieron convertir ${report.missingRateCount} gastos`}{' '}
+                  ? 'pudo convertir 1 monto'
+                  : `pudieron convertir ${report.missingRateCount} montos`}{' '}
                 por falta de tasa de cambio.
               </p>
             )}
