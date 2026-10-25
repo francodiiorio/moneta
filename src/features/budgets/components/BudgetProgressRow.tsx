@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CategoryIcon } from '@/components/CategoryIcon'
 import { cn } from '@/lib/cn'
-import type { BudgetProgressItem } from '../service'
+import { BUDGET_NEAR_LIMIT_PERCENT, type BudgetProgressItem } from '../service'
 
 interface BudgetProgressRowProps {
   item: BudgetProgressItem
@@ -14,7 +14,7 @@ interface BudgetProgressRowProps {
 export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
   const { progress } = item
   const barWidth = Math.min(100, Math.max(0, progress.percentUsed))
-  const isNearLimit = !progress.isOverBudget && progress.percentUsed >= 90
+  const isNearLimit = !progress.isOverBudget && progress.percentUsed >= BUDGET_NEAR_LIMIT_PERCENT
 
   return (
     <div className="rounded-xl border border-border p-4">

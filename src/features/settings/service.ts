@@ -1,4 +1,5 @@
 import { backupRepo } from '@/database/repositories'
+import { clearOnboardingHidden } from '@/features/dashboard/service'
 
 /** Same-browser, same-origin only — tabs of this app talking to each
  *  other; nothing ever leaves the device. */
@@ -10,6 +11,8 @@ const WIPED = 'data-wiped'
  *  writing over) data that's gone. */
 export async function deleteAllData(): Promise<void> {
   await backupRepo.wipeAllTables()
+  // A fresh start shows "Primeros pasos" again, even if it was closed.
+  clearOnboardingHidden()
   if (typeof BroadcastChannel === 'undefined') return
   const channel = new BroadcastChannel(CHANNEL)
   channel.postMessage(WIPED)

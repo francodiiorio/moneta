@@ -38,11 +38,39 @@ test('Dashboard "Patrimonio" matches /patrimonio', async ({ page }) => {
   await expect(page.getByRole('main').getByText('Patrimonio', { exact: true })).toBeVisible()
   await expect(page.getByText(/500,00/).first()).toBeVisible()
 
-  // Regression: these cards used to always render, showing an inline
-  // "sin datos" message — they should be absent entirely when there's
-  // nothing to show, same as the "Presupuestos a revisar" card.
-  await expect(page.getByText('Gasto por categoría este mes')).not.toBeVisible()
-  await expect(page.getByText('Últimos gastos del mes')).not.toBeVisible()
+  // Savings alone are "something loaded": the month overview, not the welcome.
+  await expect(page.getByText('Bienvenido a Moneta')).toHaveCount(0)
+})
+
+// With nothing loaded, the home is a welcome with "Primeros pasos"; the
+// first thing loaded turns it into the month overview.
+test('la home da la bienvenida sin datos y pasa al panorama con el primer movimiento', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('Bienvenido a Moneta')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Primeros pasos' })).toBeVisible()
+  await expect(page.getByText('0 de 5')).toBeVisible()
+
+  await page.goto('/movimientos')
+  await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
+  await page.getByLabel('Descripción').fill('Super')
+  await page.getByLabel('Monto').fill('1500')
+  await page.getByText('Elegí una categoría').click()
+  await page.getByRole('option', { name: 'Comida' }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/')
+  await expect(page.getByText('Bienvenido a Moneta')).toHaveCount(0)
+  for (const title of ['Ingresos y gastos', 'En qué se fue', 'Cuentas', 'Tarjetas', 'Presupuestos', 'Se viene', 'Últimos movimientos']) {
+    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+  }
+  // The compact checklist: 1 of 5 done, pointing at the next step; it can be closed.
+  await expect(page.getByText(/Primeros pasos · 1 de 5/)).toBeVisible()
+  await page.getByRole('button', { name: 'Ocultar primeros pasos' }).click()
+  await expect(page.getByText(/Primeros pasos · /)).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Últimos movimientos', exact: true })).toBeVisible()
+  await expect(page.getByText(/Primeros pasos · /)).toHaveCount(0)
 })
 
 test('Dashboard shows the expense-by-category chart and the expense trend', async ({ page }) => {
@@ -56,8 +84,8 @@ test('Dashboard shows the expense-by-category chart and the expense trend', asyn
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.goto('/')
-  await expect(page.getByText('Gasto por categoría este mes', { exact: true })).toBeVisible()
-  await expect(page.getByText('Evolución de gastos', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'En qué se fue', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ingresos y gastos', exact: true })).toBeVisible()
   // .getByText('Comida') would also match Recharts' aria-hidden text-
   // measurement span — scope to the donut's legend row instead, which
   // carries the category, its amount and its share.
@@ -100,12 +128,11 @@ test('Dashboard shows the expense variation vs. the previous month', async ({ pa
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.goto('/')
-  // VariationBadge renders the percent as a pill and "vs. mes anterior"
-  // as a caption below it — scoped to the "Gastos del mes" card so the
-  // Patrimonio card's own badge can't satisfy it.
-  const expenseCard = page.locator('[data-slot="card"]').filter({ hasText: 'Gastos del mes' })
+  // Scoped to the "Gastos" KPI so another card's variation can't satisfy it.
+  // /^Gastos/: the KPI card, not the "Ingresos y gastos" chart's legend.
+  const expenseCard = page.locator('[data-slot="card"]').filter({ hasText: /^Gastos/ })
   await expect(expenseCard.getByText('50%', { exact: true })).toBeVisible()
-  await expect(expenseCard.getByText('vs. mes anterior', { exact: true })).toBeVisible()
+  await expect(expenseCard.getByText(/vs\. mes anterior/)).toBeVisible()
 })
 
 test('Dashboard shows a "Progreso de tus inversiones" card once a position has a price', async ({ page }) => {
@@ -211,7 +238,7 @@ test('el ícono de ojo oculta el monto de "Patrimonio" y lo recuerda entre recar
   await expect(amountMask(page)).toHaveCSS('opacity', '0')
   await expect.poll(() => investmentsCardHeight(page)).toBeGreaterThan(0)
 
-  await page.getByTitle('Ocultar monto').click()
+  await page.getByTitle('Ocultar patrimonio y saldos').click()
   await expect(amountMask(page)).toHaveCSS('opacity', '1')
   await expect.poll(() => investmentsCardHeight(page)).toBe(0)
 
@@ -221,7 +248,7 @@ test('el ícono de ojo oculta el monto de "Patrimonio" y lo recuerda entre recar
   await expect(amountMask(page)).toHaveCSS('opacity', '1')
   await expect.poll(() => investmentsCardHeight(page)).toBe(0)
 
-  await page.getByTitle('Mostrar monto').click()
+  await page.getByTitle('Mostrar patrimonio y saldos').click()
   await expect(amountMask(page)).toHaveCSS('opacity', '0')
   await expect.poll(() => investmentsCardHeight(page)).toBeGreaterThan(0)
 })

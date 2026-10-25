@@ -114,14 +114,14 @@ export function CategoryBreakdownChart({ items, emptyLabel = 'Sin gastos este me
     // Legend beside the donut, not below: at most MAX_PIE_SLICES + 1 rows
     // (~180px) comfortably fit next to a 220px-tall donut, so the legend
     // is always visible — no hover-to-reveal, no scroll needed. Stacks
-    // vertically on narrow viewports instead of squeezing both side by
-    // side.
-    <div className="flex flex-col items-center gap-4 sm:flex-row">
-      {/* height=220 matches MoneyTrendChart's default (see DashboardPage's
-          "Evolución de gastos" card) so the two cards come out the same
-          height without relying on CSS Grid stretch. Fixed width, not
+    // vertically when its own container is narrow (a container query, not
+    // the viewport: a third-of-the-grid card on a wide screen is narrow
+    // too) instead of squeezing the category names out.
+    <div className="@container">
+    <div className="flex flex-col items-center gap-4 @md:flex-row">
+      {/* height=220 matches MoneyTrendChart's default. Fixed width, not
           100%, so the donut doesn't grow into the legend's space. */}
-      <div className="w-full shrink-0 sm:w-[180px]">
+      <div className="w-full shrink-0 @md:w-[180px]">
         <ResponsiveContainer width="100%" height={220} initialDimension={{ width: 180, height: 220 }}>
           <PieChart>
             <Pie
@@ -174,6 +174,7 @@ export function CategoryBreakdownChart({ items, emptyLabel = 'Sin gastos este me
           </li>
         ))}
       </ul>
+    </div>
     </div>
   )
 }

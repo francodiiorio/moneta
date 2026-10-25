@@ -16,6 +16,10 @@ export interface IncomeInput {
   notes?: string
 }
 
+export async function countIncomes(): Promise<number> {
+  return db.incomes.count()
+}
+
 export async function listIncomesInRange(startDate: string, endDate: string): Promise<Income[]> {
   const incomes = await db.incomes.where('date').between(startDate, endDate, true, true).toArray()
   incomes.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))

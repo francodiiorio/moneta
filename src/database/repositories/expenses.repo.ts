@@ -31,6 +31,10 @@ export interface ExpenseInput {
   statementPeriod?: MonthStamp
 }
 
+export async function countExpenses(): Promise<number> {
+  return db.expenses.count()
+}
+
 export async function listExpensesInRange(startDate: string, endDate: string): Promise<Expense[]> {
   const expenses = await db.expenses.where('date').between(startDate, endDate, true, true).toArray()
   expenses.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))

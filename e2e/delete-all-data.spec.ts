@@ -32,7 +32,7 @@ test('borrar todos los datos deja la app como recién instalada', async ({ page,
   await confirm.click()
 
   await expect(page).toHaveURL(/\/$/)
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  await expect(page.getByText('Bienvenido a Moneta')).toBeVisible()
   await page.goto('/cuentas')
   await expect(page.getByRole('heading', { name: 'Cuentas' })).toBeVisible()
   await expect(page.getByText('Galicia')).toHaveCount(0)

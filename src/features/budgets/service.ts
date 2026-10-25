@@ -9,6 +9,9 @@ import type { BudgetFormValues } from './schema'
 
 export { listBudgets } from '@/database/repositories/budgets.repo'
 
+/** From this share of a budget used, it's flagged as close to its limit. */
+export const BUDGET_NEAR_LIMIT_PERCENT = 90
+
 export async function createBudgetFromForm(values: BudgetFormValues): Promise<Budget> {
   const settings = await settingsRepo.getSettings()
   const amount = parseAmount(values.amount, settings.baseCurrency)

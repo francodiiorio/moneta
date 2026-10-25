@@ -33,7 +33,7 @@ test('un gasto con tarjeta entra al resumen en curso y se ve en Tarjetas y el Da
   await expect(page.getByText(/85[.,]000,00/).first()).toBeVisible()
 
   await page.goto('/')
-  await expect(page.getByRole('main').getByText('Visa Galicia')).toBeVisible()
+  await expect(page.getByRole('main').getByText('Visa Galicia', { exact: true })).toBeVisible()
 })
 
 test('un gasto con tarjeta se puede fijar en un resumen posterior (presentación tardía)', async ({ page }) => {

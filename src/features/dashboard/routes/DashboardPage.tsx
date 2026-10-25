@@ -1,14 +1,12 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
 import { toast } from 'sonner'
-import { Eye, EyeOff, Receipt, TrendingUp, TriangleAlert } from 'lucide-react'
+import { ArrowDownLeft, BarChart3, Eye, EyeOff, PieChart, Receipt, Scale, TrendingUp } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CategoryBreakdownChart } from '@/components/CategoryBreakdownChart'
 import { MissingRateBanner } from '@/components/MissingRateBanner'
-import { CategoryIcon } from '@/components/CategoryIcon'
 import { MoneyTrendChart } from '@/components/MoneyTrendChart'
 import { settingsRepo } from '@/database/repositories'
 import { cn } from '@/lib/cn'
@@ -23,34 +21,78 @@ import { useSavingsAndInvestmentsHistory } from '@/features/networth/hooks/useSa
 import { useBudgetsWithProgress } from '@/features/budgets/hooks/useBudgetsWithProgress'
 import { useDashboardUiStore } from '../store'
 import { useSettings } from '../hooks/useSettings'
+import { useOnboarding } from '../hooks/useOnboarding'
+import { useOnboardingHidden } from '../hooks/useOnboardingHidden'
+import { monthChange, savingsRate, type OnboardingStep } from '../service'
 import { VariationBadge } from '../components/VariationBadge'
+import { Variation } from '../components/Variation'
 import { MonthSelector } from '../components/MonthSelector'
 import { PeriodSelect } from '../components/PeriodSelect'
 import { CardDeadlines } from '../components/CardDeadlines'
+import { KpiCard } from '../components/KpiCard'
+import { Panel } from '../components/Panel'
+import { FlowChart } from '../components/FlowChart'
+import { WelcomeHero } from '../components/WelcomeHero'
+import { OnboardingChecklist } from '../components/OnboardingChecklist'
+import { FeatureHighlights } from '../components/FeatureHighlights'
+import { AccountsPanel } from '../components/AccountsPanel'
+import { BudgetsPanel } from '../components/BudgetsPanel'
+import { UpcomingPanel } from '../components/UpcomingPanel'
+import { RecentMovementsPanel } from '../components/RecentMovementsPanel'
 
-const BUDGET_ALERT_THRESHOLD = 90
+const percentFormat = new Intl.NumberFormat('es-AR', { style: 'percent', maximumFractionDigits: 0 })
 
+function greeting(now = new Date()): string {
+  const hour = now.getHours()
+  if (hour < 6 || hour >= 20) return 'Buenas noches'
+  return hour < 13 ? 'Buen día' : 'Buenas tardes'
+}
+
+/** The home. With nothing loaded yet it's a welcome — what Moneta is and
+ *  the first steps; from the first thing loaded on, the month at a glance. */
 export function DashboardPage() {
+  const onboarding = useOnboarding()
+
+  if (onboarding === undefined) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="h-14 w-64 animate-pulse rounded-lg bg-muted" />
+        <div className="h-72 animate-pulse rounded-2xl bg-muted" />
+      </div>
+    )
+  }
+
+  if (!onboarding.hasData) {
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader title={greeting()} description="Empecemos a ordenar tu plata." />
+        <WelcomeHero />
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <OnboardingChecklist steps={onboarding.steps} />
+          <FeatureHighlights />
+        </div>
+      </div>
+    )
+  }
+
+  return <MonthOverview steps={onboarding.steps} />
+}
+
+function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
   const settings = useSettings()
   const hideAmount = settings?.hideSavingsAndInvestmentsAmount ?? false
-  // Sólo las tarjetas de gasto siguen este mes — Patrimonio y su
-  // progreso siempre muestran hoy, ver docs/DECISIONS.md.
+  const [onboardingHidden, hideOnboarding] = useOnboardingHidden()
+  // The month drives what happened (ingresos, gastos, categorías,
+  // presupuestos); Patrimonio, cuentas, tarjetas and "se viene" are always
+  // today — same convention as /patrimonio (see docs/DECISIONS.md).
   const month = useDashboardUiStore((s) => s.month)
   const summary = useMonthSummary(month)
   const previousSummary = useMonthSummary(shiftMonth(month, -1))
-  // Same source of truth as /patrimonio — Cuentas + Ahorros + Inversiones
-  // (las cuentas volvieron en la Etapa 8, ver docs/DECISIONS.md "Se
-  // reintroducen Cuentas, Ingresos y Transferencias").
-  const savingsAndInvestments = useNetWorthSummary()
+  const netWorth = useNetWorthSummary()
+  const netWorthMonthChange = useNetWorthMonthChange()
   const expenseByCategory = useExpenseByCategory(month)
-  const budgets = useBudgetsWithProgress(month)
-  const budgetsToReview = budgets?.items.filter((b) => b.progress.percentUsed >= BUDGET_ALERT_THRESHOLD).slice(0, 3)
-  const hasCategoryData = expenseByCategory !== undefined && expenseByCategory.items.length > 0
-
-  const [expenseMonthsBack, setExpenseMonthsBack] = useState(6)
-  const expenseHistory = useMonthFlowHistory(expenseMonthsBack, month)
-  const expenseHistoryPoints = expenseHistory?.points.map((p) => ({ month: p.month, value: p.expense }))
-  const hasExpenseHistory = expenseHistoryPoints !== undefined && expenseHistoryPoints.some((p) => p.value.amount !== 0)
+  const flow = useMonthFlowHistory(6, month)
+  const hasFlow = flow?.points.some((p) => p.income.amount !== 0 || p.expense.amount !== 0) ?? false
 
   const [investmentMonthsBack, setInvestmentMonthsBack] = useState(6)
   const investmentsHistory = useSavingsAndInvestmentsHistory(investmentMonthsBack)
@@ -62,17 +104,33 @@ export function DashboardPage() {
     firstInvestmentPoint && lastInvestmentPoint
       ? percentChange(firstInvestmentPoint.value, lastInvestmentPoint.value)
       : undefined
-  // "Patrimonio" KPI badge: variación del total vs. fin del mes pasado,
-  // comparando siempre el mismo conjunto de cuentas (ver
-  // getNetWorthMonthChange) — independiente del período elegido arriba.
-  const netWorthMonthChange = useNetWorthMonthChange()
 
+  const budgets = useBudgetsWithProgress(month)
+  // A change against a partial month (or this one) would mislead: shown as
+  // "Parcial" instead of a percent.
+  const isPartial = (summary?.missingRateCount ?? 0) + (previousSummary?.missingRateCount ?? 0) > 0
+  const incomeChange =
+    summary && previousSummary
+      ? monthChange(
+          { total: previousSummary.income, missingRateCount: previousSummary.missingRateCount },
+          { total: summary.income, missingRateCount: summary.missingRateCount },
+        )
+      : undefined
   const expenseChange =
-    summary && previousSummary ? percentChange(previousSummary.expense, summary.expense) : undefined
-
-  // Gastos only: the Dashboard doesn't show ingresos, so a missing rate on
-  // one would warn about nothing visible here.
-  const missingRateCount = (summary?.expenseMissingRateCount ?? 0) + (savingsAndInvestments?.missingRateCount ?? 0)
+    summary && previousSummary
+      ? monthChange(
+          { total: previousSummary.expense, missingRateCount: previousSummary.expenseMissingRateCount },
+          { total: summary.expense, missingRateCount: summary.expenseMissingRateCount },
+        )
+      : undefined
+  const rate = summary ? savingsRate(summary) : undefined
+  // The 6-month chart ends at this month, so its misses include summary's;
+  // a budget left out for lack of a rate is a miss of its own.
+  const missingRateCount =
+    (flow?.missingRateCount ?? summary?.missingRateCount ?? 0) +
+    (netWorth?.missingRateCount ?? 0) +
+    (budgets?.missingRateCount ?? 0)
+  const showOnboarding = !onboardingHidden && steps.some((s) => !s.done)
 
   async function handleToggleHideAmount() {
     try {
@@ -82,153 +140,156 @@ export function DashboardPage() {
     }
   }
 
+  const loading = <span className="text-muted-foreground">—</span>
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        title="Dashboard"
-        description={`Resumen de ${formatMonthLabel(month).toLowerCase()} y de tu patrimonio.`}
+        title={greeting()}
+        description={`Así viene ${formatMonthLabel(month).toLowerCase()}.`}
         actions={<MonthSelector />}
       />
 
       <MissingRateBanner
         count={missingRateCount}
-        itemLabel={['gasto, cuenta, ahorro o inversión', 'gastos, cuentas, ahorros o inversiones']}
+        itemLabel={['monto, cuenta, ahorro o inversión', 'montos, cuentas, ahorros o inversiones']}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card>
-          <CardContent className="flex items-center justify-between gap-3 px-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Receipt className="size-6" />
-              </div>
-              <div>
-                {/* h-6 matches the eye-toggle Button's own height in the
-                    "Patrimonio" card below — without it, that
-                    card's label row is taller (icon-xs button vs. bare
-                    text), so centering each content block independently
-                    in two equal-height cards lands them at different
-                    vertical offsets. */}
-                <div className="flex h-6 items-center">
-                  <p className="text-xs text-muted-foreground">Gastos del mes</p>
-                </div>
-                <p className="mt-1 text-xl font-semibold">
-                  {summary ? <MoneyText value={summary.expense} /> : <span className="text-muted-foreground">—</span>}
-                </p>
-              </div>
-            </div>
-            {expenseChange !== undefined && (
-              <div className="flex shrink-0 flex-col items-end">
-                <VariationBadge percent={expenseChange} invert />
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {showOnboarding && <OnboardingChecklist steps={steps} compact onHide={hideOnboarding} />}
 
-        <Card>
-          <CardContent className="flex items-center justify-between gap-3 px-4">
-            <div className="flex items-center gap-3">
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <TrendingUp className="size-6" />
-              </div>
-              <div>
-                <div className="flex h-6 items-center gap-1">
-                  <p className="text-xs text-muted-foreground">Patrimonio</p>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => void handleToggleHideAmount()}
-                    title={hideAmount ? 'Mostrar monto' : 'Ocultar monto'}
-                  >
-                    {hideAmount ? <EyeOff /> : <Eye />}
-                  </Button>
-                </div>
-                {/* Both spans stay mounted, stacked via absolute inset-0, and
-                    crossfade on opacity — a conditional render would swap DOM
-                    nodes outright and skip the transition entirely. h-7 gives
-                    the wrapper an explicit height since neither absolutely
-                    positioned child contributes one of its own. */}
-                <div className="relative mt-1 h-7 text-xl font-semibold">
-                  <span
-                    className={cn(
-                      'absolute inset-0 font-mono tabular-nums text-muted-foreground transition-opacity duration-150',
-                      hideAmount ? 'opacity-100' : 'pointer-events-none opacity-0',
-                    )}
-                  >
-                    ••••••
-                  </span>
-                  <span
-                    className={cn(
-                      'absolute inset-0 transition-opacity duration-150',
-                      hideAmount ? 'pointer-events-none opacity-0' : 'opacity-100',
-                    )}
-                  >
-                    {savingsAndInvestments ? (
-                      <MoneyText value={savingsAndInvestments.total} />
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </span>
-                </div>
-              </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label="Ingresos"
+          icon={ArrowDownLeft}
+          tone="positive"
+          value={summary ? <MoneyText value={summary.income} /> : loading}
+          footer={summary && (isPartial ? 'Parcial: faltan tasas de cambio' : <Variation percent={incomeChange} />)}
+        />
+        <KpiCard
+          label="Gastos"
+          icon={Receipt}
+          value={summary ? <MoneyText value={summary.expense} /> : loading}
+          footer={
+            summary &&
+            ((summary.expenseMissingRateCount ?? 0) + (previousSummary?.expenseMissingRateCount ?? 0) > 0 ? (
+              'Parcial: faltan tasas de cambio'
+            ) : (
+              <Variation percent={expenseChange} invert />
+            ))
+          }
+        />
+        <KpiCard
+          label="Balance neto"
+          icon={Scale}
+          tone={summary === undefined ? 'primary' : summary.net.amount < 0 ? 'negative' : 'positive'}
+          value={summary ? <MoneyText value={summary.net} signColor /> : loading}
+          footer={
+            summary &&
+            (summary.missingRateCount > 0
+              ? 'Parcial: faltan tasas de cambio'
+              : rate === undefined
+                ? 'Sin ingresos este mes'
+                : rate >= 0
+                  ? `Ahorraste ${percentFormat.format(rate)} de lo que entró`
+                  : 'Gastaste más de lo que entró')
+          }
+        />
+        <KpiCard
+          label={
+            <>
+              Patrimonio
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => void handleToggleHideAmount()}
+                title={hideAmount ? 'Mostrar patrimonio y saldos' : 'Ocultar patrimonio y saldos'}
+                aria-label={hideAmount ? 'Mostrar patrimonio y saldos' : 'Ocultar patrimonio y saldos'}
+                aria-pressed={hideAmount}
+              >
+                {hideAmount ? <EyeOff /> : <Eye />}
+              </Button>
+            </>
+          }
+          icon={TrendingUp}
+          value={
+            // Both stay mounted and crossfade: a conditional render would
+            // swap nodes and skip the transition.
+            <div className="relative h-8">
+              <span
+                aria-hidden={!hideAmount}
+                className={cn(
+                  'absolute inset-0 font-mono text-muted-foreground tabular-nums transition-opacity duration-150',
+                  hideAmount ? 'opacity-100' : 'pointer-events-none opacity-0',
+                )}
+              >
+                ••••••
+              </span>
+              {/* aria-hidden too: opacity alone still reads it aloud. */}
+              <span
+                aria-hidden={hideAmount}
+                className={cn(
+                  'absolute inset-0 transition-opacity duration-150',
+                  hideAmount ? 'pointer-events-none opacity-0' : 'opacity-100',
+                )}
+              >
+                {netWorth ? <MoneyText value={netWorth.total} /> : loading}
+              </span>
             </div>
-            {netWorthMonthChange !== undefined && (
-              <div className="flex shrink-0 flex-col items-end">
-                <VariationBadge percent={netWorthMonthChange} />
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          }
+          footer={netWorth && <Variation percent={netWorthMonthChange} compareLabel="mes pasado" />}
+        />
       </div>
 
-      <CardDeadlines />
+      <div className="grid gap-3 lg:grid-cols-3">
+        <Panel
+          title="Ingresos y gastos"
+          icon={BarChart3}
+          to="/reportes"
+          linkLabel="Reportes"
+          className="lg:col-span-2"
+          fill
+        >
+          {flow === undefined ? (
+            <div className="h-60 animate-pulse rounded-lg bg-muted" />
+          ) : hasFlow ? (
+            <FlowChart points={flow.points} />
+          ) : (
+            <p className="flex h-60 items-center justify-center text-sm text-muted-foreground">
+              Todavía no hay ingresos ni gastos en estos meses.
+            </p>
+          )}
+        </Panel>
+        <Panel title="En qué se fue" icon={PieChart} to="/reportes" linkLabel="Reportes">
+          {expenseByCategory === undefined ? (
+            <div className="h-60 animate-pulse rounded-lg bg-muted" />
+          ) : (
+            <CategoryBreakdownChart items={expenseByCategory.items} />
+          )}
+        </Panel>
+      </div>
 
-      {/* Same visual family as MissingRateBanner/MissingPriceBanner — a
-          heads-up, not a content section, so it doesn't get full Card
-          chrome (border + shadow + header) competing with the chart/list
-          cards below for attention. */}
-      {budgetsToReview !== undefined && budgetsToReview.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border bg-muted/50 px-3 py-2.5">
-          <p className="flex items-center gap-2 text-sm font-medium">
-            <TriangleAlert className="size-4 text-negative" />
-            Presupuestos a revisar
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {budgetsToReview.map((item) => (
-              <Link
-                key={item.budgetId}
-                to="/presupuestos"
-                className="flex items-center justify-between gap-3 text-sm hover:text-foreground"
-              >
-                <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-                  <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} size="sm" />
-                  <span className="truncate">{item.categoryName}</span>
-                </span>
-                <span className={cn('shrink-0 font-medium', item.progress.isOverBudget && 'text-negative')}>
-                  {Math.round(item.progress.percentUsed)}% usado
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <AccountsPanel hideAmounts={hideAmount} />
+        <CardDeadlines />
+        <BudgetsPanel month={month} />
+      </div>
 
-      {/* Gated on hasInvestmentProgress only — that's a real "nothing to
-          show" case (no unmount transition needed). hideAmount, on the
-          other hand, is a user toggle (the eye icon above), so it collapses
-          the card smoothly instead of mounting/unmounting it outright: the
-          tooltip here shows the real amounts behind the same total the eye
-          just hid, and an abrupt disappearance read as a glitch rather
-          than a deliberate hide. Grid-rows 0fr/1fr, not max-height: it
-          animates to the content's actual height instead of a guessed cap. */}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <UpcomingPanel />
+        <RecentMovementsPanel />
+      </div>
+
+      {/* Collapses smoothly with the eye (grid-rows 0fr/1fr) instead of
+          unmounting: its tooltip shows the amounts the eye just hid. */}
       {hasInvestmentProgress && investmentPoints && (
         <div
           className={cn(
-            'grid transition-[grid-template-rows] duration-200 ease',
+            'ease grid transition-[grid-template-rows] duration-200',
             hideAmount ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
           )}
         >
-          <div className="overflow-hidden">
+          {/* inert while collapsed: hidden content mustn't take the focus. */}
+          <div className="overflow-hidden" inert={hideAmount}>
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Progreso de tus inversiones</CardTitle>
@@ -244,36 +305,6 @@ export function DashboardPage() {
               </CardContent>
             </Card>
           </div>
-        </div>
-      )}
-
-      {(hasCategoryData || hasExpenseHistory) && (
-        <div className={cn('grid items-start gap-3', hasCategoryData && hasExpenseHistory && 'lg:grid-cols-2')}>
-          {hasCategoryData && expenseByCategory && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Gasto por categoría este mes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CategoryBreakdownChart items={expenseByCategory.items} />
-              </CardContent>
-            </Card>
-          )}
-
-          {hasExpenseHistory && expenseHistoryPoints && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Evolución de gastos</CardTitle>
-                <CardAction>
-                  <PeriodSelect value={expenseMonthsBack} onChange={setExpenseMonthsBack} />
-                </CardAction>
-              </CardHeader>
-              <CardContent>
-                <MoneyTrendChart points={expenseHistoryPoints} height={220} showYAxis />
-                {expenseChange !== undefined && <VariationBadge percent={expenseChange} invert />}
-              </CardContent>
-            </Card>
-          )}
         </div>
       )}
     </div>
