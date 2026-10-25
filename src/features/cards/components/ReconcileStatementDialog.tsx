@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MoneyText } from '@/components/MoneyText'
 import { statementDifferences } from '@/domain/cards'
-import { money, negate } from '@/domain/money'
+import { formatAmountInput, money, negate, type Money } from '@/domain/money'
 import { formatMonthLabel } from '@/lib/dates'
 import { useDialogSession } from '../hooks/useDialogSession'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
@@ -24,10 +24,13 @@ interface ReconcileStatementDialogProps {
   cardName: string
   /** The statement to reconcile; the dialog is open while set. */
   statement: StatementView | undefined
+  /** Prefills the bank's totals — what was paid, when reconciling a
+   *  statement paid with a difference. */
+  bankTotals?: readonly Money[]
   onOpenChange: (open: boolean) => void
 }
 
-export function ReconcileStatementDialog({ cardId, cardName, statement, onOpenChange }: ReconcileStatementDialogProps) {
+export function ReconcileStatementDialog({ cardId, cardName, statement, bankTotals, onOpenChange }: ReconcileStatementDialogProps) {
   const session = useDialogSession(statement)
   return (
     <Dialog open={!!statement} onOpenChange={onOpenChange}>
@@ -38,6 +41,7 @@ export function ReconcileStatementDialog({ cardId, cardName, statement, onOpenCh
             cardId={cardId}
             cardName={cardName}
             statement={session.value}
+            initialBankTotals={bankTotals ?? []}
             onClose={() => onOpenChange(false)}
           />
         )}
@@ -50,14 +54,20 @@ interface DialogBodyProps {
   cardId: string
   cardName: string
   statement: StatementView
+  initialBankTotals: readonly Money[]
   onClose: () => void
 }
 
-function DialogBody({ cardId, cardName, statement, onClose }: DialogBodyProps) {
+function DialogBody({ cardId, cardName, statement, initialBankTotals, onClose }: DialogBodyProps) {
   // `statement` is pinned when opening: the differences are against these
   // totals, and the repository rejects the write if the real ones changed.
   const categories = useExpenseCategories()
-  const [lines, setLines] = useState(() => reconcileCurrencies(statement.totals).map((currency) => ({ currency, bankTotal: '' })))
+  const [lines, setLines] = useState(() =>
+    reconcileCurrencies([...statement.totals, ...initialBankTotals]).map((currency) => {
+      const known = initialBankTotals.find((b) => b.currency === currency)
+      return { currency, bankTotal: known ? formatAmountInput(known) : '' }
+    }),
+  )
   const [categoryId, setCategoryId] = useState('')
   const [description, setDescription] = useState('')
   const [isSaving, setIsSaving] = useState(false)

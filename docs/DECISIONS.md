@@ -1383,6 +1383,9 @@ un gasto "Pago de tarjeta" las contaría dos veces en presupuestos y reportes.
 guarda lo pagado (USD) y lo debitado (ARS); la cotización se deriva para mostrar y nunca
 se guarda. En la misma moneda los dos montos tienen que coincidir.
 
+> **Actualizada:** ver "Pago por lo que realmente pagaste" (más abajo) — el pago ya no tiene
+> que coincidir con el total de Moneta.
+
 **Sólo pago total, y no se edita:** el usuario lo pidió así. El pago se guarda con el total
 leído en la misma transacción, y se rechaza si cambió desde que el usuario lo vio. Para
 corregirlo se deshace (vuelve el débito) y se carga de nuevo. Si después del pago el total
@@ -1505,4 +1508,23 @@ antes de usar Moneta) y suma al total del resumen — una sola función,
 
 **Alternativa descartada:** cargarlo como un gasto "Saldo anterior". Contaría como consumo de
 un mes en el que no se usaba Moneta, y presupuestos y reportes quedarían inflados.
+
+## Pago por lo que realmente pagaste (Etapa 8)
+
+**Problema:** el pago de un resumen tenía que ser exactamente el total de Moneta. Al arrancar
+con la app a mitad de camino, o con impuestos e intereses que Moneta no tiene, eso obligaba a
+dejar el resumen perfecto antes de poder registrar el pago desde una cuenta.
+
+**Decisión:** el pago registra, por moneda, lo que cobró el banco — precargado con el total de
+Moneta, editable. Si no coincide, el resumen queda "pagado con diferencia" con la diferencia
+a la vista, explicada según el lado: pagaste de más (impuestos, intereses, gastos sin cargar →
+"Conciliar la diferencia", que ahora también se permite en un resumen pagado y lo deja
+pagado) o Moneta tiene de más (un gasto que el banco factura en otro resumen, un reintegro).
+Cada moneda se paga por su lado, una vez, en el día que sea (pesos hoy, dólares cuando se
+compran): mientras falte alguna, el resumen sigue "sin pagar" / "vencido" mostrando lo que
+falta, nunca "pagado con diferencia". Se puede pagar un resumen que Moneta tiene vacío.
+
+**Qué sigue igual:** un pago por moneda y resumen (Moneta no lleva pago mínimo ni arrastra
+saldo: si se pagó menos, la diferencia queda a la vista y el texto lo explica), no se edita (se deshace y se vuelve a cargar), nunca crea un gasto, y en la misma
+moneda lo debitado es lo pagado. Sin cambios de schema.
 

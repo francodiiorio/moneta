@@ -14,13 +14,13 @@ export interface StatementPaymentState {
 }
 
 /**
- * Whether a statement is paid. Only full payment exists: a statement is
- * 'paid' when every currency in its totals has payments adding up to
- * exactly that total (and nothing was paid in a currency it doesn't have).
- * 'mismatch' means it was paid but its total changed afterwards — a late
- * presentation billed into it, an edited gasto — and `differences` says
- * by how much. No payment at all is 'unpaid', even for an empty statement
- * (callers decide whether an empty one needs paying).
+ * Whether a statement is paid, comparing what was paid with Moneta's total
+ * per currency. 'paid' when every currency matches exactly; 'mismatch' when
+ * something was paid but some currency differs — paid for what the bank
+ * charged (more or less than Moneta has), a currency still unpaid, a total
+ * that changed later — and `differences` says by how much (total − paid).
+ * No payment at all is 'unpaid', even for an empty statement (callers
+ * decide whether an empty one needs paying).
  */
 export function statementPaymentState(
   totals: readonly Money[],
@@ -56,30 +56,23 @@ export function statementPaymentProblem(
   const problem = movementAccountProblem(account, { date: payment.date, currency: payment.debitedCurrency })
   if (problem) return problem
   if (payment.currency === payment.debitedCurrency && payment.amount !== payment.debitedAmount) {
-    return 'Pagando en la misma moneda, el monto debitado tiene que ser el del resumen'
+    return 'Pagando en la misma moneda, el monto debitado tiene que ser lo pagado'
   }
   return undefined
 }
 
 /**
- * Why paying a statement with `lines` isn't a full payment, or `undefined`
- * if it is — only full payment exists (see ADR): the statement has
- * something to pay, every currency of its totals gets exactly one line,
- * and each line pays the total the user was shown (`expectedAmount`),
- * which must still be the current one.
+ * Why `lines` can't pay a statement, or `undefined` if they can. A
+ * statement is paid once, by what the bank actually charged (ADR "Pago
+ * por lo que realmente pagaste"): at least one line, each currency once,
+ * each amount above zero. It doesn't have to match Moneta's total — a
+ * difference stays visible (statementPaymentState) and can be reconciled.
  */
-export function statementPaymentLinesProblem(
-  totals: readonly Money[],
-  lines: readonly { currency: string; expectedAmount: number }[],
-): string | undefined {
-  if (totals.length === 0) return 'El resumen no tiene gastos para pagar'
-  const owed = new Set(totals.map((t) => t.currency))
-  const paid = new Set(lines.map((l) => l.currency))
-  if (paid.size !== lines.length || paid.size !== owed.size || ![...owed].every((c) => paid.has(c))) {
-    return `Hay que pagar el resumen completo: ${[...owed].join(' y ')}`
-  }
-  const changed = lines.some((line) => totals.find((t) => t.currency === line.currency)?.amount !== line.expectedAmount)
-  if (changed) return 'El total del resumen cambió mientras cargabas el pago — revisalo y volvé a intentarlo'
+export function statementPaymentLinesProblem(lines: readonly { currency: string; amount: number }[]): string | undefined {
+  if (lines.length === 0) return 'Cargá lo que pagaste en al menos una moneda'
+  const currencies = new Set(lines.map((l) => l.currency))
+  if (currencies.size !== lines.length) return 'Una sola línea por moneda'
+  if (lines.some((l) => !Number.isSafeInteger(l.amount) || l.amount <= 0)) return 'Los montos tienen que ser mayores a cero'
   return undefined
 }
 

@@ -104,7 +104,11 @@ export function CardsPage() {
                 {relativeDays(daysToDue)})
               </p>
               <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                <MoneyTotals totals={previous.totals} className="font-medium" />
+                {/* Partly paid: what's left, not the whole total. */}
+                <MoneyTotals
+                  totals={previous.payment.status !== 'unpaid' && previous.owed.length > 0 ? previous.owed : previous.totals}
+                  className="font-medium"
+                />
                 <DueBadge due={previous.due} />
               </div>
             </div>

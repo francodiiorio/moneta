@@ -296,3 +296,50 @@ test('una tarjeta con saldo inicial se paga desde una cuenta sin cargar sus gast
   await page.goto('/cuentas')
   await expect(page.getByText(/520[.,]000,00/).first()).toBeVisible()
 })
+
+// Pagar por lo que cobró el banco aunque Moneta tenga otro total: queda
+// "pagado con diferencia" y la diferencia se concilia después de pagar.
+test('pagar lo que cobró el banco, ver la diferencia y conciliarla', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Galicia')
+  await page.getByLabel('Saldo inicial').fill('100.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('Visa')
+  await page.getByLabel('Día de cierre').fill('28')
+  await page.getByLabel('Día de vencimiento').fill('6')
+  await page.getByLabel('Resumen cerrado sin pagar en ARS').fill('30.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // The bank charged 31.500: 1.500 of taxes Moneta doesn't have.
+  await page.getByRole('button', { name: 'Pagar', exact: true }).click()
+  const pay = page.getByRole('dialog', { name: /^Pagar Visa/ })
+  await expect(pay.getByLabel('Pagaste (ARS)')).toHaveValue('30.000,00')
+  await pay.getByLabel('Pagaste (ARS)').fill('31.500')
+  await expect(pay.getByText(/pagaste .* más: lo podés conciliar/)).toBeVisible()
+  await pay.getByRole('button', { name: 'Pagar', exact: true }).click()
+  await expect(pay).not.toBeVisible()
+  await expect(page.getByText('Pagado con diferencia', { exact: true })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Ver resúmenes' }).click()
+  await expect(page.getByText('En curso')).toBeVisible()
+  await page.getByRole('button', { name: 'Resumen anterior' }).click()
+  await expect(page.getByText(/Pagaste .* más de lo que tiene Moneta/)).toBeVisible()
+  await page.getByRole('button', { name: 'Conciliar la diferencia' }).click()
+  const reconcile = page.getByRole('dialog', { name: /^Conciliar Visa/ })
+  await expect(reconcile.getByLabel('Total del banco (ARS)')).toHaveValue('31.500,00')
+  await reconcile.getByLabel('Categoría').click()
+  await page.getByRole('option', { name: 'Otros' }).click()
+  await reconcile.getByRole('button', { name: 'Registrar diferencia' }).click()
+  await expect(reconcile).not.toBeVisible()
+  await expect(page.getByText('Pagado', { exact: true })).toBeVisible()
+
+  // 100.000 − 31.500: the account dropped by what was really paid.
+  await page.goto('/cuentas')
+  await expect(page.getByText(/68[.,]500,00/).first()).toBeVisible()
+})

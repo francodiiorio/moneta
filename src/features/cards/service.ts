@@ -29,8 +29,9 @@ export { listAccounts } from '@/database/repositories/accounts.repo'
 export type StatementStatus = 'open' | 'closed' | 'upcoming'
 
 /** Where a statement stands on being paid: nothing to pay ('empty'),
- *  paid in full, paid but its total changed afterwards ('mismatch'), or
- *  unpaid — before its due date ('pending') or past it ('overdue').
+ *  paid ('paid'), paid with a difference against Moneta's total
+ *  ('mismatch'), or with some currency still unpaid — before its due date
+ *  ('pending') or past it ('overdue').
  *  Unpaid statements older than the last closed one are 'unrecorded': most
  *  were paid before Moneta tracked payments (or outside it), and the bank
  *  rolls a really unpaid one into the next statement anyway — so they're
@@ -50,6 +51,10 @@ export interface StatementView {
   /** Future installments already billed into this statement. */
   projectedCount: number
   payment: StatementPaymentState
+  /** Currencies of the total with no payment yet (paid on their own). */
+  unpaidCurrencies: string[]
+  /** What's still to pay: the totals of `unpaidCurrencies`. */
+  owed: Money[]
   due: DueState
 }
 
@@ -59,23 +64,33 @@ function statusOf(calendar: CardCalendar, period: MonthStamp, today: DateStamp):
   return period < open ? 'closed' : 'upcoming'
 }
 
+/** The currencies of `totals` with nothing paid yet — each currency is
+ *  paid on its own (pesos and dollars often on different days). */
+function unpaidCurrenciesOf(totals: readonly Money[], payments: readonly StatementPayment[]): string[] {
+  const paid = new Set(payments.map((p) => p.currency))
+  return totals.filter((t) => t.amount > 0 && !paid.has(t.currency)).map((t) => t.currency)
+}
+
 function dueStateOf(
   calendar: CardCalendar,
   period: MonthStamp,
   payment: StatementPaymentState,
   totals: readonly Money[],
+  unpaidCurrencies: readonly string[],
+  hasPayments: boolean,
   dueDate: DateStamp,
   today: DateStamp,
 ): DueState {
   if (payment.status === 'paid') return 'paid'
-  if (payment.status === 'mismatch') return 'mismatch'
-  if (totals.length === 0) return 'empty'
+  // Something paid, every currency with a payment: a difference to look at.
+  if (hasPayments && unpaidCurrencies.length === 0) return 'mismatch'
+  if (totals.length === 0 && !hasPayments) return 'empty'
   if (today <= dueDate) return 'pending'
   const lastClosed = shiftMonth(statementPeriodFor(calendar, today), -1)
   // An old unpaid statement was most likely paid before Moneta — not one
-  // with an opening balance: that one the user declared as owed.
+  // with an opening balance (declared as owed) nor a partly paid one.
   const hasOpening = openingBalanceOf(calendar, period).length > 0
-  return period < lastClosed && !hasOpening ? 'unrecorded' : 'overdue'
+  return period < lastClosed && !hasOpening && !hasPayments ? 'unrecorded' : 'overdue'
 }
 
 function buildView(
@@ -88,6 +103,7 @@ function buildView(
   const dates = statementDates(calendar, period)
   const totals = statementBalance(calendar, period, expenses)
   const payment = statementPaymentState(totals, payments)
+  const unpaidCurrencies = unpaidCurrenciesOf(totals, payments)
   return {
     ...dates,
     isCorrected: calendar.overrides.some((o) => o.period === period),
@@ -96,7 +112,9 @@ function buildView(
     expenseCount: expenses.length,
     projectedCount: expenses.filter((e) => e.status === 'projected').length,
     payment,
-    due: dueStateOf(calendar, period, payment, totals, dates.dueDate, today),
+    unpaidCurrencies,
+    owed: totals.filter((t) => unpaidCurrencies.includes(t.currency)),
+    due: dueStateOf(calendar, period, payment, totals, unpaidCurrencies, payments.length > 0, dates.dueDate, today),
   }
 }
 
@@ -331,38 +349,34 @@ export async function resetStatementDates(cardId: string, period: MonthStamp): P
 }
 
 /**
- * Pays the statement in full from the form: one line per currency of the
- * totals the user was shown. Each debited amount is parsed in the currency
- * the form showed for its account; in the statement's own currency the
- * account is debited exactly the total, so nothing is asked. The
- * repository re-reads the totals and rejects if they changed since.
+ * Pays the statement from the form: one line per currency with something
+ * paid (a blank amount skips it), by what the bank charged — Moneta's
+ * total may differ, and the statement then shows the difference. Each
+ * debited amount is parsed in the currency the form showed for its
+ * account; in the statement's own currency the debit is the amount paid.
  */
 export async function payStatementFromForm(
   cardId: string,
   period: MonthStamp,
   values: PaymentFormValues,
-  shown: { totals: readonly Money[]; accountCurrency: ReadonlyMap<string, string> },
+  shown: { accountCurrency: ReadonlyMap<string, string> },
 ): Promise<void> {
+  const filled = values.lines.filter((line) => line.paidAmount.trim() !== '')
+  invariant(filled.length > 0, 'Cargá lo que pagaste en al menos una moneda')
   const lines = await Promise.all(
-    values.lines.map(async (line) => {
-      const total = shown.totals.find((t) => t.currency === line.currency)
-      invariant(total, `El resumen no tiene saldo en ${line.currency}`)
+    filled.map(async (line) => {
+      const amount = parseAmount(line.paidAmount, line.currency).amount
+      invariant(amount > 0, 'Lo pagado tiene que ser mayor a cero')
       const account = await accountsRepo.getAccount(line.accountId)
       invariant(account, `Cuenta no encontrada: ${line.accountId}`)
       const accountCurrency = shown.accountCurrency.get(account.id) ?? account.currency
       if (accountCurrency === line.currency) {
-        return { currency: line.currency, expectedAmount: total.amount, accountId: account.id, expectedAccountCurrency: accountCurrency }
+        return { currency: line.currency, amount, accountId: account.id, expectedAccountCurrency: accountCurrency }
       }
       invariant(line.debitedAmount.trim() !== '', `Ingresá cuánto se debitó en ${accountCurrency}`)
       const debited = parseAmount(line.debitedAmount, accountCurrency).amount
       invariant(debited > 0, 'El monto debitado tiene que ser mayor a cero')
-      return {
-        currency: line.currency,
-        expectedAmount: total.amount,
-        accountId: account.id,
-        debitedAmount: debited,
-        expectedAccountCurrency: accountCurrency,
-      }
+      return { currency: line.currency, amount, accountId: account.id, debitedAmount: debited, expectedAccountCurrency: accountCurrency }
     }),
   )
   await statementPaymentsRepo.payStatement({ cardId, period, date: values.date, lines })

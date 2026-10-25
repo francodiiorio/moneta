@@ -34,19 +34,26 @@ async function setup() {
 }
 
 describe('payStatement', () => {
-  it('rejects when the total changed since the user saw it', async () => {
+  it('records what was really paid even when Moneta’s total differs — "pagado con diferencia"', async () => {
+    const { statementPaymentState, statementTotals } = await import('@/domain/cards')
     const { card, pesos, dollars } = await setup()
-    await expect(
-      payStatement({
-        cardId: card.id,
-        period: '2026-10',
-        date: '2026-11-05',
-        lines: [
-          { currency: 'ARS', expectedAmount: 50_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
-          { currency: 'USD', expectedAmount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
-        ],
-      }),
-    ).rejects.toThrow(/cambió/)
+    // The bank charged 82.000 (taxes Moneta doesn't have yet); Moneta has 80.000.
+    await payStatement({
+      cardId: card.id,
+      period: '2026-10',
+      date: '2026-11-05',
+      lines: [
+        { currency: 'ARS', amount: 82_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
+        { currency: 'USD', amount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
+      ],
+    })
+    const payments = await listStatementPayments(card.id, '2026-10')
+    expect(payments.find((p) => p.currency === 'ARS')).toMatchObject({ amount: 82_000_00, debitedAmount: 82_000_00 })
+    const expenses = await db.expenses.where('cardId').equals(card.id).toArray()
+    expect(statementPaymentState(statementTotals(expenses), payments)).toEqual({
+      status: 'mismatch',
+      differences: [{ amount: -2_000_00, currency: 'ARS' }],
+    })
   })
 
   it('a cross-currency line needs the debited amount', async () => {
@@ -57,8 +64,8 @@ describe('payStatement', () => {
         period: '2026-10',
         date: '2026-11-05',
         lines: [
-          { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
-          { currency: 'USD', expectedAmount: 10_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
+          { currency: 'ARS', amount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
+          { currency: 'USD', amount: 10_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
         ],
       }),
     ).rejects.toThrow(/cuánto se debitó/)
@@ -71,9 +78,9 @@ describe('payStatement', () => {
       period: '2026-10',
       date: '2026-11-05',
       lines: [
-        { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, debitedAmount: 80_000_00, expectedAccountCurrency: 'ARS' },
+        { currency: 'ARS', amount: 80_000_00, accountId: pesos.id, debitedAmount: 80_000_00, expectedAccountCurrency: 'ARS' },
         // The dollars, paid from the peso account at the bank's rate.
-        { currency: 'USD', expectedAmount: 10_00, accountId: pesos.id, debitedAmount: 12_500_00, expectedAccountCurrency: 'ARS' },
+        { currency: 'USD', amount: 10_00, accountId: pesos.id, debitedAmount: 12_500_00, expectedAccountCurrency: 'ARS' },
       ],
     })
     const payments = await listStatementPayments(card.id, '2026-10')
@@ -88,17 +95,15 @@ describe('payStatement', () => {
     expect(await db.expenses.count()).toBe(3)
   })
 
-  it('only full payment: every currency of the statement must be paid', async () => {
+  it('one currency alone can be paid (the bank charged nothing in the other); the rest stays visible', async () => {
     const { card, pesos } = await setup()
-    await expect(
-      payStatement({
-        cardId: card.id,
-        period: '2026-10',
-        date: '2026-11-05',
-        lines: [{ currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, debitedAmount: 80_000_00, expectedAccountCurrency: 'ARS' }],
-      }),
-    ).rejects.toThrow(/completo/)
-    expect(await db.statementPayments.count()).toBe(0)
+    await payStatement({
+      cardId: card.id,
+      period: '2026-10',
+      date: '2026-11-05',
+      lines: [{ currency: 'ARS', amount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' }],
+    })
+    expect(await db.statementPayments.count()).toBe(1)
   })
 
   it('a same-currency line must debit exactly the total', async () => {
@@ -109,8 +114,8 @@ describe('payStatement', () => {
         period: '2026-10',
         date: '2026-11-05',
         lines: [
-          { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, debitedAmount: 70_000_00, expectedAccountCurrency: 'ARS' },
-          { currency: 'USD', expectedAmount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
+          { currency: 'ARS', amount: 80_000_00, accountId: pesos.id, debitedAmount: 70_000_00, expectedAccountCurrency: 'ARS' },
+          { currency: 'USD', amount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
         ],
       }),
     ).rejects.toThrow(/misma moneda/)
@@ -124,27 +129,26 @@ describe('payStatement', () => {
         period: '2026-10',
         date: '2026-11-05',
         lines: [
-          { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, debitedAmount: 80_000_00, expectedAccountCurrency: 'ARS' },
-          { currency: 'USD', expectedAmount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
+          { currency: 'ARS', amount: 80_000_00, accountId: pesos.id, debitedAmount: 80_000_00, expectedAccountCurrency: 'ARS' },
+          { currency: 'USD', amount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
         ],
       })
     await pay()
-    await expect(pay()).rejects.toThrow(/ya está pagado/)
+    await expect(pay()).rejects.toThrow(/ya tiene un pago en/)
     expect(await undoStatementPayment(card.id, '2026-10')).toBe(2)
     await pay()
     expect(await db.statementPayments.count()).toBe(2)
   })
 
-  it('an empty statement has nothing to pay', async () => {
+  it('a statement Moneta has empty can still be paid — the bank charged something not loaded', async () => {
     const { card, pesos } = await setup()
-    await expect(
-      payStatement({
-        cardId: card.id,
-        period: '2026-12',
-        date: '2026-12-26',
-        lines: [{ currency: 'ARS', expectedAmount: 1, accountId: pesos.id, debitedAmount: 1, expectedAccountCurrency: 'ARS' }],
-      }),
-    ).rejects.toThrow(/no tiene gastos/)
+    await payStatement({
+      cardId: card.id,
+      period: '2026-12',
+      date: '2026-12-26',
+      lines: [{ currency: 'ARS', amount: 1_500_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' }],
+    })
+    expect(await listStatementPayments(card.id, '2026-12')).toHaveLength(1)
   })
 
   it('a paid statement blocks deleting its account (it is a movement)', async () => {
@@ -155,8 +159,8 @@ describe('payStatement', () => {
       period: '2026-10',
       date: '2026-11-05',
       lines: [
-        { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, debitedAmount: 80_000_00, expectedAccountCurrency: 'ARS' },
-        { currency: 'USD', expectedAmount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
+        { currency: 'ARS', amount: 80_000_00, accountId: pesos.id, debitedAmount: 80_000_00, expectedAccountCurrency: 'ARS' },
+        { currency: 'USD', amount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
       ],
     })
     await expect(deleteAccount(dollars.id)).rejects.toThrow(/archivala/)
@@ -171,8 +175,8 @@ describe('revisión de la Fase 5', () => {
       period: '2026-10',
       date: '2026-11-05',
       lines: [
-        { currency: 'ARS', expectedAmount: 80_000_00, accountId: ctx.pesos.id, expectedAccountCurrency: 'ARS' },
-        { currency: 'USD', expectedAmount: 10_00, accountId: ctx.dollars.id, expectedAccountCurrency: 'USD' },
+        { currency: 'ARS', amount: 80_000_00, accountId: ctx.pesos.id, expectedAccountCurrency: 'ARS' },
+        { currency: 'USD', amount: 10_00, accountId: ctx.dollars.id, expectedAccountCurrency: 'USD' },
       ],
     })
     return ctx
@@ -186,8 +190,8 @@ describe('revisión de la Fase 5', () => {
         period: '2026-10',
         date: '2026-10-20',
         lines: [
-          { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
-          { currency: 'USD', expectedAmount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
+          { currency: 'ARS', amount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
+          { currency: 'USD', amount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
         ],
       }),
     ).rejects.toThrow(/anterior al cierre/)
@@ -201,8 +205,8 @@ describe('revisión de la Fase 5', () => {
         period: '2026-10',
         date: '2026-11-05',
         lines: [
-          { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'USD', debitedAmount: 70_00 },
-          { currency: 'USD', expectedAmount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
+          { currency: 'ARS', amount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'USD', debitedAmount: 70_00 },
+          { currency: 'USD', amount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
         ],
       }),
     ).rejects.toThrow(/moneda de una cuenta cambió/)
@@ -248,7 +252,8 @@ describe('revisión de la Fase 5', () => {
 })
 
 describe('addStatementDifferences (Fase 6)', () => {
-  it('never on a paid statement, nor an open one', async () => {
+  it('never on an open statement; on a paid one it closes the difference with what was paid', async () => {
+    const { statementPaymentState, statementTotals } = await import('@/domain/cards')
     const { addStatementDifferences } = await import('./cardStatements.repo')
     const { card, pesos, dollars } = await setup()
     const category = await db.categories.toCollection().first()
@@ -270,13 +275,19 @@ describe('addStatementDifferences (Fase 6)', () => {
       period: '2026-10',
       date: '2026-11-05',
       lines: [
-        { currency: 'ARS', expectedAmount: 80_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
-        { currency: 'USD', expectedAmount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
+        // What the bank charged: 1.000 above Moneta's 80.000.
+        { currency: 'ARS', amount: 81_000_00, accountId: pesos.id, expectedAccountCurrency: 'ARS' },
+        { currency: 'USD', amount: 10_00, accountId: dollars.id, expectedAccountCurrency: 'USD' },
       ],
     })
-    await expect(addStatementDifferences(input)).rejects.toThrow(/ya está pagado/)
-    await undoStatementPayment(card.id, '2026-10')
+    const state = async () =>
+      statementPaymentState(
+        statementTotals(await db.expenses.where('cardId').equals(card.id).toArray()),
+        await listStatementPayments(card.id, '2026-10'),
+      ).status
+    expect(await state()).toBe('mismatch')
     expect(await addStatementDifferences(input)).toBe(1)
+    expect(await state()).toBe('paid')
   })
 })
 

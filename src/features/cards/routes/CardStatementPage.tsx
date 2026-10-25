@@ -162,23 +162,42 @@ function StatementBrowser({ cardId }: { cardId: string }) {
                       desde {payment.accountName} el {formatShortDate(payment.date)}
                     </p>
                   ))}
-                  {detail.payment.status === 'mismatch' && (
-                    <p className="text-negative">
-                      El total cambió después del pago:{' '}
-                      {detail.payment.differences.map((difference, i) => (
-                        <span key={difference.currency}>
-                          {i > 0 && ' y '}
-                          {difference.amount > 0 ? 'faltan ' : 'sobran '}
-                          <MoneyText value={difference.amount > 0 ? difference : negate(difference)} />
-                        </span>
-                      ))}
-                      . Deshacé el pago y volvé a cargarlo con el total actual.
-                    </p>
+                  {/* differences = Moneta's total − what was paid, per currency. */}
+                  {detail.payment.differences.map((difference) =>
+                    detail.unpaidCurrencies.includes(difference.currency) ? (
+                      <p key={difference.currency} className="font-medium text-negative">
+                        Falta pagar <MoneyText value={difference} />.
+                      </p>
+                    ) : difference.amount < 0 ? (
+                      <p key={difference.currency} className="text-negative">
+                        Pagaste <MoneyText value={negate(difference)} /> más de lo que tiene Moneta: impuestos,
+                        intereses o gastos sin cargar. Conciliá la diferencia para registrarla.
+                      </p>
+                    ) : (
+                      <p key={difference.currency} className="text-negative">
+                        Pagaste <MoneyText value={difference} /> menos de lo que tiene Moneta. Si fue un pago parcial,
+                        el banco pasa el saldo (con intereses) al resumen siguiente; si no, puede ser un gasto que el
+                        banco factura en otro resumen (movelo) o un reintegro. Para corregir las fechas del resumen,
+                        deshacé el pago primero.
+                      </p>
+                    ),
                   )}
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setConfirmingUndo(true)}>
-                  Deshacer pago
-                </Button>
+                <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                  {detail.unpaidCurrencies.length > 0 && (
+                    <Button size="sm" onClick={() => setPaying(true)}>
+                      Pagar lo que falta
+                    </Button>
+                  )}
+                  {detail.payment.differences.some((d) => d.amount < 0) && (
+                    <Button size="sm" onClick={() => setReconciling(true)}>
+                      Conciliar la diferencia
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => setConfirmingUndo(true)}>
+                    Deshacer pago
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ) : (
@@ -189,11 +208,10 @@ function StatementBrowser({ cardId }: { cardId: string }) {
                 <Button variant="outline" className="w-full sm:w-fit" onClick={() => setReconciling(true)}>
                   Conciliar con el banco
                 </Button>
-                {detail.totals.length > 0 && (
-                  <Button className="w-full sm:w-fit" onClick={() => setPaying(true)}>
-                    Pagar resumen
-                  </Button>
-                )}
+                {/* Even with nothing loaded: the bank may have billed it. */}
+                <Button className="w-full sm:w-fit" onClick={() => setPaying(true)}>
+                  Pagar resumen
+                </Button>
               </div>
             )
           )}
@@ -246,6 +264,7 @@ function StatementBrowser({ cardId }: { cardId: string }) {
         cardId={cardId}
         cardName={detail?.card.name ?? ''}
         statement={reconciling && detail ? detail : undefined}
+        {...(detail && detail.payments.length > 0 && { bankTotals: detail.payments.map((p) => p.amount) })}
         onOpenChange={(open) => (open ? undefined : setReconciling(false))}
       />
 

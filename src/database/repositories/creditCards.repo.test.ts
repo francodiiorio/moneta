@@ -356,7 +356,7 @@ describe('compras del día de cierre al resumen siguiente', () => {
         cardId: card.id,
         period: '2026-10',
         date: '2026-10-24',
-        lines: [{ currency: 'ARS', expectedAmount: 1_000_00, accountId: account.id, expectedAccountCurrency: 'ARS' }],
+        lines: [{ currency: 'ARS', amount: 1_000_00, accountId: account.id, expectedAccountCurrency: 'ARS' }],
       })
       await expect(
         updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, closingDayToNext: true, notes: undefined }),

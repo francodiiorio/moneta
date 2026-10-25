@@ -406,7 +406,7 @@ describe('statement payments in Movimientos (Fase 5)', () => {
       cardId: card.id,
       period: '2026-09',
       date: '2026-10-04',
-      lines: [{ currency: 'USD', expectedAmount: 10_00, accountId: pesos.id, debitedAmount: 12_500_00, expectedAccountCurrency: 'ARS' }],
+      lines: [{ currency: 'USD', amount: 10_00, accountId: pesos.id, debitedAmount: 12_500_00, expectedAccountCurrency: 'ARS' }],
     })
 
     const rows = await listTransactionsForMonth('2026-10', { accountId: pesos.id })

@@ -190,16 +190,21 @@ Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con ac
   también aplica `movementAccountProblem` al débito). Para el saldo es un movimiento
   `−debitedAmount` de la cuenta en `date`. **Nunca crea un gasto**: cada compra ya se
   contó en su fecha.
-- **Sólo pago total:** `payStatement` exige pagar todas las monedas del resumen, cada una
-  por su total actual (leído en la misma transacción; si cambió desde que el usuario lo
-  vio, rechaza), con fecha no anterior al cierre (`statementPaymentDateProblem` — se
+- **Un pago por moneda, por lo que realmente se pagó:** `payStatement` guarda, por moneda,
+  lo que cobró el banco — puede no coincidir con el total de Moneta (al menos una moneda,
+  cada una una vez, montos > 0: `statementPaymentLinesProblem`) —; cada moneda se paga por
+  su lado y en su día (rechaza sólo una moneda ya pagada); mientras falte alguna, el
+  resumen sigue sin pagar/vencido por lo que falta (`StatementView.owed`), con fecha no anterior al
+  cierre (`statementPaymentDateProblem` — se
   chequea al pagar, no al importar: una corrección de fechas posterior no puede invalidar
   historia). No se puede pagar dos veces: se deshace (borra los pagos del período) y se
   vuelve a cargar. Corregir las fechas de un resumen pagado o del anterior (lo que mueve
   gastos entre los dos) se bloquea hasta deshacer el pago; cambiar los días de la tarjeta
   congela también los resúmenes cerrados con pagos. Estado (`domain/cards:statementPaymentState`): sin pagar, pagado, o
-  *pagado con diferencia* si el total cambió después del pago (una presentación tardía
-  fijada en ese resumen, un gasto editado) — con la diferencia por moneda. Sin pagar y
+  *pagado con diferencia* cuando lo pagado y el total de Moneta no coinciden (cargos que
+  Moneta no tiene, un gasto que el banco factura en otro resumen, un cambio posterior) — con
+  la diferencia por moneda. Lo que el banco cobró de más se concilia también después de
+  pagar (`addStatementDifferences`), y el resumen queda pagado. Sin pagar y
   vencido, sólo el último resumen cerrado se marca "Venció sin pagar"; los anteriores
   quedan "Sin pago registrado" (historia de antes de registrar pagos, o pagada por fuera).
 - **Dexie v10** (`statementPayments: 'id, cardId, accountId, date, &[cardId+period+currency]'`)

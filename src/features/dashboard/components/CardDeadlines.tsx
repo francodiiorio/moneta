@@ -53,7 +53,7 @@ export function CardDeadlines() {
                       ? `Venció el ${formatShortDate(previous.dueDate)} sin pagar`
                       : `Vence el ${formatShortDate(previous.dueDate)} (${relativeDays(daysToDue)})`}
                   </span>
-                  <MoneyTotals totals={previous.totals} className="font-medium" />
+                  <MoneyTotals totals={previous.owed} className="font-medium" />
                 </div>
               ) : null}
             </Link>

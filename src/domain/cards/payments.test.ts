@@ -72,36 +72,16 @@ describe('statementPaymentProblem', () => {
 })
 
 describe('statementPaymentLinesProblem', () => {
-  const totals = [ars(1000), usd(10)]
-
-  it('accepts one line per currency, each by the total shown', () => {
-    const lines = [
-      { currency: 'USD', expectedAmount: 10 },
-      { currency: 'ARS', expectedAmount: 1000 },
-    ]
-    expect(statementPaymentLinesProblem(totals, lines)).toBeUndefined()
+  it('accepts what was really paid, whatever Moneta’s total — one line per currency', () => {
+    expect(statementPaymentLinesProblem([{ currency: 'ARS', amount: 1234 }, { currency: 'USD', amount: 10 }])).toBeUndefined()
+    // Only one of the currencies is fine too (the bank charged nothing in the other).
+    expect(statementPaymentLinesProblem([{ currency: 'ARS', amount: 1 }])).toBeUndefined()
   })
 
-  it('an empty statement has nothing to pay', () => {
-    expect(statementPaymentLinesProblem([], [])).toMatch(/no tiene gastos/)
-  })
-
-  it('every currency, once: missing, repeated or foreign currencies are rejected', () => {
-    expect(statementPaymentLinesProblem(totals, [{ currency: 'ARS', expectedAmount: 1000 }])).toMatch(/completo/)
-    const repeated = [
-      { currency: 'ARS', expectedAmount: 1000 },
-      { currency: 'ARS', expectedAmount: 1000 },
-    ]
-    expect(statementPaymentLinesProblem([ars(1000)], repeated)).toMatch(/completo/)
-    expect(statementPaymentLinesProblem([ars(1000)], [{ currency: 'EUR', expectedAmount: 1000 }])).toMatch(/completo/)
-  })
-
-  it('rejects when a total changed since it was shown', () => {
-    const lines = [
-      { currency: 'ARS', expectedAmount: 900 },
-      { currency: 'USD', expectedAmount: 10 },
-    ]
-    expect(statementPaymentLinesProblem(totals, lines)).toMatch(/cambió/)
+  it('rejects no lines, a repeated currency, or an amount that isn’t above zero', () => {
+    expect(statementPaymentLinesProblem([])).toMatch(/al menos una moneda/)
+    expect(statementPaymentLinesProblem([{ currency: 'ARS', amount: 1 }, { currency: 'ARS', amount: 2 }])).toMatch(/una sola/i)
+    expect(statementPaymentLinesProblem([{ currency: 'ARS', amount: 0 }])).toMatch(/mayores a cero/)
   })
 })
 

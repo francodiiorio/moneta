@@ -467,7 +467,7 @@ describe('revisión de la Fase 6 — duplicados y destinos', () => {
       cardId: card.id,
       period: '2026-08',
       date: '2026-09-05',
-      lines: [{ currency: 'ARS', expectedAmount: 80_000_00, accountId: galicia.id, expectedAccountCurrency: 'ARS' }],
+      lines: [{ currency: 'ARS', amount: 80_000_00, accountId: galicia.id, expectedAccountCurrency: 'ARS' }],
     })
     const { saveTransfer } = await import('@/database/repositories/transfers.repo')
     await saveTransfer({
@@ -553,7 +553,7 @@ describe('revisión de la Fase 6 — duplicados y destinos', () => {
       cardId: card.id,
       period: '2026-08',
       date: '2026-09-05',
-      lines: [{ currency: 'ARS', expectedAmount: 100, accountId: galicia.id, expectedAccountCurrency: 'ARS' }],
+      lines: [{ currency: 'ARS', amount: 100, accountId: galicia.id, expectedAccountCurrency: 'ARS' }],
     })
     const byDate: CsvMapping = { ...singleAmountMapping, categoryId: gastos.id, destination: { kind: 'card', cardId: card.id, statementPeriod: '' } }
     const rows = [['fecha', 'descripcion', 'monto'], ['12/08/2026', 'Tarde', '50'], ['27/08/2026', 'Septiembre', '50']]

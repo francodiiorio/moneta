@@ -118,8 +118,9 @@ describe('paying a statement (Fase 5)', () => {
     const base = { type: 'bank' as const, openingBalance: 0, openingDate: '2026-01-01' }
     const pesos = await createAccount({ ...base, name: 'Galicia', currency: 'ARS' })
     const dollars = await createAccount({ ...base, name: 'Caja USD', currency: 'USD' })
-    const shown = (totals: Parameters<typeof payStatementFromForm>[3]['totals']) => ({
-      totals,
+    // The totals the form showed — the service only needs the accounts'
+    // currencies now (what was paid comes in each line).
+    const shown = (_totals?: unknown) => ({
       accountCurrency: new Map([
         [pesos.id, 'ARS'],
         [dollars.id, 'USD'],
@@ -146,8 +147,8 @@ describe('paying a statement (Fase 5)', () => {
       {
         date: '2026-10-04',
         lines: [
-          { currency: 'ARS', accountId: pesos.id, debitedAmount: '' },
-          { currency: 'USD', accountId: pesos.id, debitedAmount: '12.500' },
+          { currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' },
+          { currency: 'USD', accountId: pesos.id, paidAmount: '10', debitedAmount: '12.500' },
         ],
       },
       shown(totals),
@@ -171,8 +172,8 @@ describe('paying a statement (Fase 5)', () => {
       {
         date: '2026-10-04',
         lines: [
-          { currency: 'ARS', accountId: pesos.id, debitedAmount: '' },
-          { currency: 'USD', accountId: dollars.id, debitedAmount: '' },
+          { currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' },
+          { currency: 'USD', accountId: dollars.id, paidAmount: '10', debitedAmount: '' },
         ],
       },
       shown(totals),
@@ -204,8 +205,8 @@ describe('paying a statement (Fase 5)', () => {
         {
           date: '2026-10-04',
           lines: [
-            { currency: 'ARS', accountId: pesos.id, debitedAmount: '' },
-            { currency: 'USD', accountId: pesos.id, debitedAmount: '' },
+            { currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' },
+            { currency: 'USD', accountId: pesos.id, paidAmount: '10', debitedAmount: '' },
           ],
         },
         shown([money(50_000_00, 'ARS'), money(10_00, 'USD')]),
@@ -290,8 +291,8 @@ describe('saldo inicial de la tarjeta (A)', () => {
     await payStatementFromForm(
       card.id,
       '2026-10',
-      { date: '2026-11-04', lines: [{ currency: 'ARS', accountId: account.id, debitedAmount: '' }] },
-      { totals: [money(480_000_00, 'ARS')], accountCurrency: new Map([[account.id, 'ARS']]) },
+      { date: '2026-11-04', lines: [{ currency: 'ARS', accountId: account.id, paidAmount: '480.000', debitedAmount: '' }] },
+      { accountCurrency: new Map([[account.id, 'ARS']]) },
     )
     expect((await getStatementDetail(card.id, '2026-10', '2026-11-05'))?.due).toBe('paid')
     expect((await getMonthSummary('2026-10')).expense.amount).toBe(0)
@@ -308,8 +309,8 @@ describe('saldo inicial de la tarjeta (A)', () => {
     await payStatementFromForm(
       card.id,
       '2026-10',
-      { date: '2026-11-04', lines: [{ currency: 'ARS', accountId: account.id, debitedAmount: '' }] },
-      { totals: [money(481_000_00, 'ARS')], accountCurrency: new Map([[account.id, 'ARS']]) },
+      { date: '2026-11-04', lines: [{ currency: 'ARS', accountId: account.id, paidAmount: '481.000', debitedAmount: '' }] },
+      { accountCurrency: new Map([[account.id, 'ARS']]) },
     )
     await expect(updateCardFromForm(card.id, { ...base, ...blank, openingClosedArs: '1' }, '2026-11-25')).rejects.toThrow(
       /pagado o conciliado/,
@@ -349,3 +350,65 @@ describe('saldo inicial de la tarjeta (A)', () => {
   })
 })
 
+
+describe('pagar cada moneda por su lado (revisión de C)', () => {
+  afterEach(async () => {
+    await Promise.all([db.statementPayments.clear(), db.accounts.clear()])
+  })
+
+  it('pesos today, dollars later: until both are paid the statement stays owed, showing what’s left', async () => {
+    const card = await seed()
+    const base = { type: 'bank' as const, openingBalance: 0, openingDate: '2026-01-01' }
+    const pesos = await createAccount({ ...base, name: 'Galicia', currency: 'ARS' })
+    const dollars = await createAccount({ ...base, name: 'Caja USD', currency: 'USD' })
+    const shown = { accountCurrency: new Map([[pesos.id, 'ARS'], [dollars.id, 'USD']]) }
+    await payStatementFromForm(
+      card.id,
+      '2026-09',
+      { date: '2026-10-03', lines: [{ currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' }] },
+      shown,
+    )
+    const partly = await getStatementDetail(card.id, '2026-09', '2026-10-04')
+    expect(partly?.due).toBe('pending')
+    expect(partly?.unpaidCurrencies).toEqual(['USD'])
+    expect(partly?.owed).toEqual([money(10_00, 'USD')])
+    expect((await getStatementDetail(card.id, '2026-09', '2026-10-06'))?.due).toBe('overdue')
+
+    // Paying pesos again is rejected; the dollars go through.
+    await expect(
+      payStatementFromForm(
+        card.id,
+        '2026-09',
+        { date: '2026-10-04', lines: [{ currency: 'ARS', accountId: pesos.id, paidAmount: '1', debitedAmount: '' }] },
+        shown,
+      ),
+    ).rejects.toThrow(/ya tiene un pago en ARS/)
+    await payStatementFromForm(
+      card.id,
+      '2026-09',
+      { date: '2026-10-04', lines: [{ currency: 'USD', accountId: dollars.id, paidAmount: '10', debitedAmount: '' }] },
+      shown,
+    )
+    expect((await getStatementDetail(card.id, '2026-09', '2026-10-06'))?.due).toBe('paid')
+  })
+
+  it('paying less than Moneta has, in every currency, is "pagado con diferencia" — not owed', async () => {
+    const card = await seed()
+    const pesos = await createAccount({ type: 'bank', openingBalance: 0, openingDate: '2026-01-01', name: 'Galicia', currency: 'ARS' })
+    await payStatementFromForm(
+      card.id,
+      '2026-09',
+      {
+        date: '2026-10-03',
+        lines: [
+          { currency: 'ARS', accountId: pesos.id, paidAmount: '40.000', debitedAmount: '' },
+          { currency: 'USD', accountId: pesos.id, paidAmount: '10', debitedAmount: '12.000' },
+        ],
+      },
+      { accountCurrency: new Map([[pesos.id, 'ARS']]) },
+    )
+    const detail = await getStatementDetail(card.id, '2026-09', '2026-10-06')
+    expect(detail?.due).toBe('mismatch')
+    expect(detail?.payment.differences).toEqual([money(10_000_00, 'ARS')])
+  })
+})

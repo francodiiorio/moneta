@@ -6,7 +6,7 @@ import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import { todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { getCardCalendar, reassignCardExpenses, STATEMENT_RECONCILE_TAG } from './creditCards.repo'
-import { assertCloseCanMove, isStatementPaid } from './statementPayments.repo'
+import { assertCloseCanMove } from './statementPayments.repo'
 import { saveExpense } from './expenses.repo'
 
 /** Expenses of one card, newest first — optionally only one statement. */
@@ -81,19 +81,18 @@ export interface StatementDifferenceInput {
 }
 
 /**
- * Reconciling a closed, unpaid statement against the bank's: what the
- * bank billed above Moneta's total (taxes, interest, fees) becomes a gasto
- * in that statement, dated at its close — one per currency, so the totals
- * then match and the statement can be paid in full. Never for a paid
- * statement (it would leave it "paid with a difference"). Returns how many
- * gastos it created.
+ * Reconciling a closed statement against the bank's: what the bank billed
+ * above Moneta's total (taxes, interest, fees) becomes a gasto in that
+ * statement, dated at its last purchase day — one per currency, so the
+ * totals then match. Before paying, or after: a statement paid for what
+ * the bank charged is "paid with a difference" until this closes it.
+ * Returns how many gastos it created.
  */
 export async function addStatementDifferences(input: StatementDifferenceInput): Promise<number> {
   const tables = [db.expenses, db.categories, db.creditCards, db.cardStatements, db.statementPayments]
   return db.transaction('rw', tables, async () => {
     const calendar = await getCardCalendar(input.cardId)
     invariant(statementPeriodFor(calendar, todayStamp()) > input.period, 'Sólo se concilia un resumen cerrado')
-    invariant(!(await isStatementPaid(input.cardId, input.period)), 'Ese resumen ya está pagado — deshacé el pago para conciliarlo')
     const currencies = new Set(input.lines.map((l) => l.currency))
     invariant(currencies.size === input.lines.length, 'Una sola diferencia por moneda')
     const totals = statementBalance(calendar, input.period, await listCardExpenses(input.cardId, input.period))

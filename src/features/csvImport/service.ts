@@ -276,8 +276,10 @@ async function destinationContext(
     const periodOf = (date: DateStamp) => pinned ?? statementPeriodFor(calendar, date)
     const expenses = await cardStatementsRepo.listCardExpenses(destination.cardId)
     return {
-      // Same rules as conciliation: a paid statement only changes by undoing
-      // its payment, and a pinned one can't take a purchase after its close.
+      // A paid statement takes no imported gastos (they'd shift its difference
+      // with what was paid unnoticed — what the bank charged beyond Moneta is
+      // reconciled from the statement instead), and a pinned one can't take
+      // a purchase after its last purchase day.
       rowProblem: (date) => {
         if (pinnedClose !== undefined && date > pinnedClose) {
           return calendar.card.closingDayToNext
@@ -285,7 +287,9 @@ async function destinationContext(
             : 'posterior al cierre del resumen elegido'
         }
         const period = periodOf(date)
-        return paid.has(period) ? `el resumen de ${formatMonthLabel(period).toLowerCase()} ya está pagado` : undefined
+        return paid.has(period)
+          ? `el resumen de ${formatMonthLabel(period).toLowerCase()} ya está pagado — conciliá la diferencia desde el resumen`
+          : undefined
       },
       periodOf,
       candidates: expenses.map((e) => ({

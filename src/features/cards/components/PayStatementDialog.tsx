@@ -10,12 +10,12 @@ import { DateField } from '@/components/DateField'
 import { MoneyText } from '@/components/MoneyText'
 import { formatImpliedRate, transferImpliedRate } from '@/domain/accounts'
 import type { Account } from '@/domain/entities'
-import { tryParsePositiveAmount } from '@/domain/money'
+import { formatAmountInput, money, negate, sub, tryParsePositiveAmount } from '@/domain/money'
 import { formatMonthLabel, todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { useDialogSession } from '../hooks/useDialogSession'
 import { paymentFormSchema, type PaymentFormValues } from '../schema'
-import { payStatementFromForm, type StatementView } from '../service'
+import { payStatementFromForm, reconcileCurrencies, type StatementView } from '../service'
 
 interface PayStatementDialogProps {
   cardId: string
@@ -58,19 +58,27 @@ interface DialogBodyProps {
 }
 
 function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBodyProps) {
-  // `statement` is pinned to what the user saw when opening: these are the
-  // totals they agree to pay, and the repository rejects the payment if
-  // the real ones changed meanwhile.
   const active = accounts.filter((a) => !a.isArchived)
+  // One line per currency still to pay: all of Moneta's, or — once some
+  // currency is paid — only the rest. A statement Moneta has empty still
+  // offers pesos and dollars: the bank may have charged something not loaded.
+  const owed =
+    statement.payment.status !== 'unpaid'
+      ? statement.totals.filter((t) => statement.unpaidCurrencies.includes(t.currency))
+      : statement.totals.length > 0
+        ? statement.totals
+        : reconcileCurrencies([]).map((currency) => money(0, currency))
 
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentFormSchema),
     defaultValues: {
       date: todayStamp(),
-      lines: statement.totals.map((total) => ({
+      lines: owed.map((total) => ({
         currency: total.currency,
         // An account in the statement's own currency, if there is one.
         accountId: active.find((a) => a.currency === total.currency)?.id ?? '',
+        // Moneta's total as a starting point: what the bank charged goes here.
+        paidAmount: total.amount > 0 ? formatAmountInput(total) : '',
         debitedAmount: '',
       })),
     },
@@ -85,6 +93,7 @@ function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBo
   async function onSubmit(values: PaymentFormValues) {
     let missing = false
     values.lines.forEach((line, index) => {
+      if (line.paidAmount.trim() === '') return
       const account = accountOf(index)
       if (account && account.currency !== line.currency && !tryParsePositiveAmount(line.debitedAmount, account.currency)) {
         form.setError(`lines.${index}.debitedAmount`, {
@@ -96,7 +105,6 @@ function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBo
     if (missing) return
     try {
       await payStatementFromForm(cardId, statement.period, values, {
-        totals: statement.totals,
         accountCurrency: new Map(accounts.map((a) => [a.id, a.currency])),
       })
       toast.success('Resumen pagado')
@@ -113,37 +121,52 @@ function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBo
           Pagar {cardName} · {formatMonthLabel(statement.period).toLowerCase()}
         </DialogTitle>
         <DialogDescription>
-          Registrá el pago total del resumen. Las compras ya se contaron como gastos: el pago sólo baja el saldo de la
+          Cargá lo que pagaste según el banco. Las compras ya se contaron como gastos: el pago sólo baja el saldo de la
           cuenta desde la que pagaste.
         </DialogDescription>
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4">
-          {statement.totals.map((total, index) => {
+          {owed.map((total, index) => {
             const account = accountOf(index)
             const crossCurrency = !!account && account.currency !== total.currency
+            const paid = tryParsePositiveAmount(lines[index]?.paidAmount ?? '', total.currency)
+            // Paid minus Moneta's total: what the bank charged beyond (or
+            // short of) what's loaded.
+            const difference = paid ? sub(paid, total) : undefined
             const debited = crossCurrency
               ? tryParsePositiveAmount(lines[index]?.debitedAmount ?? '', account.currency)
               : undefined
             const rate =
               debited &&
+              paid &&
               transferImpliedRate({
                 fromAmount: debited.amount,
                 fromCurrency: debited.currency,
-                toAmount: total.amount,
-                toCurrency: total.currency,
+                toAmount: paid.amount,
+                toCurrency: paid.currency,
               })
             return (
               <div key={total.currency} className="flex flex-col gap-3 rounded-lg border border-border p-3">
-                <p className="text-sm">
-                  Pagás <MoneyText value={total} className="font-semibold" />
-                </p>
                 <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name={`lines.${index}.paidAmount`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Pagaste ({total.currency})</FormLabel>
+                        <FormControl>
+                          <Input inputMode="decimal" placeholder="0,00" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name={`lines.${index}.accountId`}
                     render={({ field }) => (
-                      <FormItem className={crossCurrency ? undefined : 'col-span-2'}>
+                      <FormItem>
                         <FormLabel>Desde</FormLabel>
                         <Select
                           value={field.value}
@@ -181,7 +204,7 @@ function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBo
                       control={form.control}
                       name={`lines.${index}.debitedAmount`}
                       render={({ field }) => (
-                        <FormItem>
+                        <FormItem className="col-span-2">
                           <FormLabel>Se debitó ({account.currency})</FormLabel>
                           <FormControl>
                             <Input inputMode="decimal" placeholder="0,00" {...field} />
@@ -192,11 +215,23 @@ function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBo
                     />
                   )}
                 </div>
-                {rate && (
-                  <p className="text-xs text-muted-foreground">
-                    Cotización del pago: {formatImpliedRate(rate)}
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  Moneta tiene <MoneyText value={total} />
+                  {difference && difference.amount > 0 && (
+                    <span className="font-medium text-negative">
+                      {' '}
+                      · pagaste <MoneyText value={difference} /> más: lo podés conciliar como cargos del resumen
+                    </span>
+                  )}
+                  {difference && difference.amount < 0 && (
+                    <span className="font-medium text-negative">
+                      {' '}
+                      · pagaste <MoneyText value={negate(difference)} /> menos: queda la diferencia a la vista
+                    </span>
+                  )}
+                  {(lines[index]?.paidAmount ?? '').trim() === '' && ' · sin pago en esta moneda'}
+                </p>
+                {rate && <p className="text-xs text-muted-foreground">Cotización del pago: {formatImpliedRate(rate)}</p>}
               </div>
             )
           })}
