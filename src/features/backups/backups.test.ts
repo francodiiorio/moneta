@@ -1130,6 +1130,18 @@ describe('revisión de la Fase 4a — backups', () => {
   })
 })
 
+describe('tarjeta con compras del día de cierre al resumen siguiente', () => {
+  it('the option survives an export and import', async () => {
+    await seedFullDatabase()
+    const [card] = await db.creditCards.toArray()
+    await db.creditCards.update(card!.id, { closingDayToNext: true })
+    const exported = await exportBackup()
+    await clearAllTables()
+    await importBackup(new File([exported.blob], exported.filename, { type: 'application/json' }))
+    expect((await db.creditCards.get(card!.id))?.closingDayToNext).toBe(true)
+  })
+})
+
 describe('planes con medio de pago en el backup (Fase 4b)', () => {
   it('rejects a recurring plan paid from an account that is not in the file', async () => {
     await seedFullDatabase()

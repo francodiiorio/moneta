@@ -230,6 +230,7 @@ export async function createCardFromForm(values: CardFormValues): Promise<Credit
     name: values.name,
     closingDay: parseDay(values.closingDay),
     dueDay: parseDay(values.dueDay),
+    closingDayToNext: values.closingDayToNext,
     ...(values.notes && { notes: values.notes }),
   })
 }
@@ -240,6 +241,7 @@ export async function updateCardFromForm(id: string, values: CardFormValues): Pr
     name: values.name,
     closingDay: parseDay(values.closingDay),
     dueDay: parseDay(values.dueDay),
+    closingDayToNext: values.closingDayToNext,
     notes: values.notes || undefined,
   })
 }

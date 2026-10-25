@@ -155,6 +155,11 @@ export const creditCardSchema = z.object({
   name: z.string().min(1),
   closingDay: z.number().int().min(1).max(31),
   dueDay: z.number().int().min(1).max(31),
+  /** Purchases on the closing day go to the next statement — as most
+   *  banks bill them, presented after the cut. Absent = they enter the
+   *  statement that closes that day. Optional and additive: every backup
+   *  version validates the same with or without it. */
+  closingDayToNext: z.boolean().optional(),
   isArchived: z.boolean(),
   order: z.number(),
   notes: z.string().optional(),

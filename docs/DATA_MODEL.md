@@ -113,7 +113,7 @@ AccountAdjustment {
 ### CreditCard / CardStatement (Etapa 8, Fase 4)
 
 ```ts
-CreditCard    { id, name, closingDay /* 1–31 */, dueDay /* 1–31 */, isArchived, order, notes?, createdAt, updatedAt }
+CreditCard    { id, name, closingDay /* 1–31 */, dueDay /* 1–31 */, closingDayToNext?, isArchived, order, notes?, createdAt, updatedAt }
 CardStatement { id, cardId, period /* YYYY-MM */, closeDate, dueDate, createdAt, updatedAt }   // sólo overrides
 Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con accountId
 ```
@@ -125,19 +125,27 @@ Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con ac
   `dueDay` posterior al cierre (mismo mes si viene después, si no el siguiente). Un
   `CardStatement` existe sólo para los períodos cuyas fechas reales el usuario corrigió
   (único por `[cardId+period]`).
-- **A qué resumen va un gasto:** el primer período cuyo cierre es ≥ la fecha del gasto
-  (el día del cierre cuenta) — `statementPeriodFor`. Se **guarda** en el gasto
+- **A qué resumen va un gasto:** el primer período cuyo último día de compra es ≥ la fecha
+  del gasto — `statementPeriodFor`. El último día de compra (`lastPurchaseDay`) es el
+  cierre, o el día anterior si la tarjeta tiene `closingDayToNext` (las compras del día de
+  cierre van al resumen siguiente, como en muchos bancos). Cuotas, cargos de conciliación y
+  el CSV fijado a un resumen usan ese mismo límite. Es un campo opcional: aditivo, no
+  cambia ninguna versión de schema ni de backup. Se **guarda** en el gasto
   (`statementPeriod`): si el usuario lo fija en otro (presentación tardía), queda ahí.
 - **Corregir fechas** (override, o cambiar los días por defecto de la tarjeta) reasigna,
   en la misma transacción, sólo los gastos que estaban donde la ubicación automática los
   ponía con el calendario anterior (`reassignedPeriods`); los fijados a mano no se mueven.
   Cambiar los días de la tarjeta antes congela (como overrides) los períodos ya cerrados
-  con gastos, para que nunca cambien. Un override tiene que cerrar en su mes o el
+  con gastos, para que sus fechas nunca cambien. La excepción es `closingDayToNext`:
+  cambiarla mueve las compras del día de cierre también en resúmenes cerrados (el banco ya
+  las facturó en el siguiente), y en una compra en cuotas hecha ese día reubica todas sus
+  cuotas para seguir siendo una por resumen; nunca dentro o fuera de un resumen pagado o
+  conciliado (se rechaza). Un override tiene que cerrar en su mes o el
   siguiente, entre los cierres vecinos (`statementOverrideProblem`), y un gasto no puede
   ir a un resumen que cerró antes de su fecha.
 - **Cuotas con tarjeta** (Fase 4b, `InstallmentPlan.cardId?`): la cuota *i* va al resumen
   de la compra + *i* (una por resumen, nunca dos en uno) y se fecha el día de compra *i*
-  meses después, pero no después del cierre de ese resumen
+  meses después, pero no después del último día de compra de ese resumen
   (`domain/cards:installmentPlacement`). Con tarjeta, `firstDueDate === purchaseDate`
   (invariante del repository e import). Al corregir fechas de la tarjeta, las cuotas de
   resúmenes todavía abiertos se recalculan con esa misma regla (no por fecha); editar el

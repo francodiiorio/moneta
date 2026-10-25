@@ -5,7 +5,7 @@ import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import { assertAccountAccepts } from './accounts.repo'
 import { getCardCalendar } from './creditCards.repo'
-import { statementDates, statementPeriodFor } from '@/domain/cards'
+import { lastPurchaseDay, statementPeriodFor } from '@/domain/cards'
 import { isValidMonthStamp, todayStamp, type MonthStamp } from '@/lib/dates'
 import type { CurrencyCode } from '@/domain/money'
 import type { DateStamp } from '@/lib/dates'
@@ -108,7 +108,7 @@ export async function saveExpense(input: ExpenseInput, existingId?: string): Pro
           existing?.cardId === input.cardId &&
           existing.statementPeriod === input.statementPeriod &&
           existing.statementPeriod === statementPeriodFor(calendar, existing.date)
-        const stillOpen = statementDates(calendar, input.statementPeriod).closeDate >= todayStamp()
+        const stillOpen = lastPurchaseDay(calendar, input.statementPeriod) >= todayStamp()
         if (wasAutomatic && stillOpen) statementPeriod = automatic
       }
       invariant(statementPeriod >= automatic, 'Ese resumen cerró antes de la fecha del gasto')

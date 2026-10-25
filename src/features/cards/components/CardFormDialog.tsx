@@ -3,9 +3,10 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import type { CreditCard } from '@/domain/entities'
 import { cardFormSchema, type CardFormValues } from '../schema'
 import { createCardFromForm, updateCardFromForm } from '../service'
@@ -17,7 +18,7 @@ interface CardFormDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const EMPTY: CardFormValues = { name: '', closingDay: '', dueDay: '', notes: '' }
+const EMPTY: CardFormValues = { name: '', closingDay: '', dueDay: '', closingDayToNext: false, notes: '' }
 
 export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps) {
   const form = useForm<CardFormValues>({ resolver: zodResolver(cardFormSchema), defaultValues: EMPTY })
@@ -26,7 +27,13 @@ export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps
     if (!open) return
     form.reset(
       card
-        ? { name: card.name, closingDay: String(card.closingDay), dueDay: String(card.dueDay), notes: card.notes ?? '' }
+        ? {
+            name: card.name,
+            closingDay: String(card.closingDay),
+            dueDay: String(card.dueDay),
+            closingDayToNext: card.closingDayToNext ?? false,
+            notes: card.notes ?? '',
+          }
         : EMPTY,
     )
     // Keyed on card?.id — a background refetch must not reset an edit.
@@ -105,6 +112,24 @@ export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="closingDayToNext"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start gap-3 rounded-lg border border-border p-3">
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} className="mt-0.5" />
+                  </FormControl>
+                  <div className="flex flex-col gap-1">
+                    <FormLabel>Lo comprado el día del cierre va al resumen siguiente</FormLabel>
+                    <FormDescription>
+                      Así lo hacen muchos bancos: el comercio presenta la compra después del corte. Activalo si en tu
+                      resumen las compras de ese día aparecen en el mes siguiente.
+                    </FormDescription>
+                  </div>
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name="notes"

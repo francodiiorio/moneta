@@ -317,3 +317,129 @@ describe('revisión de la Fase 4b', () => {
     expect(updated.template.accountId).toBe(account.id)
   })
 })
+
+describe('compras del día de cierre al resumen siguiente', () => {
+  afterEach(async () => {
+    await db.statementPayments.clear()
+  })
+
+  it('turning it on moves a closing-day purchase from the just-closed statement to the open one', async () => {
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
+    const card = await createCreditCard({ name: 'visa 2551', closingDay: 22, dueDay: 4 })
+    await withToday('2026-10-25T12:00:00', async () => {
+      const almuerzo = await saveExpense(purchase(category.id, card.id, { date: '2026-10-22', description: 'almuerzo' }))
+      const dayBefore = await saveExpense(purchase(category.id, card.id, { date: '2026-10-21', description: 'antes' }))
+      expect((await db.expenses.get(almuerzo))?.statementPeriod).toBe('2026-10')
+
+      const moved = await updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, closingDayToNext: true, notes: undefined })
+      expect(moved).toBe(1)
+      expect((await db.expenses.get(almuerzo))?.statementPeriod).toBe('2026-11')
+      expect((await db.expenses.get(dayBefore))?.statementPeriod).toBe('2026-10')
+      expect((await db.creditCards.get(card.id))?.closingDayToNext).toBe(true)
+
+      // And off again: back to the statement that closes that day.
+      await updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, notes: undefined })
+      expect((await db.expenses.get(almuerzo))?.statementPeriod).toBe('2026-10')
+      expect((await db.creditCards.get(card.id))?.closingDayToNext).toBeUndefined()
+    })
+  })
+
+  it('never moves a gasto out of a paid statement — rolls the whole edit back', async () => {
+    const { payStatement } = await import('./statementPayments.repo')
+    const { createAccount } = await import('./accounts.repo')
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
+    const card = await createCreditCard({ name: 'visa 2551', closingDay: 22, dueDay: 4 })
+    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
+    await withToday('2026-10-25T12:00:00', async () => {
+      await saveExpense(purchase(category.id, card.id, { date: '2026-10-22', description: 'almuerzo' }))
+      await payStatement({
+        cardId: card.id,
+        period: '2026-10',
+        date: '2026-10-24',
+        lines: [{ currency: 'ARS', expectedAmount: 1_000_00, accountId: account.id, expectedAccountCurrency: 'ARS' }],
+      })
+      await expect(
+        updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, closingDayToNext: true, notes: undefined }),
+      ).rejects.toThrow(/resumen pagado o conciliado/)
+      expect((await db.creditCards.get(card.id))?.closingDayToNext).toBeUndefined()
+    })
+  })
+})
+
+describe('revisión: la opción del día de cierre con cuotas y resúmenes conciliados', () => {
+  afterEach(async () => {
+    await Promise.all([db.installmentPlans.clear(), db.statementPayments.clear()])
+  })
+
+  async function cuotasOf(planId: string) {
+    const rows = await db.expenses.filter((e) => e.sourcePlanId === planId).toArray()
+    return rows.sort((a, b) => (a.occurrenceIndex ?? 0) - (b.occurrenceIndex ?? 0))
+  }
+
+  /** One cuota per statement, consecutive, each where its date allows. */
+  async function expectConsistent(planId: string, cardId: string) {
+    const { getCardCalendar } = await import('./creditCards.repo')
+    const { statementPeriodFor } = await import('@/domain/cards')
+    const calendar = await getCardCalendar(cardId)
+    const cuotas = await cuotasOf(planId)
+    const periods = cuotas.map((c) => c.statementPeriod!)
+    expect(new Set(periods).size).toBe(periods.length)
+    for (const c of cuotas) expect(c.statementPeriod! >= statementPeriodFor(calendar, c.date)).toBe(true)
+    return periods
+  }
+
+  it('a purchase in cuotas on the closing day keeps one cuota per statement, toggling either way', async () => {
+    const { createInstallmentPlan } = await import('./installmentPlans.repo')
+    const category = await createCategory({ kind: 'expense', name: 'Hogar' })
+    const card = await createCreditCard({ name: 'visa 2551', closingDay: 22, dueDay: 4 })
+    await withToday('2026-10-25T12:00:00', async () => {
+      const plan = await createInstallmentPlan(
+        { description: 'Silla', categoryId: category.id, currency: 'ARS', totalAmount: 300, count: 3, firstDueDate: '2026-10-22', purchaseDate: '2026-10-22', cardId: card.id },
+        '2026-10-25',
+      )
+      expect(await expectConsistent(plan.id, card.id)).toEqual(['2026-10', '2026-11', '2026-12'])
+
+      await updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, closingDayToNext: true, notes: undefined })
+      expect(await expectConsistent(plan.id, card.id)).toEqual(['2026-11', '2026-12', '2027-01'])
+      // Cuota 1 keeps the purchase date — never a day before it.
+      expect((await cuotasOf(plan.id))[0]?.date).toBe('2026-10-22')
+
+      await updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, notes: undefined })
+      expect(await expectConsistent(plan.id, card.id)).toEqual(['2026-10', '2026-11', '2026-12'])
+    })
+  })
+
+  it('a purchase from an earlier closing day, toggled off, re-places its cuotas without doubling one up', async () => {
+    const { createInstallmentPlan } = await import('./installmentPlans.repo')
+    const category = await createCategory({ kind: 'expense', name: 'Hogar' })
+    const card = await createCreditCard({ name: 'visa 2551', closingDay: 22, dueDay: 4, closingDayToNext: true })
+    await withToday('2026-10-25T12:00:00', async () => {
+      const plan = await createInstallmentPlan(
+        { description: 'Mesa', categoryId: category.id, currency: 'ARS', totalAmount: 300, count: 3, firstDueDate: '2026-09-22', purchaseDate: '2026-09-22', cardId: card.id },
+        '2026-10-25',
+      )
+      expect(await expectConsistent(plan.id, card.id)).toEqual(['2026-10', '2026-11', '2026-12'])
+      await updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, notes: undefined })
+      expect(await expectConsistent(plan.id, card.id)).toEqual(['2026-09', '2026-10', '2026-11'])
+    })
+  })
+
+  it('never moves a gasto out of a reconciled statement either', async () => {
+    const { addStatementDifferences } = await import('./cardStatements.repo')
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
+    const card = await createCreditCard({ name: 'visa 2551', closingDay: 22, dueDay: 4 })
+    await withToday('2026-10-25T12:00:00', async () => {
+      await saveExpense(purchase(category.id, card.id, { date: '2026-10-22', description: 'almuerzo' }))
+      await addStatementDifferences({
+        cardId: card.id,
+        period: '2026-10',
+        categoryId: category.id,
+        description: 'Cargos',
+        lines: [{ currency: 'ARS', expectedTotal: 1_000_00, bankTotal: 1_200_00 }],
+      })
+      await expect(
+        updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, closingDayToNext: true, notes: undefined }),
+      ).rejects.toThrow(/pagado o conciliado/)
+    })
+  })
+})

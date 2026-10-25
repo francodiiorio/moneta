@@ -1,12 +1,6 @@
 import { db } from '../db'
 import type { CreditCard } from '@/domain/entities'
-import {
-  installmentPlacement,
-  reassignedPeriods,
-  statementDates,
-  statementPeriodFor,
-  type CardCalendar,
-} from '@/domain/cards'
+import { installmentPlacement, lastPurchaseDay, reassignedPeriods, statementDates, statementPeriodFor, type CardCalendar } from '@/domain/cards'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import { todayStamp } from '@/lib/dates'
@@ -15,6 +9,8 @@ export interface CreditCardInput {
   name: string
   closingDay: number
   dueDay: number
+  /** See CreditCard.closingDayToNext. */
+  closingDayToNext?: boolean
   notes?: string
 }
 
@@ -71,11 +67,11 @@ export async function reassignCardExpenses(cardId: string, before: CardCalendar,
   let moved = 0
   const others = []
   for (const expense of expenses) {
-    // A reconciliation charge stays in its statement, dated at its close —
-    // wherever that close moves (a later date would be past it).
+    // A reconciliation charge stays in its statement, dated at its last
+    // purchase day — wherever that moves (a later date would be past it).
     if (expense.tags?.includes(STATEMENT_RECONCILE_TAG) && expense.statementPeriod !== undefined) {
-      const { closeDate } = statementDates(after, expense.statementPeriod)
-      if (closeDate !== expense.date) await db.expenses.update(expense.id, { date: closeDate, updatedAt: now })
+      const last = lastPurchaseDay(after, expense.statementPeriod)
+      if (last !== expense.date) await db.expenses.update(expense.id, { date: last, updatedAt: now })
       continue
     }
     const plan = expense.sourcePlanId !== undefined ? cardPlans.get(expense.sourcePlanId) : undefined
@@ -83,7 +79,20 @@ export async function reassignCardExpenses(cardId: string, before: CardCalendar,
       others.push(expense)
       continue
     }
-    if (statementDates(before, expense.statementPeriod).closeDate < today) continue
+    // A plan whose purchase now lands in another statement (where
+    // closing-day purchases go changed, for a purchase on a closing day)
+    // re-places every cuota, closed statements included: one cuota per
+    // statement only holds if they all follow the same first statement.
+    // (A paid statement in the way rejects the edit — see updateCreditCard.)
+    const anchorMoved = statementPeriodFor(before, plan.purchaseDate) !== statementPeriodFor(after, plan.purchaseDate)
+    if (!anchorMoved && lastPurchaseDay(before, expense.statementPeriod) < today) {
+      // A closed statement keeps its cuotas — but one dated on its closing
+      // day, once closing-day purchases go to the next statement, would sit
+      // past the last day its statement takes: re-dated, never moved.
+      const last = lastPurchaseDay(after, expense.statementPeriod)
+      if (expense.date > last) await db.expenses.update(expense.id, { date: last, updatedAt: now })
+      continue
+    }
     const placement = installmentPlacement(after, plan.purchaseDate, expense.occurrenceIndex)
     if (placement.period === expense.statementPeriod && placement.date === expense.date) continue
     await db.expenses.update(expense.id, { statementPeriod: placement.period, date: placement.date, updatedAt: now })
@@ -107,6 +116,7 @@ export async function createCreditCard(input: CreditCardInput): Promise<CreditCa
       name: input.name,
       closingDay: input.closingDay,
       dueDay: input.dueDay,
+      ...(input.closingDayToNext && { closingDayToNext: true }),
       isArchived: false,
       order: (last?.order ?? -1) + 1,
       createdAt: now,
@@ -119,8 +129,8 @@ export async function createCreditCard(input: CreditCardInput): Promise<CreditCa
 }
 
 /**
- * Changing the default days re-places the expenses that were where the
- * OLD days put them (see `reassignCardExpenses`) — same rule as
+ * Changing the default days (or where closing-day purchases go) re-places
+ * the expenses that were where the OLD settings put them (see `reassignCardExpenses`) — same rule as
  * correcting one period by hand — but never a statement that already
  * closed: those were billed (and maybe paid) with the old days.
  * So first, every closed period with gastos or payments and no corrected dates gets
@@ -164,8 +174,33 @@ export async function updateCreditCard(
     }
     delete card.notes
     if (input.notes !== undefined) card.notes = input.notes
+    delete card.closingDayToNext
+    if (input.closingDayToNext) card.closingDayToNext = true
     await db.creditCards.put(card)
-    return reassignCardExpenses(id, frozen, await getCardCalendar(id))
+    const periodBefore = new Map(expenses.map((e) => [e.id, e.statementPeriod]))
+    const moved = await reassignCardExpenses(id, frozen, await getCardCalendar(id))
+    // Where closing-day purchases go also applies to closed statements (the
+    // bank already billed them in the next one) — but never in or out of a
+    // paid statement (its payment was its total) nor a reconciled one (its
+    // charge was the difference with the bank's total). Throwing rolls it
+    // all back.
+    const settled = new Set([
+      ...payments.map((p) => p.period),
+      ...expenses.flatMap((e) =>
+        e.tags?.includes(STATEMENT_RECONCILE_TAG) && e.statementPeriod !== undefined ? [e.statementPeriod] : [],
+      ),
+    ])
+    const after = await db.expenses.where('cardId').equals(id).toArray()
+    for (const expense of after) {
+      const from = periodBefore.get(expense.id)
+      if (from === expense.statementPeriod) continue
+      invariant(
+        !(from !== undefined && settled.has(from)) &&
+          !(expense.statementPeriod !== undefined && settled.has(expense.statementPeriod)),
+        'Ese cambio movería gastos de un resumen pagado o conciliado — deshacé el pago o borrá el cargo de conciliación primero',
+      )
+    }
+    return moved
   })
 }
 

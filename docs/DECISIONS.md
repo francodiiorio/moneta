@@ -1473,3 +1473,21 @@ todavía no llegaron a ningún resumen. Sin tarjeta no hay resumen: sigue contan
 para "Gastos del mes", presupuestos y reportes, y su ubicación en los resúmenes ya seguía al
 banco. Es sólo cómo se muestra el avance. Sin cambios de schema.
 
+## Compras del día de cierre: opción por tarjeta (Etapa 8)
+
+**Problema:** con la tarjeta que cierra el 22/10, una compra del 22/10 figuraba en el resumen
+de octubre en Moneta y en el de noviembre en el banco ("compra en proceso").
+
+**Lo que se verificó:** no hay una regla única. La Ley 25.065 obliga a informar la fecha de
+cierre, no una hora; lo que define el resumen es cuándo el comercio *presenta* la operación.
+Las compras del día de cierre suelen pasar al siguiente (sobre todo online, delivery, las
+que quedan "en proceso"), pero algunos emisores dicen que las de la mañana pueden entrar.
+
+**Decisión:** una opción por tarjeta, `closingDayToNext` ("las compras del día de cierre van
+al resumen siguiente"), apagada por defecto para no mover nada de quien ya la tenía bien. La
+regla vive en una sola función de dominio (`lastPurchaseDay`) que usan gastos, cuotas,
+cargos de conciliación y el CSV fijado a un resumen. Cambiarla reubica los gastos del día de
+cierre — también en resúmenes ya cerrados, porque el banco ya los facturó en el siguiente —
+salvo dentro o fuera de un resumen pagado, que se rechaza. Para el caso puntual, cada gasto
+se puede seguir fijando a mano en otro resumen.
+

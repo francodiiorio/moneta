@@ -31,7 +31,7 @@ afterEach(async () => {
 })
 
 async function seed() {
-  const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', notes: '' })
+  const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, notes: '' })
   const category = await createCategory({ kind: 'expense', name: 'Comida' })
   const base = { categoryId: category.id, status: 'confirmed' as const, cardId: card.id }
   // September statement (closed Sep 25): two currencies.
@@ -93,7 +93,7 @@ describe('getStatementDetail', () => {
 
 describe('statementChoices / getOpenPeriod / form helpers', () => {
   it('offers the automatic statement and the next two', async () => {
-    const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', notes: '' })
+    const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, notes: '' })
     expect((await statementChoices(card.id, '2026-10-26')).map((c) => c.period)).toEqual(['2026-11', '2026-12', '2027-01'])
   })
 
@@ -102,8 +102,8 @@ describe('statementChoices / getOpenPeriod / form helpers', () => {
   })
 
   it('editing clears notes when left empty, and corrected dates can be reset', async () => {
-    const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', notes: 'vieja' })
-    await updateCardFromForm(card.id, { name: 'Visa', closingDay: '25', dueDay: '5', notes: '' })
+    const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, notes: 'vieja' })
+    await updateCardFromForm(card.id, { name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, notes: '' })
     expect((await db.creditCards.get(card.id))?.notes).toBeUndefined()
 
     await correctStatementDates(card.id, '2026-10', { closeDate: '2026-10-22', dueDate: '2026-11-03' })

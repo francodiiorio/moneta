@@ -242,3 +242,20 @@ test('conciliar un resumen con el total del banco registra la diferencia', async
   await expect(page.getByText(/^Cargos del resumen/)).toBeVisible()
   await expect(page.getByText(/31[.,]500,00/).first()).toBeVisible()
 })
+
+// Las compras del día de cierre pueden ir al resumen siguiente, por tarjeta.
+test('la opción de compras del día de cierre se guarda y se ve en la tarjeta', async ({ page }) => {
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('visa 2551')
+  await page.getByLabel('Día de cierre').fill('22')
+  await page.getByLabel('Día de vencimiento').fill('4')
+  await page.getByRole('switch', { name: /comprado el día del cierre va al resumen siguiente/ }).click()
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByText('Cierra el 22 · vence el 4 · lo del 22 va al siguiente')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Opciones de visa 2551' }).click()
+  await page.getByRole('menuitem', { name: 'Editar' }).click()
+  await expect(page.getByRole('switch', { name: /comprado el día del cierre va al resumen siguiente/ })).toBeChecked()
+})

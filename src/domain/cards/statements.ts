@@ -2,6 +2,7 @@ import type { CardStatement, CreditCard, Expense } from '@/domain/entities'
 import { money, sumMoney, type Money } from '@/domain/money'
 import { addMonths } from 'date-fns'
 import {
+  addDays,
   dayOfMonth,
   formatMonthLabel,
   fromDateStamp,
@@ -18,7 +19,7 @@ import {
  *  corrected by hand — everything needed to place a purchase in its
  *  statement. */
 export interface CardCalendar {
-  card: Pick<CreditCard, 'closingDay' | 'dueDay'>
+  card: Pick<CreditCard, 'closingDay' | 'dueDay' | 'closingDayToNext'>
   overrides: readonly Pick<CardStatement, 'period' | 'closeDate' | 'dueDate'>[]
 }
 
@@ -48,8 +49,9 @@ export function statementDates(calendar: CardCalendar, period: MonthStamp): Stat
 
 /**
  * The statement a purchase on `date` falls into: the first period whose
- * close is on or after `date` (a purchase on the closing day itself goes
- * into that statement). Starts one month early: an override can move a
+ * last purchase day is on or after `date` — a purchase on the closing day
+ * goes into that statement, or the next one with `closingDayToNext` (see
+ * lastPurchaseDay). Starts one month early: an override can move a
  * period's close into the next month ("septiembre cerró el 2 de
  * octubre"), and a purchase on Oct 1st then belongs to September.
  */
@@ -58,10 +60,21 @@ export function statementPeriodFor(calendar: CardCalendar, date: DateStamp): Mon
   // A close always lands within a couple of months of its period, so this
   // finds it on the 1st–3rd try; the bound only guards absurd overrides.
   for (let i = 0; i < 4; i++) {
-    if (date <= statementDates(calendar, period).closeDate) return period
+    if (date <= lastPurchaseDay(calendar, period)) return period
     period = shiftMonth(period, 1)
   }
   return period
+}
+
+/**
+ * The last purchase date `period`'s statement takes: its close, or the day
+ * before when the card sends closing-day purchases to the next statement
+ * (`closingDayToNext`). The one boundary every placement uses — gastos,
+ * cuotas, reconciliation charges, a CSV pinned to a statement.
+ */
+export function lastPurchaseDay(calendar: CardCalendar, period: MonthStamp): DateStamp {
+  const { closeDate } = statementDates(calendar, period)
+  return calendar.card.closingDayToNext ? addDays(closeDate, -1) : closeDate
 }
 
 /** The statement still open on `today` — the one new purchases go into. */
@@ -151,14 +164,14 @@ export interface InstallmentPlacement {
  * Where cuota `index` (0-based) of a card purchase on `purchaseDate`
  * goes: the purchase's own statement + `index` — a card bills one cuota
  * per cycle, never two in one statement nor none in another — dated the
- * purchase day `index` months later, but never after that statement's
- * close (a cuota can't sit in a statement that closed before it). Used
+ * purchase day `index` months later, but never after the last day that
+ * statement takes (a cuota can't sit in a statement that closed before it). Used
  * both when the plan is created and when corrected dates re-place its
  * cuotas, so both paths always agree.
  */
 export function installmentPlacement(calendar: CardCalendar, purchaseDate: DateStamp, index: number): InstallmentPlacement {
   const period = shiftMonth(statementPeriodFor(calendar, purchaseDate), index)
   const sameDay = toDateStamp(addMonths(fromDateStamp(purchaseDate), index))
-  const close = statementDates(calendar, period).closeDate
-  return { period, date: sameDay <= close ? sameDay : close }
+  const last = lastPurchaseDay(calendar, period)
+  return { period, date: sameDay <= last ? sameDay : last }
 }

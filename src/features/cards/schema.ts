@@ -9,6 +9,8 @@ export const cardFormSchema = z.object({
   name: z.string().min(1, 'El nombre es obligatorio').max(60),
   closingDay: dayString,
   dueDay: dayString,
+  /** Purchases on the closing day go to the next statement. */
+  closingDayToNext: z.boolean(),
   notes: z.string().max(200),
 })
 export type CardFormValues = z.infer<typeof cardFormSchema>

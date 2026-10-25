@@ -69,6 +69,7 @@ export function CardsPage() {
               <p className="truncate font-medium">{card.name}</p>
               <p className="text-xs text-muted-foreground">
                 Cierra el {card.closingDay} · vence el {card.dueDay}
+                {card.closingDayToNext && ` · lo del ${card.closingDay} va al siguiente`}
               </p>
             </div>
             <DropdownMenu>

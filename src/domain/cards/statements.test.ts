@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { money } from '@/domain/money'
 import {
   installmentPlacement,
+  lastPurchaseDay,
   openStatement,
   reassignedPeriods,
   statementDates,
@@ -156,5 +157,36 @@ describe('installmentPlacement', () => {
     for (const { period, date } of all(cal, '2026-01-31', 6)) {
       expect(date <= statementDates(cal, period).closeDate).toBe(true)
     }
+  })
+})
+
+describe('compras del día de cierre al resumen siguiente (closingDayToNext)', () => {
+  const visaNext: CardCalendar = { card: { closingDay: 22, dueDay: 4, closingDayToNext: true }, overrides: [] }
+  const visaSame: CardCalendar = { card: { closingDay: 22, dueDay: 4 }, overrides: [] }
+
+  it('a purchase on the closing day goes to the next statement; the day before still enters', () => {
+    expect(statementPeriodFor(visaNext, '2026-10-22')).toBe('2026-11')
+    expect(statementPeriodFor(visaNext, '2026-10-21')).toBe('2026-10')
+    // Without the option, the closing day enters, as before.
+    expect(statementPeriodFor(visaSame, '2026-10-22')).toBe('2026-10')
+  })
+
+  it('the last purchase day of a statement is the day before its close — corrected dates too', () => {
+    expect(lastPurchaseDay(visaNext, '2026-10')).toBe('2026-10-21')
+    expect(lastPurchaseDay(visaSame, '2026-10')).toBe('2026-10-22')
+    const corrected: CardCalendar = { ...visaNext, overrides: [{ period: '2026-11', closeDate: '2026-11-01', dueDate: '2026-11-10' }] }
+    expect(lastPurchaseDay(corrected, '2026-11')).toBe('2026-10-31')
+    expect(statementPeriodFor(corrected, '2026-11-01')).toBe('2026-12')
+  })
+
+  it('a cuota is capped at the last day its statement takes, never on the close itself', () => {
+    // Bought Oct 22 (→ November): cuota 2 goes to December, dated Nov 22
+    // while that's within December's statement…
+    const capped: CardCalendar = { ...visaNext, overrides: [{ period: '2026-12', closeDate: '2026-12-20', dueDate: '2027-01-04' }] }
+    expect(installmentPlacement(capped, '2026-10-22', 1)).toEqual({ period: '2026-12', date: '2026-11-22' })
+    // …and when December's statement closes on Nov 22, capped at Nov 21:
+    // the close itself would belong to the next statement.
+    const late: CardCalendar = { ...visaNext, overrides: [{ period: '2026-12', closeDate: '2026-11-22', dueDate: '2026-12-04' }] }
+    expect(installmentPlacement(late, '2026-10-22', 1)).toEqual({ period: '2026-12', date: '2026-11-21' })
   })
 })

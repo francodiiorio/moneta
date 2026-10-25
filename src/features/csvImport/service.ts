@@ -13,7 +13,7 @@ import {
 } from '@/database/repositories'
 import type { ExpenseInput } from '@/database/repositories/expenses.repo'
 import type { IncomeInput } from '@/database/repositories/incomes.repo'
-import { statementDates, statementPeriodFor, type StatementDates } from '@/domain/cards'
+import { lastPurchaseDay, statementDates, statementPeriodFor, type StatementDates } from '@/domain/cards'
 import { accountBalanceAt, movementAccountProblem, toAccountMovements } from '@/domain/accounts'
 import type { Account, Category, CreditCard } from '@/domain/entities'
 import { money, parseAmount, type CurrencyCode, type Money } from '@/domain/money'
@@ -268,7 +268,9 @@ async function destinationContext(
   if (destination.kind === 'card') {
     const calendar = await creditCardsRepo.getCardCalendar(destination.cardId)
     const pinned = destination.statementPeriod === '' ? undefined : destination.statementPeriod
-    const pinnedClose = pinned === undefined ? undefined : statementDates(calendar, pinned).closeDate
+    // The last day the pinned statement takes (the close, or the day before
+    // when the card sends closing-day purchases to the next one).
+    const pinnedClose = pinned === undefined ? undefined : lastPurchaseDay(calendar, pinned)
     if (pinned !== undefined) invariant(isValidMonthStamp(pinned), `Resumen inválido: ${pinned}`)
     const paid = new Set((await statementPaymentsRepo.listStatementPayments(destination.cardId)).map((p) => p.period))
     const periodOf = (date: DateStamp) => pinned ?? statementPeriodFor(calendar, date)
@@ -277,7 +279,11 @@ async function destinationContext(
       // Same rules as conciliation: a paid statement only changes by undoing
       // its payment, and a pinned one can't take a purchase after its close.
       rowProblem: (date) => {
-        if (pinnedClose !== undefined && date > pinnedClose) return 'posterior al cierre del resumen elegido'
+        if (pinnedClose !== undefined && date > pinnedClose) {
+          return calendar.card.closingDayToNext
+            ? 'del día de cierre o posterior: va al resumen siguiente'
+            : 'posterior al cierre del resumen elegido'
+        }
         const period = periodOf(date)
         return paid.has(period) ? `el resumen de ${formatMonthLabel(period).toLowerCase()} ya está pagado` : undefined
       },
