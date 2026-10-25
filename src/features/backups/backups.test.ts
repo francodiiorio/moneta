@@ -1131,6 +1131,26 @@ describe('revisión de la Fase 4a — backups', () => {
 })
 
 describe('tarjeta con compras del día de cierre al resumen siguiente', () => {
+  it('a card’s opening balance survives an export and import; an invalid one is rejected', async () => {
+    await seedFullDatabase()
+    const [card] = await db.creditCards.toArray()
+    const openingBalances = [{ period: '2026-07', currency: 'ARS', amount: 480_000_00 }]
+    await db.creditCards.update(card!.id, { openingBalances, openingBase: '2026-07' })
+    const exported = await exportBackup()
+    await clearAllTables()
+    await importBackup(new File([exported.blob], exported.filename, { type: 'application/json' }))
+    expect((await db.creditCards.get(card!.id))?.openingBalances).toEqual(openingBalances)
+
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.creditCards[0]!.openingBalances = [
+      { period: '2026-07', currency: 'ARS', amount: 1 },
+      { period: '2026-07', currency: 'ARS', amount: 2 },
+    ]
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/repite ARS/)
+  })
+
   it('the option survives an export and import', async () => {
     await seedFullDatabase()
     const [card] = await db.creditCards.toArray()

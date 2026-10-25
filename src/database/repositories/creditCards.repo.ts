@@ -1,6 +1,14 @@
 import { db } from '../db'
 import type { CreditCard } from '@/domain/entities'
-import { installmentPlacement, lastPurchaseDay, reassignedPeriods, statementDates, statementPeriodFor, type CardCalendar } from '@/domain/cards'
+import {
+  installmentPlacement,
+  lastPurchaseDay,
+  openingBalancesProblem,
+  reassignedPeriods,
+  statementDates,
+  statementPeriodFor,
+  type CardCalendar,
+} from '@/domain/cards'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
 import { todayStamp } from '@/lib/dates'
@@ -11,7 +19,15 @@ export interface CreditCardInput {
   dueDay: number
   /** See CreditCard.closingDayToNext. */
   closingDayToNext?: boolean
+  /** See CreditCard.openingBalances / openingBase. Empty or absent = none. */
+  openingBalances?: CreditCard['openingBalances']
+  openingBase?: CreditCard['openingBase']
   notes?: string
+}
+
+function assertOpening(input: Pick<CreditCardInput, 'openingBalances' | 'openingBase'>): void {
+  const problem = openingBalancesProblem(input.openingBalances ?? [], input.openingBase)
+  invariant(problem === undefined, problem ?? '')
 }
 
 function assertDays(input: Pick<CreditCardInput, 'closingDay' | 'dueDay'>): void {
@@ -108,6 +124,7 @@ export async function reassignCardExpenses(cardId: string, before: CardCalendar,
 
 export async function createCreditCard(input: CreditCardInput): Promise<CreditCard> {
   assertDays(input)
+  assertOpening(input)
   const now = new Date().toISOString()
   return db.transaction('rw', db.creditCards, async () => {
     const last = await db.creditCards.orderBy('order').last()
@@ -117,6 +134,9 @@ export async function createCreditCard(input: CreditCardInput): Promise<CreditCa
       closingDay: input.closingDay,
       dueDay: input.dueDay,
       ...(input.closingDayToNext && { closingDayToNext: true }),
+      ...(input.openingBalances !== undefined &&
+        input.openingBalances.length > 0 &&
+        input.openingBase !== undefined && { openingBalances: input.openingBalances, openingBase: input.openingBase }),
       isArchived: false,
       order: (last?.order ?? -1) + 1,
       createdAt: now,
@@ -143,6 +163,7 @@ export async function updateCreditCard(
   input: Omit<CreditCardInput, 'notes'> & { notes: string | undefined },
 ): Promise<number> {
   assertDays(input)
+  assertOpening(input)
   const tables = [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans, db.statementPayments]
   return db.transaction('rw', tables, async () => {
     const existing = await db.creditCards.get(id)
@@ -151,8 +172,14 @@ export async function updateCreditCard(
     const openPeriod = statementPeriodFor(before, todayStamp())
     const expenses = await db.expenses.where('cardId').equals(id).toArray()
     const payments = await db.statementPayments.where('cardId').equals(id).toArray()
+    // A closed statement with only an opening balance freezes too: its due
+    // date decides whether that balance is overdue.
     const closedPeriods = new Set(
-      [...expenses.map((e) => e.statementPeriod), ...payments.map((p) => p.period)].filter(
+      [
+        ...expenses.map((e) => e.statementPeriod),
+        ...payments.map((p) => p.period),
+        ...(existing.openingBalances ?? []).map((b) => b.period),
+      ].filter(
         (p): p is string => p !== undefined && p < openPeriod,
       ),
     )
@@ -176,6 +203,12 @@ export async function updateCreditCard(
     if (input.notes !== undefined) card.notes = input.notes
     delete card.closingDayToNext
     if (input.closingDayToNext) card.closingDayToNext = true
+    delete card.openingBalances
+    delete card.openingBase
+    if (input.openingBalances !== undefined && input.openingBalances.length > 0 && input.openingBase !== undefined) {
+      card.openingBalances = input.openingBalances
+      card.openingBase = input.openingBase
+    }
     await db.creditCards.put(card)
     const periodBefore = new Map(expenses.map((e) => [e.id, e.statementPeriod]))
     const moved = await reassignCardExpenses(id, frozen, await getCardCalendar(id))
@@ -190,6 +223,17 @@ export async function updateCreditCard(
         e.tags?.includes(STATEMENT_RECONCILE_TAG) && e.statementPeriod !== undefined ? [e.statementPeriod] : [],
       ),
     ])
+    // The opening balance is part of a statement's total: same rule.
+    const openingKey = (b: { period: string; currency: string; amount: number }) => `${b.period}:${b.currency}:${b.amount}`
+    const oldOpening = new Set((existing.openingBalances ?? []).map(openingKey))
+    const newOpening = new Set((card.openingBalances ?? []).map(openingKey))
+    for (const b of [...(existing.openingBalances ?? []), ...(card.openingBalances ?? [])]) {
+      if (oldOpening.has(openingKey(b)) && newOpening.has(openingKey(b))) continue
+      invariant(
+        !settled.has(b.period),
+        'Ese resumen ya está pagado o conciliado — deshacé el pago o borrá el cargo de conciliación para cambiar su saldo inicial',
+      )
+    }
     const after = await db.expenses.where('cardId').equals(id).toArray()
     for (const expense of after) {
       const from = periodBefore.get(expense.id)

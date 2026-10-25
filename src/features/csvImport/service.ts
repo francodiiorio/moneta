@@ -346,6 +346,9 @@ async function accountCandidates(accountId: string, range: { from: DateStamp; to
 export interface StatementChoice extends StatementDates {
   /** A paid statement can't take imported gastos. */
   paid: boolean
+  /** It has the card's opening balance — what was owed before Moneta, as
+   *  a total: importing its gastos too would count them twice. */
+  hasOpening: boolean
 }
 
 /** The statements a card import can pin every row to: the open one and
@@ -359,7 +362,11 @@ export async function cardStatementChoices(cardId: string, today: DateStamp = to
   const open = statementPeriodFor(calendar, today)
   return [0, -1, -2, -3].map((offset) => {
     const dates = statementDates(calendar, shiftMonth(open, offset))
-    return { ...dates, paid: payments.some((p) => p.period === dates.period) }
+    return {
+      ...dates,
+      paid: payments.some((p) => p.period === dates.period),
+      hasOpening: (calendar.card.openingBalances ?? []).some((b) => b.period === dates.period),
+    }
   })
 }
 

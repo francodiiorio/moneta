@@ -259,3 +259,40 @@ test('la opción de compras del día de cierre se guarda y se ve en la tarjeta',
   await page.getByRole('menuitem', { name: 'Editar' }).click()
   await expect(page.getByRole('switch', { name: /comprado el día del cierre va al resumen siguiente/ })).toBeChecked()
 })
+
+// Arrancar con la tarjeta ya usada: el saldo inicial del resumen cerrado se
+// carga como total (no gasto por gasto) y se paga desde una cuenta.
+test('una tarjeta con saldo inicial se paga desde una cuenta sin cargar sus gastos', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Galicia')
+  await page.getByLabel('Saldo inicial').fill('1.000.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('visa 2551')
+  await page.getByLabel('Día de cierre').fill('28')
+  await page.getByLabel('Día de vencimiento').fill('6')
+  await page.getByLabel('Resumen cerrado sin pagar en ARS').fill('480.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // The closed statement already shows what was owed, and can be paid.
+  await expect(page.getByText(/480[.,]000,00/).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Pagar', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: /^Pagar visa 2551/ })
+  await dialog.getByRole('button', { name: 'Pagar', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByText('Pagado', { exact: true })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Ver resúmenes' }).click()
+  await expect(page.getByText('En curso')).toBeVisible()
+  await page.getByRole('button', { name: 'Resumen anterior' }).click()
+  await expect(page.getByText('Saldo inicial', { exact: true })).toBeVisible()
+
+  // 1.000.000 − 480.000, and it never shows up as a gasto.
+  await page.goto('/cuentas')
+  await expect(page.getByText(/520[.,]000,00/).first()).toBeVisible()
+})

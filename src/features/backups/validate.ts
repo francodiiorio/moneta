@@ -1,5 +1,11 @@
 import { movementAccountProblem, transferProblem } from '@/domain/accounts'
-import { statementOverrideProblem, statementPaymentProblem, statementPeriodFor, type CardCalendar } from '@/domain/cards'
+import {
+  openingBalancesProblem,
+  statementOverrideProblem,
+  statementPaymentProblem,
+  statementPeriodFor,
+  type CardCalendar,
+} from '@/domain/cards'
 import { isValidMonthStamp } from '@/lib/dates'
 import { firstPendingOccurrence } from '@/domain/recurrence'
 import type { LatestBackupData } from './migrations'
@@ -20,6 +26,11 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
   const calendarByCard = new Map<string, CardCalendar>(
     data.creditCards.map((card) => [card.id, { card, overrides: data.cardStatements.filter((s) => s.cardId === card.id) }]),
   )
+
+  for (const card of data.creditCards) {
+    const problem = openingBalancesProblem(card.openingBalances ?? [], card.openingBase)
+    if (problem) throw new Error(`Tarjeta inválida "${card.name}" (${card.id}): ${problem}`)
+  }
 
   const statementKeys = new Set<string>()
   for (const statement of data.cardStatements) {

@@ -1,4 +1,12 @@
 import { z } from 'zod'
+import { tryParsePositiveAmount } from '@/domain/money'
+
+/** Blank, or an amount above zero in `currency`. */
+function optionalAmount(currency: string) {
+  return z.string().refine((v) => v.trim() === '' || tryParsePositiveAmount(v, currency) !== undefined, {
+    message: 'Ingresá un monto mayor a cero, o dejalo vacío',
+  })
+}
 
 const dayString = z
   .string()
@@ -11,6 +19,11 @@ export const cardFormSchema = z.object({
   dueDay: dayString,
   /** Purchases on the closing day go to the next statement. */
   closingDayToNext: z.boolean(),
+  /** What was owed when the card was added — blank = nothing. */
+  openingClosedArs: optionalAmount('ARS'),
+  openingClosedUsd: optionalAmount('USD'),
+  openingOpenArs: optionalAmount('ARS'),
+  openingOpenUsd: optionalAmount('USD'),
   notes: z.string().max(200),
 })
 export type CardFormValues = z.infer<typeof cardFormSchema>

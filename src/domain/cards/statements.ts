@@ -19,7 +19,7 @@ import {
  *  corrected by hand — everything needed to place a purchase in its
  *  statement. */
 export interface CardCalendar {
-  card: Pick<CreditCard, 'closingDay' | 'dueDay' | 'closingDayToNext'>
+  card: Pick<CreditCard, 'closingDay' | 'dueDay' | 'closingDayToNext' | 'openingBalances' | 'openingBase'>
   overrides: readonly Pick<CardStatement, 'period' | 'closeDate' | 'dueDate'>[]
 }
 
@@ -97,6 +97,47 @@ export function statementTotals(expenses: readonly Pick<Expense, 'amount' | 'cur
   return [...byCurrency.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([currency, amounts]) => sumMoney(currency, amounts))
+}
+
+/** Why `balances` can't be a card's opening balance (entered for the
+ *  closed statement `base` and the next one), or `undefined` — shared by
+ *  the repository and backup import. */
+export function openingBalancesProblem(
+  balances: readonly { period: string; currency: string; amount: number }[],
+  base: MonthStamp | undefined,
+): string | undefined {
+  if (balances.length === 0) return undefined
+  if (base === undefined || !/^\d{4}-(0[1-9]|1[0-2])$/.test(base)) return 'Falta el resumen del saldo inicial'
+  const seen = new Set<string>()
+  for (const b of balances) {
+    // Only the closed statement it was entered for, and the one after.
+    if (b.period !== base && b.period !== shiftMonth(base, 1)) return `Período inválido en el saldo inicial: ${b.period}`
+    if (!Number.isSafeInteger(b.amount) || b.amount <= 0) return 'El saldo inicial tiene que ser mayor a cero'
+    const key = `${b.period}:${b.currency}`
+    if (seen.has(key)) return `El saldo inicial repite ${b.currency} en el mismo resumen`
+    seen.add(key)
+  }
+  return undefined
+}
+
+/** The card's opening balance for `period`, per currency (what was owed
+ *  there before Moneta — see CreditCard.openingBalances). */
+export function openingBalanceOf(calendar: CardCalendar, period: MonthStamp): Money[] {
+  return statementTotals((calendar.card.openingBalances ?? []).filter((b) => b.period === period))
+}
+
+/**
+ * What a statement adds up to — its gastos plus the card's opening balance
+ * for that period — one Money per currency. The one total every screen,
+ * the payment and reconciliation use, so they never disagree.
+ */
+export function statementBalance(
+  calendar: CardCalendar,
+  period: MonthStamp,
+  expenses: readonly Pick<Expense, 'amount' | 'currency'>[],
+): Money[] {
+  const opening = (calendar.card.openingBalances ?? []).filter((b) => b.period === period)
+  return statementTotals([...expenses, ...opening])
 }
 
 /**

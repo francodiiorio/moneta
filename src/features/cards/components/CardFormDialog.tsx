@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import type { CreditCard } from '@/domain/entities'
 import { cardFormSchema, type CardFormValues } from '../schema'
-import { createCardFromForm, updateCardFromForm } from '../service'
+import { createCardFromForm, openingBasePeriod, openingFormValues, updateCardFromForm } from '../service'
+import { formatMonthLabel, shiftMonth } from '@/lib/dates'
 
 interface CardFormDialogProps {
   open: boolean
@@ -18,7 +19,26 @@ interface CardFormDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const EMPTY: CardFormValues = { name: '', closingDay: '', dueDay: '', closingDayToNext: false, notes: '' }
+const EMPTY: CardFormValues = {
+  name: '',
+  closingDay: '',
+  dueDay: '',
+  closingDayToNext: false,
+  openingClosedArs: '',
+  openingClosedUsd: '',
+  openingOpenArs: '',
+  openingOpenUsd: '',
+  notes: '',
+}
+
+const OPENING_INPUTS = [
+  { name: 'openingClosedArs', currency: 'ARS' },
+  { name: 'openingClosedUsd', currency: 'USD' },
+] as const
+const OPENING_OPEN_INPUTS = [
+  { name: 'openingOpenArs', currency: 'ARS' },
+  { name: 'openingOpenUsd', currency: 'USD' },
+] as const
 
 export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps) {
   const form = useForm<CardFormValues>({ resolver: zodResolver(cardFormSchema), defaultValues: EMPTY })
@@ -32,6 +52,7 @@ export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps
             closingDay: String(card.closingDay),
             dueDay: String(card.dueDay),
             closingDayToNext: card.closingDayToNext ?? false,
+            ...openingFormValues(card),
             notes: card.notes ?? '',
           }
         : EMPTY,
@@ -39,6 +60,21 @@ export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps
     // Keyed on card?.id — a background refetch must not reset an edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, card?.id])
+
+  // Which statements the opening balance is for, once the days are known.
+  const [closingDayText, dueDayText, toNext] = useWatch({ control: form.control, name: ['closingDay', 'dueDay', 'closingDayToNext'] })
+  const closingDay = Number(closingDayText)
+  const dueDay = Number(dueDayText)
+  const openingLabels =
+    Number.isInteger(closingDay) && closingDay >= 1 && closingDay <= 31 && Number.isInteger(dueDay) && dueDay >= 1 && dueDay <= 31
+      ? (() => {
+          const base = openingBasePeriod({
+            card: { closingDay, dueDay, closingDayToNext: toNext, ...(card?.openingBase && { openingBase: card.openingBase }) },
+            overrides: [],
+          })
+          return { closed: formatMonthLabel(base).toLowerCase(), open: formatMonthLabel(shiftMonth(base, 1)).toLowerCase() }
+        })()
+      : undefined
 
   async function onSubmit(values: CardFormValues) {
     try {
@@ -61,7 +97,7 @@ export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90svh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{card ? 'Editar tarjeta' : 'Nueva tarjeta'}</DialogTitle>
           <DialogDescription>
@@ -130,6 +166,46 @@ export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps
                 </FormItem>
               )}
             />
+            <fieldset className="flex flex-col gap-3 rounded-lg border border-border p-3">
+              <legend className="px-1 text-sm font-medium">Lo que ya debías al empezar (opcional)</legend>
+              <p className="-mt-1 text-xs text-muted-foreground">
+                Si arrancás con la tarjeta ya usada, cargá los totales que te muestra el banco en vez de cada gasto. No
+                cuentan como gastos tuyos en Moneta (son de antes), pero suman al resumen para que lo puedas pagar desde
+                tus cuentas.
+              </p>
+              {[
+                { inputs: OPENING_INPUTS, title: 'Resumen cerrado sin pagar', month: openingLabels?.closed },
+                { inputs: OPENING_OPEN_INPUTS, title: 'Resumen en curso, hasta hoy', month: openingLabels?.open },
+              ].map(({ inputs, title, month }) => (
+                <div key={title} className="flex flex-col gap-1.5">
+                  <p className="text-sm">
+                    {title}
+                    {month && <span className="text-muted-foreground"> · {month}</span>}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {inputs.map(({ name, currency }) => (
+                      <FormField
+                        key={name}
+                        control={form.control}
+                        name={name}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-xs text-muted-foreground">
+                              <span className="sr-only">{title} en </span>
+                              {currency}
+                            </FormLabel>
+                            <FormControl>
+                              <Input inputMode="decimal" placeholder={currency === 'ARS' ? '$ 0,00' : 'US$ 0,00'} {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </fieldset>
             <FormField
               control={form.control}
               name="notes"

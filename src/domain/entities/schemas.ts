@@ -160,6 +160,18 @@ export const creditCardSchema = z.object({
    *  statement that closes that day. Optional and additive: every backup
    *  version validates the same with or without it. */
   closingDayToNext: z.boolean().optional(),
+  /** What was owed on the card when it was added to Moneta — the closed,
+   *  unpaid statement and what the open one had so far — as totals per
+   *  statement and currency, never itemized. Not a gasto: it was spent
+   *  before Moneta (like an account's opening balance). Optional and
+   *  additive: every backup version validates the same without it. */
+  openingBalances: z
+    .array(z.object({ period: monthStamp, currency: currencyCode, amount: minorAmount.positive() }))
+    .optional(),
+  /** The closed statement the opening balance was entered for (the open
+   *  one is the month after) — kept, so editing the card months later
+   *  still means the same statements. Present whenever openingBalances is. */
+  openingBase: monthStamp.optional(),
   isArchived: z.boolean(),
   order: z.number(),
   notes: z.string().optional(),

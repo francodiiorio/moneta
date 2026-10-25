@@ -1491,3 +1491,18 @@ cierre — también en resúmenes ya cerrados, porque el banco ya los facturó e
 salvo dentro o fuera de un resumen pagado, que se rechaza. Para el caso puntual, cada gasto
 se puede seguir fijando a mano en otro resumen.
 
+## Saldo inicial de la tarjeta: arrancar con la tarjeta ya usada (Etapa 8)
+
+**Problema:** sumar a Moneta una tarjeta en uso obligaba a reconstruir el resumen cerrado gasto
+por gasto — si no, no se podía pagar desde una cuenta, porque el pago es contra el total que
+tiene Moneta. Las cuentas no tienen ese problema: arrancan con su saldo de hoy.
+
+**Decisión:** la tarjeta tiene un saldo inicial opcional, por resumen y moneda: el resumen
+cerrado sin pagar y, si se quiere, lo que llevaba el abierto. Se carga como el banco lo
+muestra (totales), no es un gasto (no ensucia gastos del mes, presupuestos ni reportes de
+antes de usar Moneta) y suma al total del resumen — una sola función,
+`domain/cards:statementBalance` —, así se paga desde una cuenta como cualquier otro.
+
+**Alternativa descartada:** cargarlo como un gasto "Saldo anterior". Contaría como consumo de
+un mes en el que no se usaba Moneta, y presupuestos y reportes quedarían inflados.
+

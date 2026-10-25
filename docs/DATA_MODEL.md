@@ -113,11 +113,27 @@ AccountAdjustment {
 ### CreditCard / CardStatement (Etapa 8, Fase 4)
 
 ```ts
-CreditCard    { id, name, closingDay /* 1–31 */, dueDay /* 1–31 */, closingDayToNext?, isArchived, order, notes?, createdAt, updatedAt }
+CreditCard    { id, name, closingDay /* 1–31 */, dueDay /* 1–31 */, closingDayToNext?, openingBalances?, openingBase?, isArchived, order, notes?, createdAt, updatedAt }
 CardStatement { id, cardId, period /* YYYY-MM */, closeDate, dueDate, createdAt, updatedAt }   // sólo overrides
 Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con accountId
 ```
 
+- **Saldo inicial** (`openingBalances?: { period, currency, amount }[]`): lo que se debía al
+  sumar la tarjeta a Moneta — el resumen cerrado sin pagar y lo que llevaba el abierto —
+  como totales por resumen y moneda, nunca gasto por gasto. **No es un gasto** (no entra en
+  gastos del mes, presupuestos ni reportes): se gastó antes de Moneta, igual que el saldo
+  inicial de una cuenta no es un ingreso. Suma al total del resumen
+  (`domain/cards:statementBalance`, el único total que usan las pantallas, el pago y la
+  conciliación), así se paga desde una cuenta. Montos > 0, una entrada por resumen y moneda
+  (`openingBalancesProblem`, en repo e import). No se edita el de un resumen pagado o
+  conciliado. `openingBase` guarda para qué resumen cerrado se cargó (el abierto es el
+  mes siguiente): editar la tarjeta meses después sigue apuntando a los mismos resúmenes, y
+  el saldo inicial sólo puede ser de esos dos. Un resumen cerrado con saldo inicial se
+  congela como cualquier otro al cambiar los días, y si queda impago sigue "vencido" (no
+  pasa a "sin pago registrado"). En un merge de backup la tarjeta local gana entera, saldo
+  inicial incluido; si el archivo trae pagos de ese resumen, puede quedar "pagado con
+  diferencia" (visible, como cualquier otra divergencia del merge). Campos opcionales y
+  aditivos: sin versión nueva de schema ni de backup.
 - Una tarjeta **no tiene moneda**: un resumen argentino trae saldo en ARS y en USD por
   separado, y `domain/cards:statementTotals` devuelve un total por moneda, sin convertir.
 - **Período** = el mes en que cierra el resumen. Sus fechas por defecto salen de los días

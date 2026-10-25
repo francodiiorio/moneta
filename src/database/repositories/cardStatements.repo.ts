@@ -1,5 +1,5 @@
 import { db } from '../db'
-import { lastPurchaseDay, statementDifferences, statementOverrideProblem, statementPeriodFor, statementTotals } from '@/domain/cards'
+import { lastPurchaseDay, statementBalance, statementDifferences, statementOverrideProblem, statementPeriodFor } from '@/domain/cards'
 import { money } from '@/domain/money'
 import type { CardStatement, Expense } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
@@ -96,7 +96,7 @@ export async function addStatementDifferences(input: StatementDifferenceInput): 
     invariant(!(await isStatementPaid(input.cardId, input.period)), 'Ese resumen ya está pagado — deshacé el pago para conciliarlo')
     const currencies = new Set(input.lines.map((l) => l.currency))
     invariant(currencies.size === input.lines.length, 'Una sola diferencia por moneda')
-    const totals = statementTotals(await listCardExpenses(input.cardId, input.period))
+    const totals = statementBalance(calendar, input.period, await listCardExpenses(input.cardId, input.period))
     // The statement's last purchase day: its close, or the day before when
     // closing-day purchases go to the next one.
     const closeDate = lastPurchaseDay(calendar, input.period)

@@ -31,7 +31,7 @@ afterEach(async () => {
 })
 
 async function seed() {
-  const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, notes: '' })
+  const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, openingClosedArs: '', openingClosedUsd: '', openingOpenArs: '', openingOpenUsd: '', notes: '' })
   const category = await createCategory({ kind: 'expense', name: 'Comida' })
   const base = { categoryId: category.id, status: 'confirmed' as const, cardId: card.id }
   // September statement (closed Sep 25): two currencies.
@@ -93,7 +93,7 @@ describe('getStatementDetail', () => {
 
 describe('statementChoices / getOpenPeriod / form helpers', () => {
   it('offers the automatic statement and the next two', async () => {
-    const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, notes: '' })
+    const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, openingClosedArs: '', openingClosedUsd: '', openingOpenArs: '', openingOpenUsd: '', notes: '' })
     expect((await statementChoices(card.id, '2026-10-26')).map((c) => c.period)).toEqual(['2026-11', '2026-12', '2027-01'])
   })
 
@@ -102,8 +102,8 @@ describe('statementChoices / getOpenPeriod / form helpers', () => {
   })
 
   it('editing clears notes when left empty, and corrected dates can be reset', async () => {
-    const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, notes: 'vieja' })
-    await updateCardFromForm(card.id, { name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, notes: '' })
+    const card = await createCardFromForm({ name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, openingClosedArs: '', openingClosedUsd: '', openingOpenArs: '', openingOpenUsd: '', notes: 'vieja' })
+    await updateCardFromForm(card.id, { name: 'Visa', closingDay: '25', dueDay: '5', closingDayToNext: false, openingClosedArs: '', openingClosedUsd: '', openingOpenArs: '', openingOpenUsd: '', notes: '' })
     expect((await db.creditCards.get(card.id))?.notes).toBeUndefined()
 
     await correctStatementDates(card.id, '2026-10', { closeDate: '2026-10-22', dueDate: '2026-11-03' })
@@ -257,3 +257,95 @@ describe('reconciling a statement against the bank (Fase 6)', () => {
     expect(reconcileCurrencies([money(1, 'USD')])).toEqual(['USD', 'ARS'])
   })
 })
+
+describe('saldo inicial de la tarjeta (A)', () => {
+  const base = { name: 'visa 2551', closingDay: '22', dueDay: '4', closingDayToNext: false, notes: '' }
+  const blank = { openingClosedArs: '', openingClosedUsd: '', openingOpenArs: '', openingOpenUsd: '' }
+
+  afterEach(async () => {
+    await Promise.all([db.statementPayments.clear(), db.accounts.clear()])
+  })
+
+  it('a card added mid-cycle carries what was owed: the closed statement and the open one so far', async () => {
+    const card = await createCardFromForm(
+      { ...base, ...blank, openingClosedArs: '480.000', openingClosedUsd: '12', openingOpenArs: '35.000' },
+      '2026-10-25',
+    )
+    expect(card.openingBalances).toEqual([
+      { period: '2026-10', currency: 'ARS', amount: 480_000_00 },
+      { period: '2026-10', currency: 'USD', amount: 12_00 },
+      { period: '2026-11', currency: 'ARS', amount: 35_000_00 },
+    ])
+    const october = await getStatementDetail(card.id, '2026-10', '2026-10-25')
+    expect(october?.totals).toEqual([money(480_000_00, 'ARS'), money(12_00, 'USD')])
+    expect(october?.openingBalance).toEqual([money(480_000_00, 'ARS'), money(12_00, 'USD')])
+    expect(october?.due).toBe('pending')
+  })
+
+  it('it is paid from an account like any statement, and never counts as a gasto', async () => {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const { getMonthSummary } = await import('@/features/reports/service')
+    const card = await createCardFromForm({ ...base, ...blank, openingClosedArs: '480.000' }, '2026-10-25')
+    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 1_000_000_00, openingDate: '2026-10-01' })
+    await payStatementFromForm(
+      card.id,
+      '2026-10',
+      { date: '2026-11-04', lines: [{ currency: 'ARS', accountId: account.id, debitedAmount: '' }] },
+      { totals: [money(480_000_00, 'ARS')], accountCurrency: new Map([[account.id, 'ARS']]) },
+    )
+    expect((await getStatementDetail(card.id, '2026-10', '2026-11-05'))?.due).toBe('paid')
+    expect((await getMonthSummary('2026-10')).expense.amount).toBe(0)
+  })
+
+  it('editing keeps the statements it was entered for; it can’t change once that statement is paid', async () => {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const card = await createCardFromForm({ ...base, ...blank, openingClosedArs: '480.000' }, '2026-10-25')
+    // A month later, the "closed" field still means October.
+    await updateCardFromForm(card.id, { ...base, ...blank, openingClosedArs: '481.000' }, '2026-11-25')
+    expect((await getStatementDetail(card.id, '2026-10', '2026-11-25'))?.openingBalance).toEqual([money(481_000_00, 'ARS')])
+
+    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-10-01' })
+    await payStatementFromForm(
+      card.id,
+      '2026-10',
+      { date: '2026-11-04', lines: [{ currency: 'ARS', accountId: account.id, debitedAmount: '' }] },
+      { totals: [money(481_000_00, 'ARS')], accountCurrency: new Map([[account.id, 'ARS']]) },
+    )
+    await expect(updateCardFromForm(card.id, { ...base, ...blank, openingClosedArs: '1' }, '2026-11-25')).rejects.toThrow(
+      /pagado o conciliado/,
+    )
+  })
+
+  it('editing months later keeps the statements it was entered for, even with only the open one', async () => {
+    const card = await createCardFromForm({ ...base, ...blank, openingOpenArs: '35.000' }, '2026-10-25')
+    expect(card.openingBase).toBe('2026-10')
+    expect(card.openingBalances).toEqual([{ period: '2026-11', currency: 'ARS', amount: 35_000_00 }])
+    const { openingFormValues } = await import('./service')
+    const stored = await db.creditCards.get(card.id)
+    // Still the "open" field, still November — not shifted a month.
+    expect(openingFormValues(stored!)).toMatchObject({ openingClosedArs: '', openingOpenArs: '35.000,00' })
+    await updateCardFromForm(card.id, { ...base, ...blank, openingClosedArs: '480.000', openingOpenArs: '35.000' }, '2027-01-10')
+    expect((await db.creditCards.get(card.id))?.openingBalances).toEqual([
+      { period: '2026-10', currency: 'ARS', amount: 480_000_00 },
+      { period: '2026-11', currency: 'ARS', amount: 35_000_00 },
+    ])
+  })
+
+  it('an entry the form can’t show (another currency) survives an edit', async () => {
+    const card = await createCardFromForm({ ...base, ...blank, openingClosedArs: '100' }, '2026-10-25')
+    await db.creditCards.update(card.id, {
+      openingBalances: [...card.openingBalances!, { period: '2026-10', currency: 'EUR', amount: 5_00 }],
+    })
+    await updateCardFromForm(card.id, { ...base, ...blank, name: 'visa renombrada', openingClosedArs: '100' }, '2026-10-25')
+    expect((await db.creditCards.get(card.id))?.openingBalances).toEqual(
+      expect.arrayContaining([{ period: '2026-10', currency: 'EUR', amount: 5_00 }]),
+    )
+  })
+
+  it('an unpaid opening balance stays overdue: it is owed, not "paid before Moneta"', async () => {
+    const card = await createCardFromForm({ ...base, ...blank, openingClosedArs: '480.000' }, '2026-10-25')
+    // Two closes later.
+    expect((await getStatementDetail(card.id, '2026-10', '2026-12-25'))?.due).toBe('overdue')
+  })
+})
+

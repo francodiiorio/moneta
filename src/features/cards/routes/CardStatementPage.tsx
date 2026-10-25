@@ -198,10 +198,21 @@ function StatementBrowser({ cardId }: { cardId: string }) {
             )
           )}
 
-          {detail.expenses.length === 0 ? (
+          {detail.expenses.length === 0 && detail.openingBalance.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">No hay gastos en este resumen.</p>
           ) : (
             <div className="rounded-xl border border-border px-3">
+              {detail.openingBalance.length > 0 && (
+                <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">Saldo inicial</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      Lo que ya debías antes de usar Moneta · no cuenta como gasto
+                    </p>
+                  </div>
+                  <MoneyTotals totals={detail.openingBalance} className="shrink-0 text-sm font-semibold" />
+                </div>
+              )}
               {detail.expenses.map((expense) => (
                 <div key={expense.id} className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
                   <div className="min-w-0 flex-1">

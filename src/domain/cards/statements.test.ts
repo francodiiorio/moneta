@@ -3,6 +3,9 @@ import { money } from '@/domain/money'
 import {
   installmentPlacement,
   lastPurchaseDay,
+  openingBalanceOf,
+  openingBalancesProblem,
+  statementBalance,
   openStatement,
   reassignedPeriods,
   statementDates,
@@ -188,5 +191,44 @@ describe('compras del día de cierre al resumen siguiente (closingDayToNext)', (
     // the close itself would belong to the next statement.
     const late: CardCalendar = { ...visaNext, overrides: [{ period: '2026-12', closeDate: '2026-11-22', dueDate: '2026-12-04' }] }
     expect(installmentPlacement(late, '2026-10-22', 1)).toEqual({ period: '2026-12', date: '2026-11-21' })
+  })
+})
+
+describe('saldo inicial de la tarjeta (openingBalances)', () => {
+  const withOpening: CardCalendar = {
+    card: {
+      closingDay: 22,
+      dueDay: 4,
+      openingBalances: [
+        { period: '2026-10', currency: 'ARS', amount: 480_000_00 },
+        { period: '2026-10', currency: 'USD', amount: 12_00 },
+        { period: '2026-11', currency: 'ARS', amount: 35_000_00 },
+      ],
+    },
+    overrides: [],
+  }
+
+  it('a statement adds its gastos and the opening balance of its own period, per currency', () => {
+    const gastos = [money(10_000_00, 'ARS'), money(5_00, 'USD')].map((m) => ({ amount: m.amount, currency: m.currency }))
+    expect(statementBalance(withOpening, '2026-10', gastos)).toEqual([money(490_000_00, 'ARS'), money(17_00, 'USD')])
+    expect(statementBalance(withOpening, '2026-11', [])).toEqual([money(35_000_00, 'ARS')])
+    expect(statementBalance(withOpening, '2026-12', [])).toEqual([])
+  })
+
+  it('openingBalanceOf: only that period; none for a card without one', () => {
+    expect(openingBalanceOf(withOpening, '2026-11')).toEqual([money(35_000_00, 'ARS')])
+    expect(openingBalanceOf(visa, '2026-10')).toEqual([])
+  })
+})
+
+describe('openingBalancesProblem', () => {
+  const ok = [{ period: '2026-10', currency: 'ARS', amount: 1 }, { period: '2026-11', currency: 'ARS', amount: 1 }]
+  it('only the base statement and the next, amounts above zero, one per currency', () => {
+    expect(openingBalancesProblem(ok, '2026-10')).toBeUndefined()
+    expect(openingBalancesProblem([], undefined)).toBeUndefined()
+    expect(openingBalancesProblem(ok, undefined)).toMatch(/Falta/)
+    expect(openingBalancesProblem([{ period: '2026-12', currency: 'ARS', amount: 1 }], '2026-10')).toMatch(/Período inválido/)
+    expect(openingBalancesProblem([{ period: '2026-10', currency: 'ARS', amount: 0 }], '2026-10')).toMatch(/mayor a cero/)
+    expect(openingBalancesProblem([ok[0]!, ok[0]!], '2026-10')).toMatch(/repite/)
   })
 })

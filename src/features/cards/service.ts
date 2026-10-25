@@ -6,18 +6,19 @@ import {
   statementPaymentsRepo,
 } from '@/database/repositories'
 import {
+  openingBalanceOf,
   openStatement,
   statementDates,
   statementDifferences,
   statementPaymentState,
   statementPeriodFor,
-  statementTotals,
+  statementBalance,
   type CardCalendar,
   type StatementDates,
   type StatementPaymentState,
 } from '@/domain/cards'
 import type { CreditCard, Expense, StatementPayment } from '@/domain/entities'
-import { money, parseAmount, tryParseAmount, type Money } from '@/domain/money'
+import { formatAmountInput, money, parseAmount, tryParseAmount, type Money } from '@/domain/money'
 import { daysBetween, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 import type { CardFormValues, PaymentFormValues, ReconcileFormValues, StatementDatesFormValues } from './schema'
@@ -71,7 +72,10 @@ function dueStateOf(
   if (totals.length === 0) return 'empty'
   if (today <= dueDate) return 'pending'
   const lastClosed = shiftMonth(statementPeriodFor(calendar, today), -1)
-  return period < lastClosed ? 'unrecorded' : 'overdue'
+  // An old unpaid statement was most likely paid before Moneta — not one
+  // with an opening balance: that one the user declared as owed.
+  const hasOpening = openingBalanceOf(calendar, period).length > 0
+  return period < lastClosed && !hasOpening ? 'unrecorded' : 'overdue'
 }
 
 function buildView(
@@ -82,7 +86,7 @@ function buildView(
   today: DateStamp,
 ): StatementView {
   const dates = statementDates(calendar, period)
-  const totals = statementTotals(expenses)
+  const totals = statementBalance(calendar, period, expenses)
   const payment = statementPaymentState(totals, payments)
   return {
     ...dates,
@@ -155,6 +159,9 @@ export interface StatementPaymentRow {
 
 export interface StatementDetail extends StatementView {
   card: CreditCard
+  /** What was owed here before Moneta (CreditCard.openingBalances) — part
+   *  of `totals`, shown as its own line. Empty for most statements. */
+  openingBalance: Money[]
   expenses: StatementExpenseRow[]
   payments: StatementPaymentRow[]
 }
@@ -179,6 +186,7 @@ export async function getStatementDetail(
   return {
     ...view,
     card,
+    openingBalance: openingBalanceOf(calendar, period),
     payments: payments
       .map((p) => ({
         id: p.id,
@@ -225,23 +233,90 @@ function parseDay(value: string): number {
   return Number.parseInt(value, 10)
 }
 
-export async function createCardFromForm(values: CardFormValues): Promise<CreditCard> {
-  return creditCardsRepo.createCreditCard({
-    name: values.name,
+/** The form's four opening-balance fields: which statement (the closed
+ *  one, or the one open when the card was added) and currency each is. */
+const OPENING_FIELDS = [
+  { field: 'openingClosedArs', offset: 0, currency: 'ARS' },
+  { field: 'openingClosedUsd', offset: 0, currency: 'USD' },
+  { field: 'openingOpenArs', offset: 1, currency: 'ARS' },
+  { field: 'openingOpenUsd', offset: 1, currency: 'USD' },
+] as const
+
+type OpeningField = (typeof OPENING_FIELDS)[number]['field']
+
+/**
+ * The closed statement the opening balance's "closed" fields refer to (the
+ * "open" ones are the month after): the one it was entered for, if the
+ * card has one, else the statement closed today by the card's calendar.
+ */
+export function openingBasePeriod(
+  calendar: CardCalendar & { card: Pick<CreditCard, 'openingBase'> },
+  today: DateStamp = todayStamp(),
+): MonthStamp {
+  return calendar.card.openingBase ?? shiftMonth(statementPeriodFor(calendar, today), -1)
+}
+
+/** The opening balance as the form shows it (blank where there's none). */
+export function openingFormValues(card: CreditCard): Record<OpeningField, string> {
+  const base = openingBasePeriod({ card, overrides: [] })
+  const values = { openingClosedArs: '', openingClosedUsd: '', openingOpenArs: '', openingOpenUsd: '' }
+  for (const { field, offset, currency } of OPENING_FIELDS) {
+    const entry = card.openingBalances?.find((b) => b.period === shiftMonth(base, offset) && b.currency === currency)
+    if (entry) values[field] = formatAmountInput(money(entry.amount, entry.currency))
+  }
+  return values
+}
+
+/** The form's fields as the card's opening balance — plus any entry the
+ *  form can't show (another currency, from a backup), kept as it was. */
+function openingBalancesFrom(
+  values: CardFormValues,
+  base: MonthStamp,
+  existing: CreditCard['openingBalances'] = [],
+): NonNullable<CreditCard['openingBalances']> {
+  const shown = new Set(OPENING_FIELDS.map(({ offset, currency }) => `${shiftMonth(base, offset)}:${currency}`))
+  const fromForm = OPENING_FIELDS.flatMap(({ field, offset, currency }) => {
+    const text = values[field]
+    if (text.trim() === '') return []
+    const amount = parseAmount(text, currency).amount
+    invariant(amount > 0, 'El saldo inicial tiene que ser mayor a cero')
+    return [{ period: shiftMonth(base, offset), currency, amount }]
+  })
+  return [...existing.filter((b) => !shown.has(`${b.period}:${b.currency}`)), ...fromForm]
+}
+
+function daysOf(values: CardFormValues) {
+  return {
     closingDay: parseDay(values.closingDay),
     dueDay: parseDay(values.dueDay),
     closingDayToNext: values.closingDayToNext,
+  }
+}
+
+export async function createCardFromForm(values: CardFormValues, today: DateStamp = todayStamp()): Promise<CreditCard> {
+  const days = daysOf(values)
+  const base = openingBasePeriod({ card: days, overrides: [] }, today)
+  return creditCardsRepo.createCreditCard({
+    name: values.name,
+    ...days,
+    openingBalances: openingBalancesFrom(values, base),
+    openingBase: base,
     ...(values.notes && { notes: values.notes }),
   })
 }
 
 /** Returns how many gastos moved to another statement. */
-export async function updateCardFromForm(id: string, values: CardFormValues): Promise<number> {
+export async function updateCardFromForm(id: string, values: CardFormValues, today: DateStamp = todayStamp()): Promise<number> {
+  const calendar = await creditCardsRepo.getCardCalendar(id)
+  const days = daysOf(values)
+  // The statements an existing opening balance was entered for; else the
+  // one closed today — by the card's new days and its corrected dates.
+  const base = openingBasePeriod({ card: { ...calendar.card, ...days }, overrides: calendar.overrides }, today)
   return creditCardsRepo.updateCreditCard(id, {
     name: values.name,
-    closingDay: parseDay(values.closingDay),
-    dueDay: parseDay(values.dueDay),
-    closingDayToNext: values.closingDayToNext,
+    ...days,
+    openingBalances: openingBalancesFrom(values, base, calendar.card.openingBalances),
+    openingBase: base,
     notes: values.notes || undefined,
   })
 }

@@ -275,7 +275,9 @@ export function UploadStep({
                         // A paid statement only changes by undoing its payment.
                         <SelectItem key={c.period} value={c.period} disabled={c.paid}>
                           Todos al de {formatMonthLabel(c.period).toLowerCase()}{' '}
-                          {c.paid ? '(pagado)' : `(cierra el ${formatShortDate(c.closeDate)})`}
+                          {c.paid
+                            ? '(pagado)'
+                            : `(cierra el ${formatShortDate(c.closeDate)}${c.hasOpening ? ' · tiene saldo inicial' : ''})`}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -283,6 +285,12 @@ export function UploadStep({
                   <p className="text-xs text-muted-foreground">
                     Si es el CSV del resumen del banco, elegí ese resumen: incluye compras presentadas tarde.
                   </p>
+                  {statementChoices?.find((c) => c.period === destination.statementPeriod)?.hasOpening && (
+                    <p className="text-xs font-medium text-negative">
+                      Ese resumen ya tiene el saldo inicial de la tarjeta: importar sus gastos los contaría dos veces.
+                      Importá sólo lo que no esté incluido en ese total.
+                    </p>
+                  )}
                 </div>
               )}
             </CardContent>

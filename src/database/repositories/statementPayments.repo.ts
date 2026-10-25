@@ -4,7 +4,7 @@ import {
   statementPaymentDateProblem,
   statementPaymentLinesProblem,
   statementPaymentProblem,
-  statementTotals,
+  statementBalance,
 } from '@/domain/cards'
 import type { StatementPayment } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
@@ -60,7 +60,7 @@ export async function payStatement(input: PayStatementInput): Promise<StatementP
     invariant(!(await isStatementPaid(input.cardId, input.period)), 'Ese resumen ya está pagado — deshacé el pago primero para volver a cargarlo')
 
     const expenses = await db.expenses.where('[cardId+statementPeriod]').equals([input.cardId, input.period]).toArray()
-    const totals = statementTotals(expenses)
+    const totals = statementBalance(calendar, input.period, expenses)
     const linesProblem = statementPaymentLinesProblem(totals, input.lines)
     invariant(linesProblem === undefined, linesProblem ?? '')
 
