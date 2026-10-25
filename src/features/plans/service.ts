@@ -9,9 +9,10 @@ import {
 import type { Account, Category, CreditCard, ExpenseTemplate, InstallmentPlan, RecurringPlan } from '@/domain/entities'
 import type { ExpenseInput } from '@/database/repositories/expenses.repo'
 import { describeRule, generateOccurrences, nextOccurrenceAfter } from '@/domain/recurrence'
-import { cardInstallmentProgress, statementPeriodFor, type CardInstallmentProgress } from '@/domain/cards'
+import { cardInstallmentProgress, cuotaInOpenStatement, statementPeriodFor, type CardInstallmentProgress } from '@/domain/cards'
 import { money, parseAmount, sub, sumMoney, type Money } from '@/domain/money'
 import { todayStamp, type DateStamp } from '@/lib/dates'
+import { invariant } from '@/lib/invariant'
 import { parsePaymentMethod } from './schema'
 import type { InstallmentPlanEditFormValues, InstallmentPlanFormValues, RecurringPlanFormValues } from './schema'
 
@@ -343,11 +344,12 @@ export async function listInstallmentPlansWithProgress(today: DateStamp = todayS
 
   return plans.map((plan) => {
     const confirmedIndexes = confirmedIndexesByPlan.get(plan.id) ?? new Set<number>()
+    // Cuotas before startIndex were paid before Moneta: they count as paid.
+    const startIndex = plan.startIndex ?? 0
+    const isPaid = (index: number) => index < startIndex || confirmedIndexes.has(index)
     const confirmedAmount = sumMoney(
       plan.currency,
-      plan.scheduleCache
-        .filter((_, index) => confirmedIndexes.has(index))
-        .map((amount) => money(amount, plan.currency)),
+      plan.scheduleCache.filter((_, index) => isPaid(index)).map((amount) => money(amount, plan.currency)),
     )
     const totalAmount = money(plan.totalAmount, plan.currency)
     const category = categoryById.get(plan.categoryId)
@@ -364,8 +366,9 @@ export async function listInstallmentPlansWithProgress(today: DateStamp = todayS
         ? [{ index: e.occurrenceIndex, period: e.statementPeriod, amount: money(e.amount, e.currency) }]
         : [],
     )
-    const cardProgress =
+    const tracked =
       openPeriod === undefined || cuotas.length === 0 ? undefined : cardInstallmentProgress(cuotas, openPeriod, plan.currency)
+    const cardProgress = tracked && { ...tracked, billedCount: tracked.billedCount + startIndex }
     return {
       id: plan.id,
       plan,
@@ -376,7 +379,7 @@ export async function listInstallmentPlansWithProgress(today: DateStamp = todayS
       ...(category?.icon !== undefined && { categoryIcon: category.icon }),
       totalAmount,
       count: plan.count,
-      confirmedCount: confirmedIndexes.size,
+      confirmedCount: plan.scheduleCache.filter((_, index) => isPaid(index)).length,
       remaining: sub(totalAmount, confirmedAmount),
       ...(cardProgress !== undefined && { cardProgress }),
     }
@@ -385,6 +388,27 @@ export async function listInstallmentPlansWithProgress(today: DateStamp = todayS
 
 export async function createInstallmentPlanFromForm(values: InstallmentPlanFormValues): Promise<InstallmentPlan> {
   const totalAmount = parseAmount(values.totalAmount, values.currency)
+  // Already under way: Moneta tracks from cuota N on (index N − 1); the
+  // ones before were paid before Moneta (or sit in the card's opening
+  // balance) and are never generated.
+  const n = values.alreadyPaying ? Number(values.currentCuota) : 1
+  let startIndex = n - 1
+  if (values.alreadyPaying && values.cardId) {
+    // The bank's number must match the purchase date: every cuota is placed
+    // from that date, so a mismatch would shift them all a statement.
+    const expected = await cuotaInOpenStatementFor(values.cardId, values.purchaseDate)
+    invariant(expected >= 1, 'La compra todavía no entró en ningún resumen: no hace falta "Ya la venía pagando"')
+    invariant(
+      expected === n,
+      `Con esa fecha de compra, la cuota del resumen en curso es la ${expected}, no la ${n}. Corregí la fecha o el día de cierre de la tarjeta`,
+    )
+    // Already inside the card's opening balance for today's statement: from the next one.
+    if (values.currentCuotaInOpening) startIndex = n
+  }
+  invariant(startIndex < Number(values.count), 'Ya no quedan cuotas por cargar')
+  // With a card, cuotas follow the purchase (one per statement). Without
+  // one, the form's date is when the first tracked cuota is due.
+  const firstDueDate = values.cardId ? values.purchaseDate : values.firstDueDate
 
   return installmentPlansRepo.createInstallmentPlan({
     description: values.description,
@@ -392,12 +416,23 @@ export async function createInstallmentPlanFromForm(values: InstallmentPlanFormV
     currency: values.currency,
     totalAmount: totalAmount.amount,
     count: Number(values.count),
-    // With a card, cuotas follow the purchase (one per statement from it
-    // on), so the first one is dated the purchase day.
-    firstDueDate: values.cardId ? values.purchaseDate : values.firstDueDate,
+    firstDueDate,
     purchaseDate: values.purchaseDate,
     ...(values.cardId && { cardId: values.cardId }),
+    ...(startIndex > 0 && { startIndex }),
   })
+}
+
+/** With a card, the cuota a purchase on `purchaseDate` has in the
+ *  statement open today — to check it against the bank's number. */
+export async function openStatementHasOpening(cardId: string, currency: string, today: DateStamp = todayStamp()): Promise<boolean> {
+  const calendar = await creditCardsRepo.getCardCalendar(cardId)
+  const open = statementPeriodFor(calendar, today)
+  return (calendar.card.openingBalances ?? []).some((b) => b.period === open && b.currency === currency)
+}
+
+export async function cuotaInOpenStatementFor(cardId: string, purchaseDate: DateStamp, today: DateStamp = todayStamp()): Promise<number> {
+  return cuotaInOpenStatement(await creditCardsRepo.getCardCalendar(cardId), purchaseDate, today)
 }
 
 /** Accounts and cards for the plans' payment method pickers — archived

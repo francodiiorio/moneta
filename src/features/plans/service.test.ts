@@ -528,6 +528,9 @@ describe('planes con medio de pago (Fase 4b)', () => {
       currency: 'ARS',
       totalAmount: '90.000',
       count: '3',
+      alreadyPaying: false,
+      currentCuota: '',
+      currentCuotaInOpening: false,
       firstDueDate: '2099-01-01',
       purchaseDate: '2026-07-15',
       cardId: card.id,
@@ -637,5 +640,224 @@ describe('listInstallmentPlansWithProgress — con tarjeta, como cuenta el banco
     )
     const [item] = await listInstallmentPlansWithProgress('2026-10-25')
     expect(item?.cardProgress).toBeUndefined()
+  })
+})
+
+describe('cuotas que ya venías pagando (B)', () => {
+  afterEach(async () => {
+    await Promise.all([db.creditCards.clear(), db.cardStatements.clear()])
+  })
+
+  const form = {
+    currency: 'ARS',
+    totalAmount: '528.240',
+    count: '6',
+    alreadyPaying: true,
+    currentCuotaInOpening: false,
+  }
+
+  it('with a card: only the cuotas from the one in today’s statement on, and progress like the bank from day one', async () => {
+    const { createCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const { createInstallmentPlanFromForm } = await import('./service')
+    const { category } = await setup()
+    const card = await createCreditCard({ name: 'visa 2551', closingDay: 22, dueDay: 4 })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-25T12:00:00'))
+    try {
+      const plan = await createInstallmentPlanFromForm({
+        ...form,
+        description: 'cubiertas',
+        categoryId: category.id,
+        firstDueDate: '2026-09-30',
+        purchaseDate: '2026-09-30',
+        cardId: card.id,
+        currentCuota: '2',
+      })
+      expect(plan.startIndex).toBe(1)
+      const cuotas = (await db.expenses.where('sourcePlanId').equals(plan.id).toArray()).sort(
+        (a, b) => a.occurrenceIndex! - b.occurrenceIndex!,
+      )
+      // Cuota 1 (October's statement) isn't generated: paid before Moneta.
+      expect(cuotas.map((c) => [c.occurrenceIndex, c.statementPeriod])).toEqual([
+        [1, '2026-11'],
+        [2, '2026-12'],
+        [3, '2027-01'],
+        [4, '2027-02'],
+        [5, '2027-03'],
+      ])
+      const [item] = await listInstallmentPlansWithProgress('2026-10-25')
+      expect(item?.cardProgress?.stage).toEqual({ kind: 'billing', number: 2, period: '2026-11', inOpenStatement: true })
+      expect(item?.cardProgress?.billedCount).toBe(2)
+      expect(item?.cardProgress?.unbilled).toEqual(money(4 * 88_040_00, 'ARS'))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('without a card: from the next cuota to pay, due on the date given; the earlier ones count as paid', async () => {
+    const { createInstallmentPlanFromForm } = await import('./service')
+    const { category } = await setup()
+    const plan = await createInstallmentPlanFromForm({
+      ...form,
+      description: 'Préstamo',
+      categoryId: category.id,
+      firstDueDate: '2026-11-10', // when cuota 3 is due
+      purchaseDate: '2026-08-15',
+      cardId: '',
+      currentCuota: '3',
+    })
+    // Anchored on the cuota it starts from — dates never derived backwards.
+    expect(plan.firstDueDate).toBe('2026-11-10')
+    const cuotas = (await db.expenses.where('sourcePlanId').equals(plan.id).toArray()).sort(
+      (a, b) => a.occurrenceIndex! - b.occurrenceIndex!,
+    )
+    expect(cuotas.map((c) => [c.occurrenceIndex, c.date])).toEqual([
+      [2, '2026-11-10'],
+      [3, '2026-12-10'],
+      [4, '2027-01-10'],
+      [5, '2027-02-10'],
+    ])
+    const [item] = await listInstallmentPlansWithProgress('2026-10-25')
+    expect(item?.confirmedCount).toBe(2)
+    expect(item?.remaining).toEqual(money(4 * 88_040_00, 'ARS'))
+  })
+
+  it('never starts past the last cuota', async () => {
+    const { category } = await setup()
+    await expect(
+      createInstallmentPlan({
+        description: 'x',
+        categoryId: category.id,
+        currency: 'ARS',
+        totalAmount: 600,
+        count: 6,
+        firstDueDate: '2026-09-10',
+        purchaseDate: '2026-09-10',
+        startIndex: 6,
+      }),
+    ).rejects.toThrow(/entre 1 y 6/)
+  })
+})
+
+describe('revisión de B', () => {
+  afterEach(async () => {
+    await Promise.all([db.creditCards.clear(), db.cardStatements.clear()])
+  })
+
+  const base = {
+    currency: 'ARS',
+    totalAmount: '528.240',
+    count: '6',
+    alreadyPaying: true,
+    currentCuotaInOpening: false,
+  }
+
+  it('with a card, a cuota number that doesn’t match the purchase date is rejected — nothing is created', async () => {
+    const { createCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const { createInstallmentPlanFromForm } = await import('./service')
+    const { category } = await setup()
+    const card = await createCreditCard({ name: 'visa 2551', closingDay: 22, dueDay: 4 })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-25T12:00:00'))
+    try {
+      const values = { ...base, description: 'cubiertas', categoryId: category.id, firstDueDate: '2026-09-30', purchaseDate: '2026-09-30', cardId: card.id }
+      await expect(createInstallmentPlanFromForm({ ...values, currentCuota: '3' })).rejects.toThrow(/es la 2, no la 3/)
+      await expect(createInstallmentPlanFromForm({ ...values, currentCuota: '1' })).rejects.toThrow(/es la 2, no la 1/)
+      await expect(
+        createInstallmentPlanFromForm({ ...values, purchaseDate: '2026-11-25', firstDueDate: '2026-11-25', currentCuota: '1' }),
+      ).rejects.toThrow(/todavía no entró/)
+      expect(await db.installmentPlans.count()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a cuota already inside the open statement’s opening balance isn’t generated again', async () => {
+    const { createInstallmentPlanFromForm } = await import('./service')
+    const { createCardFromForm } = await import('@/features/cards/service')
+    const { category } = await setup()
+    const card = await createCardFromForm(
+      {
+        name: 'visa 2551',
+        closingDay: '22',
+        dueDay: '4',
+        closingDayToNext: false,
+        openingClosedArs: '',
+        openingClosedUsd: '',
+        openingOpenArs: '150.000',
+        openingOpenUsd: '',
+        notes: '',
+      },
+      '2026-10-25',
+    )
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-25T12:00:00'))
+    try {
+      const plan = await createInstallmentPlanFromForm({
+        ...base,
+        description: 'cubiertas',
+        categoryId: category.id,
+        firstDueDate: '2026-09-30',
+        purchaseDate: '2026-09-30',
+        cardId: card.id,
+        currentCuota: '2',
+        currentCuotaInOpening: true,
+      })
+      expect(plan.startIndex).toBe(2)
+      const periods = (await db.expenses.where('sourcePlanId').equals(plan.id).toArray()).map((e) => e.statementPeriod).sort()
+      expect(periods[0]).toBe('2026-12') // November's cuota is in the opening balance
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('without a card, a cuota due on the 31st stays on the 31st (no backwards-and-forwards drift)', async () => {
+    const { createInstallmentPlanFromForm } = await import('./service')
+    const { category } = await setup()
+    const plan = await createInstallmentPlanFromForm({
+      ...base,
+      count: '4',
+      description: 'Préstamo',
+      categoryId: category.id,
+      firstDueDate: '2027-03-31',
+      purchaseDate: '2027-01-15',
+      cardId: '',
+      currentCuota: '2',
+    })
+    const dates = (await db.expenses.where('sourcePlanId').equals(plan.id).toArray()).map((e) => e.date).sort()
+    expect(dates).toEqual(['2027-03-31', '2027-04-30', '2027-05-31'])
+  })
+
+  it('a total that doesn’t divide evenly: the generated cuotas and what remains still add up to it', async () => {
+    const { category } = await setup()
+    const plan = await createInstallmentPlan(
+      { description: 'x', categoryId: category.id, currency: 'ARS', totalAmount: 100_00, count: 3, firstDueDate: '2099-01-10', purchaseDate: '2026-10-01', startIndex: 1 },
+      '2026-10-25',
+    )
+    const amounts = (await db.expenses.where('sourcePlanId').equals(plan.id).toArray()).map((e) => e.amount).sort()
+    expect(amounts).toEqual([33_33, 33_33])
+    const [item] = await listInstallmentPlansWithProgress('2026-10-25')
+    // 33,34 (cuota 1, paid before Moneta) + 33,33 + 33,33 = 100,00.
+    expect(item?.remaining).toEqual(money(66_66, 'ARS'))
+  })
+
+  it('toggling the closing-day option is rejected when it would shift a plan loaded mid-way', async () => {
+    const { createCreditCard, updateCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const { category } = await setup()
+    const card = await createCreditCard({ name: 'visa', closingDay: 22, dueDay: 4 })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-25T12:00:00'))
+    try {
+      // Bought ON a closing day (Sep 22): the option moves its first statement.
+      await createInstallmentPlan(
+        { description: 'Mesa', categoryId: category.id, currency: 'ARS', totalAmount: 600, count: 6, firstDueDate: '2026-09-22', purchaseDate: '2026-09-22', cardId: card.id, startIndex: 2 },
+        '2026-11-25',
+      )
+      await expect(
+        updateCreditCard(card.id, { name: 'visa', closingDay: 22, dueDay: 4, closingDayToNext: true, notes: undefined }),
+      ).rejects.toThrow(/a mitad de camino/)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

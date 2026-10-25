@@ -25,12 +25,21 @@ export interface InstallmentOccurrence {
   amount: Minor
 }
 
-/** Combines a plan's frozen `scheduleCache` with its due dates. */
+/**
+ * Combines a plan's frozen `scheduleCache` with its due dates. `firstDueDate`
+ * is the due date of the first cuota Moneta tracks — cuota 1, or for a plan
+ * without a card already under way, cuota `startIndex + 1` (the date the
+ * user gave). Each date is computed fresh from that anchor, never derived
+ * backwards and forwards again: "the 31st" stays the 31st where the month
+ * has one. (A card plan's cuotas are dated by their statements instead —
+ * domain/cards:installmentPlacement.)
+ */
 export function buildInstallmentSchedule(plan: InstallmentPlan): InstallmentOccurrence[] {
-  const dueDates = installmentDueDates(plan.firstDueDate, plan.count)
+  const offset = plan.cardId === undefined ? (plan.startIndex ?? 0) : 0
+  const anchor = fromDateStamp(plan.firstDueDate)
   return plan.scheduleCache.map((amount, index) => ({
     index,
-    dueDate: dueDates[index]!,
+    dueDate: toDateStamp(addMonths(anchor, index - offset)),
     amount: minor(amount),
   }))
 }

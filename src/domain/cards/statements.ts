@@ -9,6 +9,7 @@ import {
   isValidDateStamp,
   monthOf,
   monthRange,
+  monthsBetween,
   shiftMonth,
   toDateStamp,
   type DateStamp,
@@ -75,6 +76,13 @@ export function statementPeriodFor(calendar: CardCalendar, date: DateStamp): Mon
 export function lastPurchaseDay(calendar: CardCalendar, period: MonthStamp): DateStamp {
   const { closeDate } = statementDates(calendar, period)
   return calendar.card.closingDayToNext ? addDays(closeDate, -1) : closeDate
+}
+
+/** Which cuota (1-based) of a card purchase made on `purchaseDate` is
+ *  billed in the statement open on `today` — the number the bank shows
+ *  ("cuota 3/6"). 0 or less: the purchase isn't in a statement yet. */
+export function cuotaInOpenStatement(calendar: CardCalendar, purchaseDate: DateStamp, today: DateStamp): number {
+  return monthsBetween(statementPeriodFor(calendar, purchaseDate), statementPeriodFor(calendar, today)) + 1
 }
 
 /** The statement still open on `today` — the one new purchases go into. */

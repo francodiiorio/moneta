@@ -10,15 +10,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DateField } from '@/components/DateField'
 import { CURRENCIES } from '@/domain/money'
 import { todayStamp } from '@/lib/dates'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
 import { usePaymentOptions } from '../hooks/usePaymentOptions'
+import { useCuotaInOpenStatement, useOpenStatementHasOpening } from '../hooks/useCuotaInOpenStatement'
 import { getInstallmentPreview } from '../installmentPreview'
 import { createInstallmentPlanFromForm } from '../service'
 import { installmentPlanFormSchema, PLAN_CURRENCIES, type InstallmentPlanFormValues } from '../schema'
@@ -39,6 +42,9 @@ function defaultValues(): InstallmentPlanFormValues {
     firstDueDate: today,
     purchaseDate: today,
     cardId: '',
+    alreadyPaying: false,
+    currentCuota: '',
+    currentCuotaInOpening: false,
   }
 }
 
@@ -62,6 +68,22 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
   const cardId = useWatch({ control: form.control, name: 'cardId' })
   const cards = usePaymentOptions()?.cards.filter((c) => !c.isArchived) ?? []
   const installmentPreview = getInstallmentPreview(totalAmountInput, countInput, currency)
+  const [alreadyPaying, currentCuota, purchaseDate] = useWatch({
+    control: form.control,
+    name: ['alreadyPaying', 'currentCuota', 'purchaseDate'],
+  })
+  // With a card, the cuota the purchase date puts in today's statement —
+  // checked against the bank's number before saving.
+  const expectedCuota = useCuotaInOpenStatement(cardId, purchaseDate)
+  const openingCoversToday = useOpenStatementHasOpening(cardId, currency)
+  const cuotaNumber = Number(currentCuota)
+  // With a card the number must match the purchase date (every cuota is
+  // placed from it): a mismatch blocks saving, it doesn't just warn.
+  const notBilledYet = alreadyPaying && !!cardId && expectedCuota !== undefined && expectedCuota < 1
+  const cuotaMismatch =
+    alreadyPaying && !!cardId && !notBilledYet && expectedCuota !== undefined && Number.isInteger(cuotaNumber) && cuotaNumber > 0
+      ? expectedCuota !== cuotaNumber
+      : false
 
   async function onSubmit(values: InstallmentPlanFormValues) {
     try {
@@ -75,12 +97,12 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90svh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nueva compra en cuotas</DialogTitle>
           <DialogDescription>
-            Se generan las {form.watch('count') || 'N'} cuotas de una vez: las que ya vencieron quedan confirmadas,
-            el resto aparece como proyectado hasta su fecha.
+            Se generan las cuotas de una vez: las que ya vencieron quedan confirmadas, el resto aparece como proyectado
+            hasta su fecha. Si ya la venías pagando, Moneta arranca desde la cuota por la que vas.
           </DialogDescription>
         </DialogHeader>
 
@@ -246,7 +268,7 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
                   name="firstDueDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Primera cuota</FormLabel>
+                      <FormLabel>{alreadyPaying ? 'Vence esa cuota' : 'Primera cuota'}</FormLabel>
                       <FormControl>
                         <DateField value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
                       </FormControl>
@@ -257,11 +279,84 @@ export function InstallmentPlanFormDialog({ open, onOpenChange }: InstallmentPla
               )}
             </div>
 
+            <FormField
+              control={form.control}
+              name="alreadyPaying"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start gap-3 rounded-lg border border-border p-3">
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} className="mt-0.5" />
+                  </FormControl>
+                  <div className="flex flex-1 flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                      <FormLabel>Ya la venía pagando</FormLabel>
+                      <FormDescription>
+                        Moneta carga sólo las cuotas que faltan: las anteriores no aparecen como gastos de meses en los
+                        que no la usabas{cardId ? ' (o ya están en el saldo inicial de la tarjeta)' : ''}.
+                      </FormDescription>
+                    </div>
+                    {alreadyPaying && (
+                      <FormField
+                        control={form.control}
+                        name="currentCuota"
+                        render={({ field: cuota }) => (
+                          <FormItem>
+                            <FormLabel>
+                              {cardId ? '¿Qué cuota figura en el resumen en curso?' : '¿Cuál es la próxima cuota a pagar?'}
+                            </FormLabel>
+                            <FormControl>
+                              <Input inputMode="numeric" placeholder="Ej: 3" className="w-24" {...cuota} />
+                            </FormControl>
+                            {cuotaMismatch && (
+                              <p className="text-xs font-medium text-negative">
+                                Con esa fecha de compra, la cuota del resumen en curso es la {expectedCuota}. Corregí la
+                                fecha o el día de cierre de la tarjeta.
+                              </p>
+                            )}
+                            {notBilledYet && (
+                              <p className="text-xs font-medium text-negative">
+                                La compra todavía no entró en ningún resumen: no hace falta "Ya la venía pagando".
+                              </p>
+                            )}
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                    {alreadyPaying && cardId && openingCoversToday && (
+                      <FormField
+                        control={form.control}
+                        name="currentCuotaInOpening"
+                        render={({ field: included }) => (
+                          <FormItem className="flex flex-row items-start gap-2">
+                            <FormControl>
+                              <Checkbox
+                                checked={included.value}
+                                onCheckedChange={(checked) => included.onChange(checked === true)}
+                                className="mt-0.5"
+                              />
+                            </FormControl>
+                            <div className="flex flex-col gap-0.5">
+                              <FormLabel>Esa cuota ya está en el saldo inicial del resumen en curso</FormLabel>
+                              <FormDescription>
+                                Si la contaste en "lo que llevás gastado" al cargar la tarjeta, tildalo y Moneta arranca
+                                desde la siguiente, para no contarla dos veces.
+                              </FormDescription>
+                            </div>
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </div>
+                </FormItem>
+              )}
+            />
+
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
+              <Button type="submit" disabled={form.formState.isSubmitting || cuotaMismatch || notBilledYet}>
                 Guardar
               </Button>
             </DialogFooter>

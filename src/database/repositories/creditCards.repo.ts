@@ -101,6 +101,13 @@ export async function reassignCardExpenses(cardId: string, before: CardCalendar,
     // statement only holds if they all follow the same first statement.
     // (A paid statement in the way rejects the edit — see updateCreditCard.)
     const anchorMoved = statementPeriodFor(before, plan.purchaseDate) !== statementPeriodFor(after, plan.purchaseDate)
+    // A plan loaded mid-way starts at the bank's cuota for one statement;
+    // shifting its first statement would leave a statement with no cuota
+    // or a cuota counted twice. Rolls the whole edit back.
+    invariant(
+      !anchorMoved || (plan.startIndex ?? 0) === 0,
+      `La compra en cuotas "${plan.description}" se cargó a mitad de camino y quedaría corrida — borrala y volvé a cargarla después del cambio`,
+    )
     if (!anchorMoved && lastPurchaseDay(before, expense.statementPeriod) < today) {
       // A closed statement keeps its cuotas — but one dated on its closing
       // day, once closing-day purchases go to the next statement, would sit

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { money } from '@/domain/money'
 import {
+  cuotaInOpenStatement,
   installmentPlacement,
   lastPurchaseDay,
   openingBalanceOf,
@@ -230,5 +231,15 @@ describe('openingBalancesProblem', () => {
     expect(openingBalancesProblem([{ period: '2026-12', currency: 'ARS', amount: 1 }], '2026-10')).toMatch(/Período inválido/)
     expect(openingBalancesProblem([{ period: '2026-10', currency: 'ARS', amount: 0 }], '2026-10')).toMatch(/mayor a cero/)
     expect(openingBalancesProblem([ok[0]!, ok[0]!], '2026-10')).toMatch(/repite/)
+  })
+})
+
+describe('cuotaInOpenStatement', () => {
+  it('the cuota the bank shows in the statement open today', () => {
+    const card: CardCalendar = { card: { closingDay: 22, dueDay: 4 }, overrides: [] }
+    // Bought Sep 30 (→ October's statement); on Oct 25 November's is open.
+    expect(cuotaInOpenStatement(card, '2026-09-30', '2026-10-25')).toBe(2)
+    expect(cuotaInOpenStatement(card, '2026-07-10', '2026-10-25')).toBe(5)
+    expect(cuotaInOpenStatement(card, '2026-10-24', '2026-10-25')).toBe(1)
   })
 })

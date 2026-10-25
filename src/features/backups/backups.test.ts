@@ -1130,6 +1130,36 @@ describe('revisión de la Fase 4a — backups', () => {
   })
 })
 
+describe('cuotas que ya venías pagando en el backup', () => {
+  it('startIndex survives an export and import; one past the last cuota is rejected', async () => {
+    await seedFullDatabase()
+    const [plan] = await db.installmentPlans.toArray()
+    await db.installmentPlans.update(plan!.id, { startIndex: 1 })
+    const exported = await exportBackup()
+    await clearAllTables()
+    await importBackup(new File([exported.blob], exported.filename, { type: 'application/json' }))
+    expect((await db.installmentPlans.get(plan!.id))?.startIndex).toBe(1)
+
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    payload.data.installmentPlans[0]!.startIndex = payload.data.installmentPlans[0]!.count
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/empieza en una cuota que no existe/)
+  })
+
+  it('a plan with a generated cuota before its startIndex is rejected', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    const plan = payload.data.installmentPlans[0]!
+    const expense = payload.data.expenses.find((e) => e.cardId === undefined && e.sourcePlanId === undefined)!
+    payload.data.expenses.push({ ...expense, id: generateId(), sourcePlanId: plan.id, occurrenceIndex: 0 })
+    plan.startIndex = 1
+    const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/cuotas anteriores a la que empieza/)
+  })
+})
+
 describe('tarjeta con compras del día de cierre al resumen siguiente', () => {
   it('a card’s opening balance survives an export and import; an invalid one is rejected', async () => {
     await seedFullDatabase()

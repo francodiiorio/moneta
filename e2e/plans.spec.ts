@@ -76,3 +76,42 @@ test('checking "Borrar también" removes the plan\'s generated gastos too', asyn
   await page.goto('/movimientos')
   await expect(page.getByText('Alquiler')).toHaveCount(0)
 })
+
+// Cuotas que ya venías pagando: Moneta arranca desde la cuota del resumen en
+// curso, y avisa si la fecha de compra no cuadra con ese número.
+test('una compra en cuotas que ya venías pagando arranca desde la cuota del resumen en curso', async ({ page }) => {
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('visa 2551')
+  await page.getByLabel('Día de cierre').fill('28')
+  await page.getByLabel('Día de vencimiento').fill('6')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/planes')
+  await page.getByRole('tab', { name: 'Cuotas' }).click()
+  await page.getByRole('button', { name: 'Nueva compra en cuotas' }).first().click()
+  await page.getByLabel('Descripción').fill('cubiertas')
+  await page.getByLabel('Monto total').fill('528.240')
+  await page.getByLabel('Cantidad de cuotas').fill('6')
+  await page.getByLabel('Categoría').click()
+  await page.getByRole('option', { name: 'Transporte' }).click()
+  await page.getByLabel('Tarjeta (opcional)').click()
+  await page.getByRole('option', { name: 'visa 2551' }).click()
+  // Bought on the 15th of last month (this month while past the 28th):
+  // one statement back, so today's statement bills cuota 2.
+  await page.getByLabel('Fecha de compra').click()
+  if (new Date().getDate() <= 28) await page.getByRole('button', { name: 'Ir al mes anterior' }).click()
+  await page.locator('.rdp-day:not(.rdp-outside) .rdp-day_button', { hasText: /^15$/ }).click()
+  await page.getByRole('switch', { name: 'Ya la venía pagando' }).click()
+  await page.getByLabel('¿Qué cuota figura en el resumen en curso?').fill('3')
+  await expect(page.getByText(/la cuota del resumen en curso es la 2/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Guardar' })).toBeDisabled()
+  await page.getByLabel('¿Qué cuota figura en el resumen en curso?').fill('2')
+  await expect(page.getByText(/la cuota del resumen en curso es la/)).toHaveCount(0)
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog', { name: 'Nueva compra en cuotas' })).not.toBeVisible()
+
+  await expect(page.getByText('Cuota 2 de 6 · en el resumen en curso')).toBeVisible()
+  await expect(page.getByText('4 cuotas')).toBeVisible()
+})

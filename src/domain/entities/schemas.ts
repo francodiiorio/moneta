@@ -275,6 +275,12 @@ export const installmentPlanSchema = z.object({
   // Etapa 8, Fase 4b: comprada con tarjeta — la cuota i va al resumen de la
   // compra + i (domain/cards:installmentStatementPeriod).
   cardId: id.optional(),
+  /** A plan already under way when loaded ("voy por la cuota 3"): the
+   *  0-based index of the first cuota Moneta tracks. The ones before were
+   *  paid before Moneta and are never generated as gastos. Without a card,
+   *  `firstDueDate` is then that cuota's due date. Optional and additive:
+   *  absent = 0. */
+  startIndex: z.number().int().nonnegative().optional(),
   createdAt: isoInstant,
   updatedAt: isoInstant,
 })

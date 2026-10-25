@@ -32,18 +32,36 @@ export const recurringPlanFormSchema = z.object({
 })
 export type RecurringPlanFormValues = z.infer<typeof recurringPlanFormSchema>
 
-export const installmentPlanFormSchema = z.object({
-  description: z.string().min(1, 'La descripción es obligatoria').max(120),
-  categoryId: z.string().min(1, 'Elegí una categoría'),
-  currency: z.string().min(3).max(8),
-  totalAmount: amountString,
-  count: positiveIntString,
-  firstDueDate: z.string().min(1, 'Elegí la fecha de la primera cuota'),
-  purchaseDate: z.string().min(1, 'Elegí la fecha de compra'),
-  /** '' = no card. With one, the first cuota's date is the purchase date
-   *  and each cuota goes into its statement. */
-  cardId: z.string(),
-})
+export const installmentPlanFormSchema = z
+  .object({
+    description: z.string().min(1, 'La descripción es obligatoria').max(120),
+    categoryId: z.string().min(1, 'Elegí una categoría'),
+    currency: z.string().min(3).max(8),
+    totalAmount: amountString,
+    count: positiveIntString,
+    /** Without a card: the first cuota's due date — or, already under way,
+     *  the due date of `currentCuota`. */
+    firstDueDate: z.string().min(1, 'Elegí la fecha de la cuota'),
+    purchaseDate: z.string().min(1, 'Elegí la fecha de compra'),
+    /** '' = no card. With one, the first cuota's date is the purchase date
+     *  and each cuota goes into its statement. */
+    cardId: z.string(),
+    /** A purchase already being paid when loaded. */
+    alreadyPaying: z.boolean(),
+    /** With a card, the cuota in the statement open today (the bank's
+     *  number); without one, the next cuota to pay. */
+    currentCuota: z.string(),
+    /** With a card whose opening balance covers today's statement: that
+     *  cuota is already inside it, so tracking starts at the next one. */
+    currentCuotaInOpening: z.boolean(),
+  })
+  .superRefine((values, ctx) => {
+    if (!values.alreadyPaying) return
+    const n = Number(values.currentCuota)
+    if (!/^\d+$/.test(values.currentCuota.trim()) || n < 1 || n > Number(values.count)) {
+      ctx.addIssue({ code: 'custom', path: ['currentCuota'], message: `Una cuota entre 1 y ${values.count || 'la cantidad'}` })
+    }
+  })
 export type InstallmentPlanFormValues = z.infer<typeof installmentPlanFormSchema>
 
 /** Deliberately narrower than installmentPlanFormSchema — editing a plan

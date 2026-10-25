@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, dayOfMonth, daysBetween, isValidDateStamp, isValidMonthStamp } from './dates'
+import { addDays, addMonthsToDate, dayOfMonth, daysBetween, isValidDateStamp, isValidMonthStamp } from './dates'
 
 describe('isValidMonthStamp', () => {
   it('accepts a well-formed month', () => {
@@ -36,6 +36,16 @@ describe('dayOfMonth', () => {
     expect(dayOfMonth('2026-02', 31)).toBe('2026-02-28')
     expect(dayOfMonth('2028-02', 31)).toBe('2028-02-29')
     expect(dayOfMonth('2026-11', 31)).toBe('2026-11-30')
+  })
+})
+
+describe('monthsBetween / addMonthsToDate', () => {
+  it('counts months across years, and moves dates clamping to month end', async () => {
+    const { monthsBetween } = await import('./dates')
+    expect(monthsBetween('2026-10', '2027-01')).toBe(3)
+    expect(monthsBetween('2026-10', '2026-08')).toBe(-2)
+    expect(addMonthsToDate('2026-03-31', -1)).toBe('2026-02-28')
+    expect(addMonthsToDate('2026-01-15', 2)).toBe('2026-03-15')
   })
 })
 

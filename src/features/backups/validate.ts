@@ -89,6 +89,13 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
   // A plan's payment method must point at something in the file — every
   // gasto it generates would otherwise fail (or be invalid) later.
   for (const plan of data.installmentPlans) {
+    if (plan.startIndex !== undefined && plan.startIndex >= plan.count) {
+      throw new Error(`Compra en cuotas "${plan.description}" (${plan.id}): empieza en una cuota que no existe`)
+    }
+    const before = plan.startIndex ?? 0
+    if (before > 0 && data.expenses.some((e) => e.sourcePlanId === plan.id && (e.occurrenceIndex ?? before) < before)) {
+      throw new Error(`Compra en cuotas "${plan.description}" (${plan.id}): tiene cuotas anteriores a la que empieza`)
+    }
     if (plan.cardId === undefined) continue
     if (!calendarByCard.has(plan.cardId)) {
       throw new Error(`Compra en cuotas "${plan.description}" (${plan.id}): la tarjeta ${plan.cardId} no existe en el backup`)

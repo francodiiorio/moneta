@@ -137,6 +137,19 @@ export function daysBetween(from: DateStamp, to: DateStamp): number {
   return differenceInCalendarDays(fromDateStamp(to), fromDateStamp(from))
 }
 
+/** Whole months from `from` to `to` (negative if `to` is earlier). */
+export function monthsBetween(from: MonthStamp, to: MonthStamp): number {
+  const [fy, fm] = from.split('-').map(Number) as [number, number]
+  const [ty, tm] = to.split('-').map(Number) as [number, number]
+  return (ty - fy) * 12 + (tm - fm)
+}
+
+/** `date` moved `months` months, clamped to the month's last day (Jan 31 + 1
+ *  = Feb 28) — the same rule installment due dates follow. */
+export function addMonthsToDate(date: DateStamp, months: number): DateStamp {
+  return toDateStamp(addMonths(fromDateStamp(date), months))
+}
+
 /** `date` moved `days` calendar days (negative goes back). */
 export function addDays(date: DateStamp, days: number): DateStamp {
   return toDateStamp(addCalendarDays(fromDateStamp(date), days))

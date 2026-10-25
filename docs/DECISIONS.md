@@ -1528,3 +1528,25 @@ falta, nunca "pagado con diferencia". Se puede pagar un resumen que Moneta tiene
 saldo: si se pagó menos, la diferencia queda a la vista y el texto lo explica), no se edita (se deshace y se vuelve a cargar), nunca crea un gasto, y en la misma
 moneda lo debitado es lo pagado. Sin cambios de schema.
 
+## Cuotas que ya venías pagando (Etapa 8)
+
+**Problema:** cargar una compra en cuotas empezada antes de usar Moneta generaba todas sus
+cuotas, las pasadas incluidas, como gastos de meses en los que no se usaba la app (ensuciando
+reportes y presupuestos), y con tarjeta las metía en resúmenes viejos.
+
+**Decisión:** el plan puede arrancar en la cuota por la que se va (`startIndex`): sólo se
+generan las que faltan, y las anteriores cuentan como pagadas en el progreso. Con tarjeta,
+el número que se pide es el que muestra el banco — la cuota del resumen en curso —, igual que
+el progreso de Planes, y si no cuadra con la fecha de compra (fecha o día de cierre mal
+cargados) no deja guardar: un número mal puesto correría todas las cuotas un resumen. La
+cuota del resumen cerrado sin pagar va dentro del saldo inicial de la tarjeta; si el saldo
+inicial del resumen en curso ya incluye la cuota de este mes, se tilda y Moneta arranca en la
+siguiente — así nada se cuenta dos veces. Sin tarjeta, se pide la próxima cuota a pagar y su
+vencimiento, y las fechas se calculan desde esa cuota (no hacia atrás hasta la primera), para
+que un vencimiento el 31 no termine el 30. El monto de cada cuota sale del mismo reparto del
+total que una compra nueva.
+
+Cambiar la opción del día de cierre cuando movería el primer resumen de un plan arrancado a
+mitad de camino se rechaza en vez de recalcularlo: la cuota del banco quedaría corrida y no
+hay forma automática de saber cuál era la correcta. Se borra el plan y se vuelve a cargar.
+

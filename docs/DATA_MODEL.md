@@ -256,6 +256,21 @@ cuota puntual sin afectar el resto, y mantiene el historial inmutable — ver
   a `confirmed` el día que llega su fecha. `projected` está excluido de reportes
   (`reports/service.ts`) y presupuestos, así que una cuota futura es visible (con badge
   en Movimientos) sin afectar ningún total.
+- Un plan **ya en curso** al cargarlo ("voy por la cuota 3") guarda `startIndex?` (índice
+  0-based de la primera cuota que sigue Moneta, `< count`): sólo se escriben las cuotas
+  desde ahí; las anteriores cuentan como pagadas en el progreso pero nunca existen como
+  gastos (se pagaron antes de Moneta, o están en el saldo inicial de la tarjeta). Con
+  tarjeta, el número que pide es la cuota del resumen en curso (la del banco) y se
+  verifica contra la fecha de compra (`domain/cards:cuotaInOpenStatement`) — si no cuadra
+  no se guarda —; si esa cuota ya está en el saldo inicial del resumen en curso,
+  `startIndex` saltea también esa. Sin tarjeta, la próxima cuota a pagar y su
+  vencimiento: ahí `firstDueDate` es el vencimiento de la cuota `startIndex` (no de la
+  primera) y las fechas se calculan desde ella, para que un día 31 no se corra. Con
+  tarjeta, cambiar la opción "lo comprado el día del cierre va al resumen siguiente"
+  cuando correría el primer resumen de un plan con `startIndex > 0` se rechaza (hay que
+  borrarlo y volver a cargarlo). Campo opcional y aditivo: sin versión nueva de schema ni
+  de backup; el import valida `startIndex < count` y que no haya cuotas anteriores a
+  `startIndex`.
 - Borrar un plan, por default, nunca borra un gasto `confirmed` — salvo que el usuario
   tilde explícitamente "Borrar también los movimientos que ya generó" al borrar un
   recurrente (`deleteRecurringPlan(id, { deleteGeneratedExpenses: true })`, nunca el

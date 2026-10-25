@@ -19,6 +19,8 @@ export interface CreateInstallmentPlanInput {
   purchaseDate: DateStamp
   /** Bought with a credit card: each cuota goes into its statement. */
   cardId?: string
+  /** See InstallmentPlan.startIndex: the cuotas before it aren't generated. */
+  startIndex?: number
 }
 
 export async function listInstallmentPlans(): Promise<InstallmentPlan[]> {
@@ -26,8 +28,8 @@ export async function listInstallmentPlans(): Promise<InstallmentPlan[]> {
 }
 
 /**
- * Writes the plan AND materializes its full schedule of N occurrences in
- * one atomic transaction — occurrences on or before `today` go straight
+ * Writes the plan AND materializes its schedule — every cuota from
+ * `startIndex` on — in one atomic transaction — occurrences on or before `today` go straight
  * to `confirmed`, later ones to `projected` (see docs/DECISIONS.md).
  */
 export async function createInstallmentPlan(
@@ -36,6 +38,11 @@ export async function createInstallmentPlan(
 ): Promise<InstallmentPlan> {
   invariant(input.totalAmount > 0, `El monto debe ser mayor a cero, recibido: ${input.totalAmount}`)
   invariant(input.count > 0, `La cantidad de cuotas debe ser mayor a cero, recibido: ${input.count}`)
+  const startIndex = input.startIndex ?? 0
+  invariant(
+    Number.isInteger(startIndex) && startIndex >= 0 && startIndex < input.count,
+    `La cuota por la que vas tiene que estar entre 1 y ${input.count}`,
+  )
   // With a card the cuotas follow the purchase, one per statement: a
   // separate first-cuota date would place them somewhere else.
   invariant(
@@ -57,8 +64,10 @@ export async function createInstallmentPlan(
     createdAt: now,
     updatedAt: now,
     ...(input.cardId !== undefined && { cardId: input.cardId }),
+    ...(startIndex > 0 && { startIndex }),
   }
-  const schedule = buildInstallmentSchedule(plan)
+  // A plan already under way only generates the cuotas still to come.
+  const schedule = buildInstallmentSchedule(plan).filter((occurrence) => occurrence.index >= startIndex)
 
   const tables = [db.installmentPlans, db.expenses, db.categories, db.creditCards, db.cardStatements]
   await db.transaction('rw', tables, async () => {
