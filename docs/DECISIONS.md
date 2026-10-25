@@ -1372,6 +1372,13 @@ lo leía era inofensivo; desde que `template.accountId` es un débito, hacía fa
 generado y rompía el round-trip del backup. Dexie v9 lo limpia, y el backup v9 congela la
 forma vieja de v4–v8 para que ese id muerto se descarte al importar.
 
+**Fechas que cambian cada mes:** el banco corre el cierre de un mes a otro (feriados, fines de
+semana), así que los días de la tarjeta son sólo una estimación. Para que corregirlas no
+dependa de encontrar el link, el resumen en curso avisa cuando sus fechas son estimadas, y al
+pagar un resumen se piden las del siguiente — el "próximo cierre / vencimiento" que imprime
+el banco en el que se está pagando. Sólo se guardan si cambian, y el pago y la corrección van
+en una misma transacción: si las fechas son inválidas, no se paga nada.
+
 ## Pago de resumen: un registro por moneda, sólo total, sin gasto (Etapa 8, Fase 5)
 
 **Qué es:** pagar un resumen guarda un `StatementPayment` por cada moneda del resumen (ARS y

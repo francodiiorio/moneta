@@ -146,6 +146,21 @@ function StatementBrowser({ cardId }: { cardId: string }) {
             </CardContent>
           </Card>
 
+          {/* Banks move the close (a holiday, a weekend): until the real
+              dates are in, purchases near the close may land in the wrong
+              statement. */}
+          {detail.status === 'open' && !detail.isCorrected && (
+            <div className="flex flex-col gap-2 rounded-xl border border-dashed border-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-muted-foreground">
+                <span className="font-medium text-foreground">Fechas estimadas</span> con los días de la tarjeta. El banco
+                suele correr el cierre de un mes a otro: ¿ya sabés cuándo cierra este resumen?
+              </p>
+              <Button variant="outline" size="sm" className="shrink-0" onClick={() => setEditingDates(true)}>
+                Cargar las del banco
+              </Button>
+            </div>
+          )}
+
           {detail.payments.length > 0 ? (
             <Card>
               <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

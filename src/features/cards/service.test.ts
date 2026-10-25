@@ -7,6 +7,7 @@ import { money } from '@/domain/money'
 import {
   correctStatementDates,
   createCardFromForm,
+  getNextStatementDates,
   getOpenPeriod,
   getStatementDetail,
   listCardSummaries,
@@ -194,6 +195,111 @@ describe('paying a statement (Fase 5)', () => {
 
     await undoStatementPayment(card.id, '2026-09')
     expect((await getStatementDetail(card.id, '2026-09', '2026-10-23'))?.due).toBe('overdue')
+  })
+
+  it('paying can set the next statement’s real dates — gastos re-placed, all in one go', async () => {
+    const { card, pesos, shown } = await seedWithAccounts()
+    const estimated = await getNextStatementDates(card.id, '2026-09', '2026-10-04')
+    expect(estimated).toEqual({ period: '2026-10', closeDate: '2026-10-25', dueDate: '2026-11-05', isCorrected: false })
+    const result = await payStatementFromForm(
+      card.id,
+      '2026-09',
+      {
+        date: '2026-10-04',
+        nextCloseDate: '2026-10-19',
+        nextDueDate: '2026-10-30',
+        lines: [{ currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' }],
+      },
+      { ...shown(), ...(estimated && { nextDates: estimated }) },
+    )
+    // The Oct 20 cuota now falls after the real close.
+    expect(result).toEqual({ nextDatesSaved: true, moved: 1 })
+    expect(await getNextStatementDates(card.id, '2026-09', '2026-10-04')).toMatchObject({ closeDate: '2026-10-19', isCorrected: true })
+    expect((await getStatementDetail(card.id, '2026-09', '2026-10-23'))?.payments).toHaveLength(1)
+  })
+
+  it('unchanged next dates aren’t saved as a correction', async () => {
+    const { card, pesos, shown } = await seedWithAccounts()
+    const estimated = await getNextStatementDates(card.id, '2026-09', '2026-10-04')
+    const result = await payStatementFromForm(
+      card.id,
+      '2026-09',
+      {
+        date: '2026-10-04',
+        nextCloseDate: '2026-10-25',
+        nextDueDate: '2026-11-05',
+        lines: [{ currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' }],
+      },
+      { ...shown(), ...(estimated && { nextDates: estimated }) },
+    )
+    expect(result).toEqual({ nextDatesSaved: false, moved: 0 })
+    expect(await db.cardStatements.count()).toBe(0)
+  })
+
+  it('invalid next dates reject the whole payment — nothing is paid', async () => {
+    const { card, pesos, shown } = await seedWithAccounts()
+    const estimated = await getNextStatementDates(card.id, '2026-09', '2026-10-04')
+    await expect(
+      payStatementFromForm(
+        card.id,
+        '2026-09',
+        {
+          date: '2026-10-04',
+          nextCloseDate: '2026-09-20',
+          nextDueDate: '2026-10-01',
+          lines: [{ currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' }],
+        },
+        { ...shown(), ...(estimated && { nextDates: estimated }) },
+      ),
+    ).rejects.toThrow(/cierre/)
+    expect(await db.statementPayments.count()).toBe(0)
+    expect(await db.cardStatements.count()).toBe(0)
+  })
+
+  it('a payment that fails leaves the next dates uncorrected too', async () => {
+    const { card, pesos, shown } = await seedWithAccounts()
+    const estimated = await getNextStatementDates(card.id, '2026-09', '2026-10-04')
+    await expect(
+      payStatementFromForm(
+        card.id,
+        '2026-09',
+        {
+          // Before the statement even closed.
+          date: '2026-09-20',
+          nextCloseDate: '2026-10-19',
+          nextDueDate: '2026-10-30',
+          lines: [{ currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' }],
+        },
+        { ...shown(), ...(estimated && { nextDates: estimated }) },
+      ),
+    ).rejects.toThrow()
+    expect(await db.statementPayments.count()).toBe(0)
+    expect(await db.cardStatements.count()).toBe(0)
+  })
+
+  it('only one of the next dates is rejected — never paid while silently dropping the other', async () => {
+    const { card, pesos, shown } = await seedWithAccounts()
+    const estimated = await getNextStatementDates(card.id, '2026-09', '2026-10-04')
+    await expect(
+      payStatementFromForm(
+        card.id,
+        '2026-09',
+        {
+          date: '2026-10-04',
+          nextCloseDate: '2026-10-19',
+          nextDueDate: '',
+          lines: [{ currency: 'ARS', accountId: pesos.id, paidAmount: '50.000', debitedAmount: '' }],
+        },
+        { ...shown(), ...(estimated && { nextDates: estimated }) },
+      ),
+    ).rejects.toThrow(/las dos fechas/)
+    expect(await db.statementPayments.count()).toBe(0)
+  })
+
+  it('once the next statement has closed, there are no next dates to ask for', async () => {
+    const { card } = await seedWithAccounts()
+    expect(await getNextStatementDates(card.id, '2026-09', '2026-10-23')).not.toBeNull()
+    expect(await getNextStatementDates(card.id, '2026-09', '2026-11-26')).toBeNull()
   })
 
   it('across currencies the debited amount is required', async () => {

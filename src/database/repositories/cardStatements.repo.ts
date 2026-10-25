@@ -4,9 +4,9 @@ import { money } from '@/domain/money'
 import type { CardStatement, Expense } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
-import { todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
+import { shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { getCardCalendar, reassignCardExpenses, STATEMENT_RECONCILE_TAG } from './creditCards.repo'
-import { assertCloseCanMove } from './statementPayments.repo'
+import { assertCloseCanMove, payStatement, type PayStatementInput } from './statementPayments.repo'
 import { saveExpense } from './expenses.repo'
 
 /** Expenses of one card, newest first — optionally only one statement. */
@@ -65,6 +65,22 @@ export async function removeStatementOverride(cardId: string, period: MonthStamp
   })
 }
 
+/**
+ * Pays `input.period` and records the next statement's real dates — the
+ * "próximo cierre / vencimiento" the bank prints on the one being paid —
+ * in one transaction: either both land or neither. Returns how many
+ * expenses moved to another statement.
+ */
+export async function payStatementWithNextDates(
+  input: PayStatementInput,
+  next: { closeDate: DateStamp; dueDate: DateStamp },
+): Promise<number> {
+  const tables = [db.creditCards, db.cardStatements, db.expenses, db.installmentPlans, db.statementPayments, db.accounts]
+  return db.transaction('rw', tables, async () => {
+    await payStatement(input)
+    return setStatementOverride({ cardId: input.cardId, period: shiftMonth(input.period, 1), ...next })
+  })
+}
 
 export interface StatementDifferenceInput {
   cardId: string

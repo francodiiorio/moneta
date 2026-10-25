@@ -343,3 +343,49 @@ test('pagar lo que cobró el banco, ver la diferencia y conciliarla', async ({ p
   await page.goto('/cuentas')
   await expect(page.getByText(/68[.,]500,00/).first()).toBeVisible()
 })
+
+// Los bancos corren el cierre de un mes a otro: el resumen en curso avisa
+// que sus fechas son estimadas, y al pagar se cargan las del próximo
+// resumen tal como las imprime el banco.
+test('al pagar se cargan las fechas reales del próximo resumen, y el resumen en curso deja de ser estimado', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('Galicia')
+  await page.getByLabel('Saldo inicial').fill('1.000.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
+  await page.getByLabel('Nombre').fill('visa 2551')
+  await page.getByLabel('Día de cierre').fill('28')
+  await page.getByLabel('Día de vencimiento').fill('6')
+  await page.getByLabel('Resumen cerrado sin pagar en ARS').fill('480.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.getByRole('link', { name: 'Ver resúmenes' }).click()
+  await expect(page.getByText('Fechas estimadas')).toBeVisible()
+  await page.getByRole('button', { name: 'Cargar las del banco' }).click()
+  await expect(page.getByRole('dialog', { name: /^Fechas del resumen/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancelar' }).click()
+
+  await page.goto('/tarjetas')
+  await page.getByRole('button', { name: 'Pagar', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: /^Pagar visa 2551/ })
+  await expect(dialog.getByText('Próximo resumen')).toBeVisible()
+  // The bank pushes the next close from the 28th to the 2nd of the month
+  // after — always still ahead, whatever day the test runs.
+  await dialog.getByLabel('Próximo cierre').click()
+  await page.getByRole('button', { name: 'Ir al mes siguiente' }).click()
+  await page.locator('.rdp-day:not(.rdp-outside) .rdp-day_button', { hasText: /^2$/ }).click()
+  await expect(dialog.getByLabel('Próximo cierre')).toHaveText(/^02\//)
+  await dialog.getByRole('button', { name: 'Pagar', exact: true }).click()
+  await expect(page.getByText(/fechas del próximo resumen guardadas/)).toBeVisible()
+  await expect(dialog).not.toBeVisible()
+
+  await page.getByRole('link', { name: 'Ver resúmenes' }).click()
+  await expect(page.getByText('Fechas corregidas · editar')).toBeVisible()
+  await expect(page.getByText(/^Cierra el 02\/\d{2}\/\d{4}$/)).toBeVisible()
+  await expect(page.getByText('Fechas estimadas')).toHaveCount(0)
+})

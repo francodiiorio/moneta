@@ -241,6 +241,27 @@ export async function statementChoices(cardId: string, date: DateStamp): Promise
   return [0, 1, 2].map((offset) => statementDates(calendar, shiftMonth(automatic, offset)))
 }
 
+export interface NextStatementDates extends StatementDates {
+  /** Already set to the bank's real dates. */
+  isCorrected: boolean
+}
+
+/**
+ * The statement after `period` — whose dates the bank prints on `period`'s
+ * statement as "próximo cierre / vencimiento" — while it hasn't closed yet;
+ * `null` once it has (there's nothing left to anticipate).
+ */
+export async function getNextStatementDates(
+  cardId: string,
+  period: MonthStamp,
+  today: DateStamp = todayStamp(),
+): Promise<NextStatementDates | null> {
+  const calendar = await creditCardsRepo.getCardCalendar(cardId)
+  const next = shiftMonth(period, 1)
+  if (next < statementPeriodFor(calendar, today)) return null
+  return { ...statementDates(calendar, next), isCorrected: calendar.overrides.some((o) => o.period === next) }
+}
+
 /** `null` when the card doesn't exist (e.g. a stale URL). */
 export async function getOpenPeriod(cardId: string, today: DateStamp = todayStamp()): Promise<MonthStamp | null> {
   if (!(await creditCardsRepo.getCreditCard(cardId))) return null
@@ -359,8 +380,13 @@ export async function payStatementFromForm(
   cardId: string,
   period: MonthStamp,
   values: PaymentFormValues,
-  shown: { accountCurrency: ReadonlyMap<string, string> },
-): Promise<void> {
+  shown: {
+    accountCurrency: ReadonlyMap<string, string>
+    /** The next statement's dates the form started from — only a change
+     *  is saved, as that statement's real dates. */
+    nextDates?: StatementDates
+  },
+): Promise<{ nextDatesSaved: boolean; moved: number }> {
   const filled = values.lines.filter((line) => line.paidAmount.trim() !== '')
   invariant(filled.length > 0, 'Cargá lo que pagaste en al menos una moneda')
   const lines = await Promise.all(
@@ -379,7 +405,20 @@ export async function payStatementFromForm(
       return { currency: line.currency, amount, accountId: account.id, debitedAmount: debited, expectedAccountCurrency: accountCurrency }
     }),
   )
-  await statementPaymentsRepo.payStatement({ cardId, period, date: values.date, lines })
+  const input = { cardId, period, date: values.date, lines }
+  const { nextCloseDate, nextDueDate } = values
+  invariant(!nextCloseDate === !nextDueDate, 'Completá las dos fechas del próximo resumen, o ninguna')
+  const changed =
+    shown.nextDates !== undefined &&
+    !!nextCloseDate &&
+    !!nextDueDate &&
+    (nextCloseDate !== shown.nextDates.closeDate || nextDueDate !== shown.nextDates.dueDate)
+  if (!changed) {
+    await statementPaymentsRepo.payStatement(input)
+    return { nextDatesSaved: false, moved: 0 }
+  }
+  const moved = await cardStatementsRepo.payStatementWithNextDates(input, { closeDate: nextCloseDate, dueDate: nextDueDate })
+  return { nextDatesSaved: true, moved }
 }
 
 /** Returns how many payments were removed — 0 if another tab already

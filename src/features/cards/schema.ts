@@ -41,6 +41,10 @@ export type StatementDatesFormValues = z.infer<typeof statementDatesFormSchema>
 
 export const paymentFormSchema = z.object({
   date: z.string().min(1, 'Ingresá la fecha del pago'),
+  /** The next statement's dates as the bank printed them on this one —
+   *  only asked while that statement hasn't closed yet. */
+  nextCloseDate: z.string().optional(),
+  nextDueDate: z.string().optional(),
   lines: z.array(
     z
       .object({
@@ -63,6 +67,14 @@ export const paymentFormSchema = z.object({
       }),
   ),
 })
+  .refine((v) => !v.nextCloseDate === !v.nextDueDate, {
+    path: ['nextDueDate'],
+    message: 'Completá las dos fechas del próximo resumen, o ninguna',
+  })
+  .refine((v) => !v.nextCloseDate || !v.nextDueDate || v.nextDueDate >= v.nextCloseDate, {
+    path: ['nextDueDate'],
+    message: 'El vencimiento no puede ser anterior al cierre',
+  })
 export type PaymentFormValues = z.infer<typeof paymentFormSchema>
 
 export interface ReconcileFormValues {

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
@@ -14,8 +15,9 @@ import { formatAmountInput, money, negate, sub, tryParsePositiveAmount } from '@
 import { formatMonthLabel, todayStamp } from '@/lib/dates'
 import { useAccounts } from '../hooks/useAccounts'
 import { useDialogSession } from '../hooks/useDialogSession'
+import { useNextStatementDates } from '../hooks/useNextStatementDates'
 import { paymentFormSchema, type PaymentFormValues } from '../schema'
-import { payStatementFromForm, reconcileCurrencies, type StatementView } from '../service'
+import { payStatementFromForm, reconcileCurrencies, type NextStatementDates, type StatementView } from '../service'
 
 interface PayStatementDialogProps {
   cardId: string
@@ -27,20 +29,24 @@ interface PayStatementDialogProps {
 
 export function PayStatementDialog({ cardId, cardName, statement, onOpenChange }: PayStatementDialogProps) {
   const accounts = useAccounts()
-  const session = useDialogSession(statement)
+  // The card goes in the session too: Tarjetas clears `cardId` as the
+  // dialog closes, and the content must stay through the animation.
+  const session = useDialogSession(statement && { cardId, cardName, statement })
+  const next = useNextStatementDates(session?.value.cardId ?? '', session?.value.statement.period)
 
   return (
     <Dialog open={!!statement} onOpenChange={onOpenChange}>
-      <DialogContent>
-        {/* Mounted once accounts load: each line's default account is
-            picked when the form mounts. */}
-        {session && accounts && (
+      <DialogContent className="max-h-[90svh] overflow-y-auto">
+        {/* Mounted once accounts and the next statement's dates load:
+            the form's defaults are picked when it mounts. */}
+        {session && accounts && next !== undefined && (
           <DialogBody
             key={session.key}
-            cardId={cardId}
-            cardName={cardName}
-            statement={session.value}
+            cardId={session.value.cardId}
+            cardName={session.value.cardName}
+            statement={session.value.statement}
             accounts={accounts}
+            next={next}
             onClose={() => onOpenChange(false)}
           />
         )}
@@ -54,10 +60,15 @@ interface DialogBodyProps {
   cardName: string
   statement: StatementView
   accounts: Account[]
+  /** The statement after this one, while still open — `null` once closed. */
+  next: NextStatementDates | null
   onClose: () => void
 }
 
-function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBodyProps) {
+function DialogBody({ cardId, cardName, statement, accounts, next: liveNext, onClose }: DialogBodyProps) {
+  // The dates the form starts from — what a change is measured against,
+  // even if another tab corrects them while this dialog is open.
+  const [next] = useState(liveNext)
   const active = accounts.filter((a) => !a.isArchived)
   // One line per currency still to pay: all of Moneta's, or — once some
   // currency is paid — only the rest. A statement Moneta has empty still
@@ -73,6 +84,7 @@ function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBo
     resolver: zodResolver(paymentFormSchema),
     defaultValues: {
       date: todayStamp(),
+      ...(next && { nextCloseDate: next.closeDate, nextDueDate: next.dueDate }),
       lines: owed.map((total) => ({
         currency: total.currency,
         // An account in the statement's own currency, if there is one.
@@ -104,10 +116,13 @@ function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBo
     })
     if (missing) return
     try {
-      await payStatementFromForm(cardId, statement.period, values, {
+      const result = await payStatementFromForm(cardId, statement.period, values, {
         accountCurrency: new Map(accounts.map((a) => [a.id, a.currency])),
+        ...(next && { nextDates: next }),
       })
-      toast.success('Resumen pagado')
+      const moved =
+        result.moved === 0 ? '' : result.moved === 1 ? ' · 1 gasto cambió de resumen' : ` · ${result.moved} gastos cambiaron de resumen`
+      toast.success(result.nextDatesSaved ? `Resumen pagado · fechas del próximo resumen guardadas${moved}` : 'Resumen pagado')
       onClose()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo registrar el pago')
@@ -249,6 +264,47 @@ function DialogBody({ cardId, cardName, statement, accounts, onClose }: DialogBo
               </FormItem>
             )}
           />
+
+          {next && (
+            <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
+              <div>
+                <p className="text-sm font-medium">Próximo resumen</p>
+                <p className="text-xs text-muted-foreground">
+                  {next.isCorrected
+                    ? 'Ya cargaste las fechas del banco para el próximo resumen.'
+                    : 'Fechas estimadas con los días de la tarjeta. Si tu resumen dice otras ("próximo cierre", "próximo vencimiento"), cargalas acá.'}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <FormField
+                  control={form.control}
+                  name="nextCloseDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Próximo cierre</FormLabel>
+                      <FormControl>
+                        <DateField value={field.value ?? ''} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="nextDueDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Próximo vencimiento</FormLabel>
+                      <FormControl>
+                        <DateField value={field.value ?? ''} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+          )}
 
           {active.length === 0 && (
             <p className="text-sm text-muted-foreground">Para pagar necesitás al menos una cuenta en Cuentas.</p>
