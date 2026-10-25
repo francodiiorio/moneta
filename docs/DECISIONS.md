@@ -1457,3 +1457,19 @@ patrimonio.
 Mezcla consumo con movimientos que no lo son (pagar la tarjeta del mes anterior, comprar
 dólares) y no se podría desglosar por categoría.
 
+## Progreso de cuotas con tarjeta: cuenta como el banco (Etapa 8)
+
+**Problema:** una compra del 30/09 en 6 cuotas, con la tarjeta que cerró octubre, figuraba
+"Cuota 1 de 6" en Planes mientras el banco ya mostraba la 2/6 en el resumen abierto. Moneta
+contaba las cuotas cuya fecha ya pasó (la 2 está fechada el 30/10); el banco cuenta la que
+está facturando.
+
+**Decisión:** para un plan con tarjeta, Planes muestra el progreso por resumen
+(`domain/cards:cardInstallmentProgress`): la cuota del resumen abierto hoy ("Cuota 2 de 6 ·
+en el resumen en curso"), o en qué resumen entra la primera, y "Quedan" son las cuotas que
+todavía no llegaron a ningún resumen. Sin tarjeta no hay resumen: sigue contando por fecha.
+
+**Qué no cambia:** cada cuota sigue siendo un gasto en su fecha (proyectado hasta entonces)
+para "Gastos del mes", presupuestos y reportes, y su ubicación en los resúmenes ya seguía al
+banco. Es sólo cómo se muestra el avance. Sin cambios de schema.
+

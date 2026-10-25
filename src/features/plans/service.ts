@@ -9,6 +9,7 @@ import {
 import type { Account, Category, CreditCard, ExpenseTemplate, InstallmentPlan, RecurringPlan } from '@/domain/entities'
 import type { ExpenseInput } from '@/database/repositories/expenses.repo'
 import { describeRule, generateOccurrences, nextOccurrenceAfter } from '@/domain/recurrence'
+import { cardInstallmentProgress, statementPeriodFor, type CardInstallmentProgress } from '@/domain/cards'
 import { money, parseAmount, sub, sumMoney, type Money } from '@/domain/money'
 import { todayStamp, type DateStamp } from '@/lib/dates'
 import { parsePaymentMethod } from './schema'
@@ -306,9 +307,12 @@ export interface InstallmentPlanListItem {
   count: number
   confirmedCount: number
   remaining: Money
+  /** Bought with a card: progress the way the bank counts it — by the
+   *  statement each cuota is billed in, not by its date. */
+  cardProgress?: CardInstallmentProgress
 }
 
-export async function listInstallmentPlansWithProgress(): Promise<InstallmentPlanListItem[]> {
+export async function listInstallmentPlansWithProgress(today: DateStamp = todayStamp()): Promise<InstallmentPlanListItem[]> {
   const [plans, categories, planExpenses, { cards }] = await Promise.all([
     installmentPlansRepo.listInstallmentPlans(),
     categoriesRepo.listCategories(),
@@ -317,6 +321,11 @@ export async function listInstallmentPlansWithProgress(): Promise<InstallmentPla
   ])
   const cardName = new Map(cards.map((c) => [c.id, c.name]))
   const categoryById = new Map(categories.map((c) => [c.id, c] as [string, Category]))
+  // The statement open today, per card a plan is paid with.
+  const openPeriodByCard = new Map<string, string>()
+  for (const cardId of new Set(plans.flatMap((p) => (p.cardId !== undefined ? [p.cardId] : [])))) {
+    openPeriodByCard.set(cardId, statementPeriodFor(await creditCardsRepo.getCardCalendar(cardId), today))
+  }
 
   // Indexed by occurrenceIndex, not just counted, so that deleting or
   // editing a single cuota (allowed — see docs/DECISIONS.md) doesn't
@@ -342,6 +351,21 @@ export async function listInstallmentPlansWithProgress(): Promise<InstallmentPla
     )
     const totalAmount = money(plan.totalAmount, plan.currency)
     const category = categoryById.get(plan.categoryId)
+    const openPeriod = plan.cardId !== undefined ? openPeriodByCard.get(plan.cardId) : undefined
+    // Only cuotas still in this plan's card and currency (an edited one
+    // could have left either; a hand-made backup too) — and none at all
+    // falls back to the by-date count instead of reading as "Terminada".
+    const cuotas = planExpenses.flatMap((e) =>
+      e.sourcePlanId === plan.id &&
+      e.occurrenceIndex !== undefined &&
+      e.statementPeriod !== undefined &&
+      e.cardId === plan.cardId &&
+      e.currency === plan.currency
+        ? [{ index: e.occurrenceIndex, period: e.statementPeriod, amount: money(e.amount, e.currency) }]
+        : [],
+    )
+    const cardProgress =
+      openPeriod === undefined || cuotas.length === 0 ? undefined : cardInstallmentProgress(cuotas, openPeriod, plan.currency)
     return {
       id: plan.id,
       plan,
@@ -354,6 +378,7 @@ export async function listInstallmentPlansWithProgress(): Promise<InstallmentPla
       count: plan.count,
       confirmedCount: confirmedIndexes.size,
       remaining: sub(totalAmount, confirmedAmount),
+      ...(cardProgress !== undefined && { cardProgress }),
     }
   })
 }

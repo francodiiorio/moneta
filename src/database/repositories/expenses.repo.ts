@@ -117,10 +117,22 @@ export async function saveExpense(input: ExpenseInput, existingId?: string): Pro
     const id = existingId ?? generateId()
 
     let createdAt = now
+    // An edit (from Movimientos) of a gasto a plan generated — a cuota, a
+    // recurrence — keeps it in its plan: same link, same projected or
+    // confirmed status. Otherwise the plan stops counting it, and its
+    // progress ("Cuota 2 de 6", what's left) silently shifts.
+    let planLink: Pick<Expense, 'sourcePlanId' | 'occurrenceIndex' | 'status'> | undefined
     if (existingId) {
       const existing = await db.expenses.get(existingId)
       invariant(existing, `No se encontró el gasto a editar: ${existingId}`)
       createdAt = existing.createdAt
+      if (input.sourcePlanId === undefined && existing.sourcePlanId !== undefined) {
+        planLink = {
+          sourcePlanId: existing.sourcePlanId,
+          status: existing.status,
+          ...(existing.occurrenceIndex !== undefined && { occurrenceIndex: existing.occurrenceIndex }),
+        }
+      }
     }
 
     const expense: Expense = {
@@ -139,6 +151,7 @@ export async function saveExpense(input: ExpenseInput, existingId?: string): Pro
       ...(input.occurrenceIndex !== undefined && { occurrenceIndex: input.occurrenceIndex }),
       ...(input.accountId !== undefined && { accountId: input.accountId }),
       ...(input.cardId !== undefined && statementPeriod !== undefined && { cardId: input.cardId, statementPeriod }),
+      ...planLink,
     }
     await db.expenses.put(expense)
     return id

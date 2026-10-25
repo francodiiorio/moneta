@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { money } from '@/domain/money'
 import { db } from '@/database/db'
 import { mergeAllTables } from '@/database/repositories/backup.repo'
 import { createCategory } from '@/database/repositories/categories.repo'
@@ -555,5 +556,86 @@ describe('recurrente con débito: validaciones', () => {
         paymentMethod: `account:${account.id}`,
       }),
     ).rejects.toThrow(/es en ARS/)
+  })
+})
+
+describe('listInstallmentPlansWithProgress — con tarjeta, como cuenta el banco', () => {
+  afterEach(async () => {
+    await Promise.all([db.creditCards.clear(), db.cardStatements.clear()])
+  })
+
+  it('a Sep 30 purchase in 6 cuotas: after October closes, cuota 2/6 is in the open statement and 4 remain to be billed', async () => {
+    const { createCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const { category } = await setup()
+    const card = await createCreditCard({ name: 'Visa', closingDay: 23, dueDay: 5 })
+    await createInstallmentPlan(
+      {
+        description: 'Cubiertas',
+        categoryId: category.id,
+        currency: 'ARS',
+        totalAmount: 528_240_00,
+        count: 6,
+        firstDueDate: '2026-09-30',
+        purchaseDate: '2026-09-30',
+        cardId: card.id,
+      },
+      '2026-10-25',
+    )
+
+    const [item] = await listInstallmentPlansWithProgress('2026-10-25')
+    // By date, only cuota 1 has come (cuota 2 is dated Oct 30)…
+    expect(item?.confirmedCount).toBe(1)
+    // …but the bank already bills cuota 2 in the statement open today.
+    expect(item?.cardProgress?.stage).toEqual({ kind: 'billing', number: 2, period: '2026-11', inOpenStatement: true })
+    expect(item?.cardProgress?.unbilledCount).toBe(4)
+    expect(item?.cardProgress?.unbilled).toEqual(money(4 * 88_040_00, 'ARS'))
+  })
+
+  it('editing a cuota from Movimientos keeps it in its plan — same link, still projected', async () => {
+    const { createCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const { saveExpense: saveExpenseFromForm } = await import('@/features/transactions/service')
+    const { category } = await setup()
+    const card = await createCreditCard({ name: 'Visa', closingDay: 23, dueDay: 5 })
+    const plan = await createInstallmentPlan(
+      {
+        description: 'Cubiertas',
+        categoryId: category.id,
+        currency: 'ARS',
+        totalAmount: 528_240_00,
+        count: 6,
+        firstDueDate: '2026-09-30',
+        purchaseDate: '2026-09-30',
+        cardId: card.id,
+      },
+      '2026-10-25',
+    )
+    const cuota5 = (await db.expenses.toArray()).find((e) => e.sourcePlanId === plan.id && e.occurrenceIndex === 4)!
+    await saveExpenseFromForm(
+      {
+        date: cuota5.date,
+        description: 'Cubiertas (cuota 5/6) — Gomerías Neumen',
+        categoryId: category.id,
+        amount: '88.040',
+        currency: 'ARS',
+        accountId: '',
+        cardId: card.id,
+        statementPeriod: cuota5.statementPeriod!,
+      },
+      cuota5.id,
+    )
+    expect(await db.expenses.get(cuota5.id)).toMatchObject({ sourcePlanId: plan.id, occurrenceIndex: 4, status: 'projected' })
+    const [item] = await listInstallmentPlansWithProgress('2026-10-25')
+    expect(item?.cardProgress?.unbilledCount).toBe(4)
+    expect(item?.cardProgress?.unbilled).toEqual(money(4 * 88_040_00, 'ARS'))
+  })
+
+  it('without a card there is no statement view: progress stays by date', async () => {
+    const { category } = await setup()
+    await createInstallmentPlan(
+      { description: 'Préstamo', categoryId: category.id, currency: 'ARS', totalAmount: 600, count: 6, firstDueDate: '2026-09-30', purchaseDate: '2026-09-30' },
+      '2026-10-25',
+    )
+    const [item] = await listInstallmentPlansWithProgress('2026-10-25')
+    expect(item?.cardProgress).toBeUndefined()
   })
 })
