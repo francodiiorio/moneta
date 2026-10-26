@@ -5,7 +5,7 @@ import { money, parseAmount, type Money } from '@/domain/money'
 import { currentMonthStamp, currentYearStamp, monthRange, todayStamp, yearRange, type MonthStamp } from '@/lib/dates'
 import { getSpentAndCommittedByCategoryInRange } from '@/features/reports/service'
 import type { Budget } from '@/domain/entities'
-import type { BudgetFormValues } from './schema'
+import type { BudgetEditFormValues, BudgetFormValues } from './schema'
 
 export { listBudgets } from '@/database/repositories/budgets.repo'
 
@@ -19,6 +19,23 @@ export async function createBudgetFromForm(values: BudgetFormValues): Promise<Bu
     categoryId: values.categoryId,
     currency: settings.baseCurrency,
     period: values.period,
+    amount: amount.amount,
+    startsOn: values.startsOn,
+  })
+}
+
+/** See budgetsRepo.setBudgetAmountFrom: a correction for the version
+ *  starting that month, else a new version from it. */
+export async function editBudgetFromForm(
+  budget: Pick<Budget, 'categoryId' | 'period'>,
+  values: BudgetEditFormValues,
+): Promise<Budget> {
+  const settings = await settingsRepo.getSettings()
+  const amount = parseAmount(values.amount, settings.baseCurrency)
+  return budgetsRepo.setBudgetAmountFrom({
+    categoryId: budget.categoryId,
+    period: budget.period,
+    currency: settings.baseCurrency,
     amount: amount.amount,
     startsOn: values.startsOn,
   })

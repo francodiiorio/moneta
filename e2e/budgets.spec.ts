@@ -39,3 +39,37 @@ test('un presupuesto muestra lo comprometido en cuotas del mes, sin contarlo com
   await expect(page.getByText(/quedan \$\s?270\.000,00 libres/)).toBeVisible()
   await expect(page.getByText('0%', { exact: true })).toBeVisible()
 })
+
+// Editar el monto desde un mes crea una versión nueva: los meses
+// anteriores conservan el que tenían.
+test('editar un presupuesto cambia el monto desde el mes elegido, sin tocar los anteriores', async ({ page }) => {
+  await page.goto('/presupuestos')
+  await page.getByRole('button', { name: 'Nuevo presupuesto' }).first().click()
+  await page.getByLabel('Categoría').click()
+  await page.getByRole('option', { name: 'Comida' }).click()
+  await page.getByLabel('Monto').fill('450.000')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  // From next month on (the month being browsed).
+  await page.getByRole('button', { name: 'Mes siguiente' }).click()
+  await page.getByRole('button', { name: 'Editar presupuesto de Comida' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Editar presupuesto de Comida' })
+  await expect(dialog.getByLabel('Monto mensual')).toHaveValue(/450\.000/)
+  await dialog.getByLabel('Monto mensual').fill('500.000')
+  await dialog.getByRole('button', { name: 'Guardar' }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByText(/de \$\s?500\.000,00/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Mes anterior' }).click()
+  await expect(page.getByText(/de \$\s?450\.000,00/)).toBeVisible()
+
+  // Same month again: a correction of that version, not a duplicate.
+  await page.getByRole('button', { name: 'Editar presupuesto de Comida' }).click()
+  await dialog.getByLabel('Monto mensual').fill('420.000')
+  await dialog.getByRole('button', { name: 'Guardar' }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByText(/de \$\s?420\.000,00/)).toBeVisible()
+  await page.getByRole('button', { name: 'Mes siguiente' }).click()
+  await expect(page.getByText(/de \$\s?500\.000,00/)).toBeVisible()
+})

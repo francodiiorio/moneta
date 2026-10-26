@@ -284,7 +284,10 @@ cuota puntual sin afectar el resto, y mantiene el historial inmutable — ver
 
 `startsOn` (mes) define desde cuándo rige ese monto. Para cambiar un presupuesto a mitad
 de año sin perder el historial de "cuánto presupuestaba antes", se crea un `Budget` nuevo
-con `startsOn` posterior en vez de editar el existente.
+con `startsOn` posterior en vez de editar el existente. "Editar" en la UI hace eso
+(`budgetsRepo.setBudgetAmountFrom`): desde un mes sin versión, crea una nueva; desde el mes
+en que ya arranca una versión, le corrige el monto (sería un duplicado de
+`categoryId+period+startsOn`). La categoría y el período no se editan.
 
 ### ExchangeRate
 

@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,10 +8,11 @@ import { BUDGET_NEAR_LIMIT_PERCENT, type BudgetProgressItem } from '../service'
 
 interface BudgetProgressRowProps {
   item: BudgetProgressItem
+  onEdit: () => void
   onDelete: () => void
 }
 
-export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
+export function BudgetProgressRow({ item, onEdit, onDelete }: BudgetProgressRowProps) {
   const { progress } = item
   const barWidth = Math.min(100, Math.max(0, progress.percentUsed))
   // Committed spend (cuotas and recurring gastos to come) is drawn after
@@ -29,15 +30,14 @@ export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
           <p className="truncate font-medium">{item.categoryName}</p>
           <Badge variant="secondary">{item.period === 'monthly' ? 'Mensual' : 'Anual'}</Badge>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="shrink-0"
-          aria-label={`Borrar presupuesto de ${item.categoryName}`}
-          onClick={onDelete}
-        >
-          <Trash2 className="size-3.5" />
-        </Button>
+        <div className="flex shrink-0">
+          <Button variant="ghost" size="icon" aria-label={`Editar presupuesto de ${item.categoryName}`} onClick={onEdit}>
+            <Pencil className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" aria-label={`Borrar presupuesto de ${item.categoryName}`} onClick={onDelete}>
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
       </div>
 
       <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-muted">

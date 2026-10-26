@@ -20,12 +20,14 @@ import { useBudgetsUiStore } from '../store'
 import { useBudgetsWithProgress } from '../hooks/useBudgetsWithProgress'
 import { BudgetFormDialog } from '../components/BudgetFormDialog'
 import { BudgetProgressRow } from '../components/BudgetProgressRow'
-import { removeBudget } from '../service'
+import { BudgetEditDialog } from '../components/BudgetEditDialog'
+import { removeBudget, type BudgetProgressItem } from '../service'
 
 export function BudgetsPage() {
   const { month, setMonth, dialogOpen, openCreateDialog, closeDialog } = useBudgetsUiStore()
   const result = useBudgetsWithProgress(month)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<BudgetProgressItem | undefined>(undefined)
 
   async function handleDelete() {
     if (!pendingDeleteId) return
@@ -83,6 +85,7 @@ export function BudgetsPage() {
             <BudgetProgressRow
               key={item.budgetId}
               item={item}
+              onEdit={() => setEditing(item)}
               onDelete={() => setPendingDeleteId(item.budgetId)}
             />
           ))}
@@ -90,6 +93,11 @@ export function BudgetsPage() {
       )}
 
       <BudgetFormDialog open={dialogOpen} onOpenChange={(open) => (open ? undefined : closeDialog())} />
+      <BudgetEditDialog
+        item={editing}
+        defaultStartsOn={month}
+        onOpenChange={(open) => (open ? undefined : setEditing(undefined))}
+      />
 
       <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
         <AlertDialogContent>

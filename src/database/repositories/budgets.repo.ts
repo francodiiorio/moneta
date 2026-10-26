@@ -42,6 +42,24 @@ export async function createBudget(input: CreateBudgetInput): Promise<Budget> {
   return budget
 }
 
+/**
+ * Changes a budget's amount from `startsOn` on: the version that already
+ * starts that month gets the new amount (a correction); otherwise a new
+ * version starts there, so earlier months keep the amount they had.
+ */
+export async function setBudgetAmountFrom(input: CreateBudgetInput): Promise<Budget> {
+  invariant(input.amount > 0, `El monto del presupuesto debe ser mayor a cero, recibido: ${input.amount}`)
+  return db.transaction('rw', db.budgets, async () => {
+    const existing = (
+      await db.budgets.where('[categoryId+startsOn]').equals([input.categoryId, input.startsOn]).toArray()
+    ).find((b) => b.period === input.period)
+    if (!existing) return createBudget(input)
+    const updated: Budget = { ...existing, amount: input.amount, currency: input.currency, updatedAt: new Date().toISOString() }
+    await db.budgets.put(updated)
+    return updated
+  })
+}
+
 export async function deleteBudget(id: string): Promise<void> {
   await db.budgets.delete(id)
 }

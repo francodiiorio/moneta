@@ -9,7 +9,7 @@ import { MoneyText } from '@/components/MoneyText'
 import { statementDifferences } from '@/domain/cards'
 import { formatAmountInput, money, negate, type Money } from '@/domain/money'
 import { formatMonthLabel } from '@/lib/dates'
-import { useDialogSession } from '../hooks/useDialogSession'
+import { useDialogSession } from '@/components/useDialogSession'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
 import {
   parseBankTotals,
