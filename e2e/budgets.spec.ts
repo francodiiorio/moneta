@@ -34,10 +34,10 @@ test('un presupuesto muestra lo comprometido en cuotas del mes, sin contarlo com
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.getByRole('button', { name: 'Mes siguiente' }).click()
-  await expect(page.getByText(/0,00 de \$\s?370\.000,00/)).toBeVisible()
-  await expect(page.getByText(/100\.000,00 comprometido en cuotas/)).toBeVisible()
-  await expect(page.getByText(/quedan \$\s?270\.000,00 libres/)).toBeVisible()
-  await expect(page.getByText('0%', { exact: true })).toBeVisible()
+  await expect(page.getByText(/^\$\s?270\.000,00 libres$/)).toBeVisible()
+  await expect(page.getByText(/^de \$\s?370\.000,00$/)).toBeVisible()
+  await expect(page.getByText(/^Gastado \$\s?0,00$/)).toBeVisible()
+  await expect(page.getByText(/^Por pagar \$\s?100\.000,00$/)).toBeVisible()
 })
 
 // Editar el monto desde un mes crea una versión nueva: los meses
@@ -59,17 +59,17 @@ test('editar un presupuesto cambia el monto desde el mes elegido, sin tocar los 
   await dialog.getByLabel('Monto mensual').fill('500.000')
   await dialog.getByRole('button', { name: 'Guardar' }).click()
   await expect(dialog).not.toBeVisible()
-  await expect(page.getByText(/de \$\s?500\.000,00/)).toBeVisible()
+  await expect(page.getByText(/^de \$\s?500\.000,00$/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Mes anterior' }).click()
-  await expect(page.getByText(/de \$\s?450\.000,00/)).toBeVisible()
+  await expect(page.getByText(/^de \$\s?450\.000,00$/)).toBeVisible()
 
   // Same month again: a correction of that version, not a duplicate.
   await page.getByRole('button', { name: 'Editar presupuesto de Comida' }).click()
   await dialog.getByLabel('Monto mensual').fill('420.000')
   await dialog.getByRole('button', { name: 'Guardar' }).click()
   await expect(dialog).not.toBeVisible()
-  await expect(page.getByText(/de \$\s?420\.000,00/)).toBeVisible()
+  await expect(page.getByText(/^de \$\s?420\.000,00$/)).toBeVisible()
   await page.getByRole('button', { name: 'Mes siguiente' }).click()
-  await expect(page.getByText(/de \$\s?500\.000,00/)).toBeVisible()
+  await expect(page.getByText(/^de \$\s?500\.000,00$/)).toBeVisible()
 })

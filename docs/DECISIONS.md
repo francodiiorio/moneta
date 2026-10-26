@@ -1566,10 +1566,11 @@ parte del límite ya estaba tomada.
 **Decisión:** el presupuesto muestra como **comprometido** las cuotas proyectadas del período
 y los vencimientos de recurrentes activos que todavía no se generaron (un recurrente recién
 escribe el gasto el día que vence, así que una prepaga del 1° no figuraba en ningún lado) —
-un segundo tramo, más claro, en la barra y "+ $X comprometido en cuotas y recurrentes · quedan $Y
-libres" (o "te pasarías por $Y", o "terminarías $Y arriba" si ya te pasaste). No se suman
-a lo gastado: el porcentaje, el aviso de cerca del límite y "te pasaste" siguen siendo sólo
-lo confirmado, porque un plan se puede editar o borrar antes de que llegue la cuota y
+un segundo tramo en la barra, en ámbar (gastado va en el color de la app), con el dato
+principal "$Y libres de $Z" y una leyenda corta "● Gastado $A · ● Por pagar $B" (o "Te
+pasarías por $Y" si no alcanza; "Te pasaste por $Y" si ya se pasó sin nada por pagar). No
+se suman a lo gastado: el color de cerca del límite y de excedido del tramo gastado siguen
+siendo sólo lo confirmado, porque un plan se puede editar o borrar antes de que llegue la cuota y
 entonces el presupuesto quedaría inflado con algo que nunca pasó. Gastado y comprometido
 salen de una misma lectura, para que una cuota que se confirma en el medio no aparezca en
 los dos lados. Una cuota en otra moneda se estima a la cotización de hoy. El panel del
