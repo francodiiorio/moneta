@@ -1,5 +1,5 @@
 import { invariant } from '@/lib/invariant'
-import { sub, type Money } from '@/domain/money'
+import { add, money, negate, sub, type Money } from '@/domain/money'
 import type { Budget } from '@/domain/entities'
 import type { MonthStamp } from '@/lib/dates'
 
@@ -41,22 +41,50 @@ export interface BudgetProgress {
    *  formatMoney. Can exceed 100. */
   percentUsed: number
   isOverBudget: boolean
+  /** Spend already scheduled in the period but not happened yet —
+   *  projected cuotas. Never part of `actual`, `percentUsed` or
+   *  `isOverBudget`: a cuota counts once its date comes (and a plan
+   *  can still be edited or deleted before then). In another currency,
+   *  an estimate at today's rate. */
+  committed: Money
+  /** What's left once the committed spend lands too; negative when it
+   *  would exceed the budget. */
+  free: Money
+  /** How far over the budget it ends up once `committed` lands too
+   *  (already over or not); zero when it fits. */
+  exceededBy: Money
+  /** Display-only share of the budget `committed` takes, like
+   *  `percentUsed`. */
+  percentCommitted: number
 }
 
-export function calculateBudgetProgress(budget: Money, actual: Money): BudgetProgress {
+export function calculateBudgetProgress(
+  budget: Money,
+  actual: Money,
+  committed: Money = money(0, budget.currency),
+): BudgetProgress {
   invariant(
-    budget.currency === actual.currency,
-    `Cannot compare budget progress across currencies: ${budget.currency} vs ${actual.currency}`,
+    budget.currency === actual.currency && budget.currency === committed.currency,
+    `Cannot compare budget progress across currencies: ${budget.currency} vs ${actual.currency} / ${committed.currency}`,
   )
-  invariant(budget.amount >= 0 && actual.amount >= 0, 'Budget and actual amounts must be non-negative')
+  invariant(
+    budget.amount >= 0 && actual.amount >= 0 && committed.amount >= 0,
+    'Budget, actual and committed amounts must be non-negative',
+  )
 
-  const percentUsed = budget.amount === 0 ? (actual.amount > 0 ? 100 : 0) : (actual.amount / budget.amount) * 100
+  const share = (part: Money) => (budget.amount === 0 ? (part.amount > 0 ? 100 : 0) : (part.amount / budget.amount) * 100)
+  const remaining = sub(budget, actual)
+  const free = sub(budget, add(actual, committed))
 
   return {
     budget,
     actual,
-    remaining: sub(budget, actual),
-    percentUsed,
+    remaining,
+    percentUsed: share(actual),
     isOverBudget: actual.amount > budget.amount,
+    committed,
+    free,
+    exceededBy: free.amount < 0 ? negate(free) : money(0, budget.currency),
+    percentCommitted: share(committed),
   }
 }

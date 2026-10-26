@@ -89,5 +89,50 @@ describe('calculateBudgetProgress', () => {
 
   it('rejects comparing across currencies', () => {
     expect(() => calculateBudgetProgress(money(1000, 'ARS'), money(10, 'USD'))).toThrow(/currencies/)
+    expect(() => calculateBudgetProgress(money(1000, 'ARS'), money(10, 'ARS'), money(5, 'USD'))).toThrow(/currencies/)
+  })
+
+  it('without committed spend, free is what remains', () => {
+    const progress = calculateBudgetProgress(money(1000, 'ARS'), money(400, 'ARS'))
+    expect(progress.committed).toEqual(money(0, 'ARS'))
+    expect(progress.free).toEqual(money(600, 'ARS'))
+    expect(progress.percentCommitted).toBe(0)
+  })
+
+  it('committed spend lowers what’s free, but never counts as used', () => {
+    const progress = calculateBudgetProgress(money(1000, 'ARS'), money(400, 'ARS'), money(350, 'ARS'))
+    expect(progress.free).toEqual(money(250, 'ARS'))
+    expect(progress.remaining).toEqual(money(600, 'ARS'))
+    expect(progress.percentUsed).toBe(40)
+    expect(progress.percentCommitted).toBe(35)
+    expect(progress.isOverBudget).toBe(false)
+  })
+
+  it('committed spend that would exceed the budget leaves free negative, not over budget yet', () => {
+    const progress = calculateBudgetProgress(money(1000, 'ARS'), money(800, 'ARS'), money(300, 'ARS'))
+    expect(progress.free).toEqual(money(-100, 'ARS'))
+    expect(progress.isOverBudget).toBe(false)
+  })
+
+  it('already over budget, committed spend adds to how far over it ends up', () => {
+    const progress = calculateBudgetProgress(money(1000, 'ARS'), money(1200, 'ARS'), money(100, 'ARS'))
+    expect(progress.isOverBudget).toBe(true)
+    expect(progress.free).toEqual(money(-300, 'ARS'))
+    expect(progress.exceededBy).toEqual(money(300, 'ARS'))
+    expect(progress.percentCommitted).toBe(10)
+  })
+
+  it('exceededBy is zero while it fits', () => {
+    expect(calculateBudgetProgress(money(1000, 'ARS'), money(400, 'ARS'), money(600, 'ARS')).exceededBy).toEqual(money(0, 'ARS'))
+  })
+
+  it('rejects a negative committed amount', () => {
+    expect(() => calculateBudgetProgress(money(1000, 'ARS'), money(0, 'ARS'), money(-1, 'ARS'))).toThrow(/non-negative/)
+  })
+
+  it('a zero budget with committed spend shows it as fully taken', () => {
+    const progress = calculateBudgetProgress(money(0, 'ARS'), money(0, 'ARS'), money(50, 'ARS'))
+    expect(progress.percentCommitted).toBe(100)
+    expect(progress.free).toEqual(money(-50, 'ARS'))
   })
 })

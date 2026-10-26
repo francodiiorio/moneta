@@ -14,6 +14,10 @@ interface BudgetProgressRowProps {
 export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
   const { progress } = item
   const barWidth = Math.min(100, Math.max(0, progress.percentUsed))
+  // Committed spend (projected cuotas) is drawn after what's spent, fainter.
+  const committedWidth = Math.min(100 - barWidth, Math.max(0, progress.percentCommitted))
+  const hasCommitted = progress.committed.amount > 0
+  const wouldExceed = progress.free.amount < 0
   const isNearLimit = !progress.isOverBudget && progress.percentUsed >= BUDGET_NEAR_LIMIT_PERCENT
 
   return (
@@ -24,19 +28,31 @@ export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
           <p className="truncate font-medium">{item.categoryName}</p>
           <Badge variant="secondary">{item.period === 'monthly' ? 'Mensual' : 'Anual'}</Badge>
         </div>
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={onDelete}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
+          aria-label={`Borrar presupuesto de ${item.categoryName}`}
+          onClick={onDelete}
+        >
           <Trash2 className="size-3.5" />
         </Button>
       </div>
 
-      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
+      <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
-            'h-full rounded-full transition-all',
+            'h-full transition-all',
             progress.isOverBudget ? 'bg-negative' : isNearLimit ? 'bg-negative/60' : 'bg-primary',
           )}
           style={{ width: `${barWidth}%` }}
         />
+        {committedWidth > 0 && (
+          <div
+            className={cn('h-full transition-all', wouldExceed ? 'bg-negative/30' : 'bg-primary/30')}
+            style={{ width: `${committedWidth}%` }}
+          />
+        )}
       </div>
 
       <div className="mt-2 flex items-center justify-between text-sm">
@@ -47,6 +63,24 @@ export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
           {Math.round(progress.percentUsed)}%
         </span>
       </div>
+      {hasCommitted && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          + <MoneyText value={progress.committed} /> comprometido en cuotas ·{' '}
+          {progress.isOverBudget ? (
+            <span className="font-medium text-negative">
+              terminarías <MoneyText value={progress.exceededBy} /> arriba
+            </span>
+          ) : wouldExceed ? (
+            <span className="font-medium text-negative">
+              te pasarías por <MoneyText value={progress.exceededBy} />
+            </span>
+          ) : (
+            <>
+              quedan <MoneyText value={progress.free} /> libres
+            </>
+          )}
+        </p>
+      )}
     </div>
   )
 }

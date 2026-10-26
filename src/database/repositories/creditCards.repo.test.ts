@@ -89,11 +89,18 @@ describe('statement overrides', () => {
   })
 
   it('changing the default closing day re-places automatic expenses too', async () => {
-    const { card, category } = await setup()
-    const id = await saveExpense(purchase(category.id, card.id, { date: '2026-10-24' }))
-    await updateCreditCard(card.id, { name: 'Visa', closingDay: 20, dueDay: 5, notes: undefined })
-    expect((await db.expenses.get(id))?.statementPeriod).toBe('2026-11')
-    expect(await listCardExpenses(card.id, '2026-11')).toHaveLength(1)
+    // While October's statement is still open — a closed one is frozen.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-10T12:00:00'))
+    try {
+      const { card, category } = await setup()
+      const id = await saveExpense(purchase(category.id, card.id, { date: '2026-10-24' }))
+      await updateCreditCard(card.id, { name: 'Visa', closingDay: 20, dueDay: 5, notes: undefined })
+      expect((await db.expenses.get(id))?.statementPeriod).toBe('2026-11')
+      expect(await listCardExpenses(card.id, '2026-11')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

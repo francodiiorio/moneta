@@ -3,7 +3,7 @@ import { convert, MissingRateError } from '@/domain/currency'
 import { calculateBudgetProgress, resolveActiveBudget, type BudgetProgress } from '@/domain/budgets'
 import { money, parseAmount, type Money } from '@/domain/money'
 import { currentMonthStamp, currentYearStamp, monthRange, todayStamp, yearRange, type MonthStamp } from '@/lib/dates'
-import { getExpenseByCategoryInRange } from '@/features/reports/service'
+import { getSpentAndCommittedByCategoryInRange } from '@/features/reports/service'
 import type { Budget } from '@/domain/entities'
 import type { BudgetFormValues } from './schema'
 
@@ -49,7 +49,9 @@ export interface BudgetsWithProgress {
  * resolves the version in effect and compares it to actual spend:
  * `monthly` budgets against `month` (the page's selected month);
  * `yearly` ones always against the current calendar year to date,
- * regardless of which month is being browsed.
+ * regardless of which month is being browsed. Committed spend (projected
+ * cuotas, see BudgetProgress.committed) covers the same range — for a
+ * yearly budget, the cuotas still to come for the rest of the year.
  */
 export async function getBudgetsWithProgress(month: MonthStamp): Promise<BudgetsWithProgress> {
   const [budgets, categories, settings, rates] = await Promise.all([
@@ -73,23 +75,30 @@ export async function getBudgetsWithProgress(month: MonthStamp): Promise<Budgets
   // would double-count the same unconvertible transaction when only one
   // of the two periods is actually budgeted. This doesn't fully dedupe
   // when *both* a monthly and a yearly budget exist and the browsed month
-  // falls in the current year (the common case): getExpenseByCategoryInRange
-  // scans every confirmed expense transaction in its range, not just
-  // budgeted categories, so ANY unconvertible transaction in the browsed
-  // month — budgeted or not — is counted once by the month scan and again
-  // by the year scan. Accepted as an informational-counter inaccuracy (it
-  // never affects a Money value or a budget's own progress, only the
-  // MissingRateBanner count); revisit if it proves confusing in practice.
+  // falls in the current year (the common case): each scan converts every
+  // expense in its range — confirmed and projected, not just budgeted
+  // categories — so ANY unconvertible one in the browsed month is counted
+  // once by the month scan and again by the year scan. Accepted as an
+  // informational-counter inaccuracy (it never affects a Money value or a
+  // budget's own progress, only the MissingRateBanner count — though a
+  // projected cuota left out for lack of a rate does make `free` look
+  // bigger, which the banner is there to flag); revisit if it proves
+  // confusing in practice.
   const monthBounds = monthRange(month)
   const yearBounds = yearRange(currentYearStamp())
-  const [monthlyExpense, yearlyExpense] = await Promise.all([
-    hasMonthlyBudget ? getExpenseByCategoryInRange(monthBounds.start, monthBounds.end) : undefined,
-    hasYearlyBudget ? getExpenseByCategoryInRange(yearBounds.start, yearBounds.end) : undefined,
+  const [monthly, yearly] = await Promise.all([
+    hasMonthlyBudget ? getSpentAndCommittedByCategoryInRange(monthBounds.start, monthBounds.end) : undefined,
+    hasYearlyBudget ? getSpentAndCommittedByCategoryInRange(yearBounds.start, yearBounds.end) : undefined,
   ])
-  const monthlyByCategory = new Map(monthlyExpense?.items.map((i) => [i.categoryId, i.amount]))
-  const yearlyByCategory = new Map(yearlyExpense?.items.map((i) => [i.categoryId, i.amount]))
+  const monthlyByCategory = new Map(monthly?.spent.items.map((i) => [i.categoryId, i.amount]))
+  const yearlyByCategory = new Map(yearly?.spent.items.map((i) => [i.categoryId, i.amount]))
+  const monthlyCommitted = new Map(monthly?.committed.items.map((i) => [i.categoryId, i.amount]))
+  const yearlyCommitted = new Map(yearly?.committed.items.map((i) => [i.categoryId, i.amount]))
 
-  let missingRateCount = (monthlyExpense?.missingRateCount ?? 0) + (yearlyExpense?.missingRateCount ?? 0)
+  let missingRateCount = [monthly, yearly].reduce(
+    (count, scan) => count + (scan?.spent.missingRateCount ?? 0) + (scan?.committed.missingRateCount ?? 0),
+    0,
+  )
   const items: BudgetProgressItem[] = []
 
   for (const { categoryId, period } of pairs.values()) {
@@ -98,6 +107,7 @@ export async function getBudgetsWithProgress(month: MonthStamp): Promise<Budgets
     if (!active) continue
 
     const actualAmount = (period === 'monthly' ? monthlyByCategory : yearlyByCategory).get(categoryId) ?? money(0, baseCurrency)
+    const committedAmount = (period === 'monthly' ? monthlyCommitted : yearlyCommitted).get(categoryId) ?? money(0, baseCurrency)
 
     let budgetAmount: Money
     if (active.currency === baseCurrency) {
@@ -125,7 +135,7 @@ export async function getBudgetsWithProgress(month: MonthStamp): Promise<Budgets
       ...(category?.icon !== undefined && { categoryIcon: category.icon }),
       period,
       startsOn: active.startsOn,
-      progress: calculateBudgetProgress(budgetAmount, actualAmount),
+      progress: calculateBudgetProgress(budgetAmount, actualAmount, committedAmount),
     })
   }
 

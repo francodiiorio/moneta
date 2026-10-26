@@ -1557,3 +1557,19 @@ Cambiar la opción del día de cierre cuando movería el primer resumen de un pl
 mitad de camino se rechaza en vez de recalcularlo: la cuota del banco quedaría corrida y no
 hay forma automática de saber cuál era la correcta. Se borra el plan y se vuelve a cargar.
 
+## Presupuestos: lo comprometido en cuotas se ve aparte (Etapa 8)
+
+**Problema:** un presupuesto cargado para un mes con cuotas por venir marcaba 0% hasta que
+llegaba cada fecha: las cuotas `projected` no cuentan como gastado. El usuario no veía que
+parte del límite ya estaba tomada.
+
+**Decisión:** el presupuesto muestra las cuotas proyectadas del período como **comprometido**
+— un segundo tramo, más claro, en la barra y "+ $X comprometido en cuotas · quedan $Y
+libres" (o "te pasarías por $Y", o "terminarías $Y arriba" si ya te pasaste). No se suman
+a lo gastado: el porcentaje, el aviso de cerca del límite y "te pasaste" siguen siendo sólo
+lo confirmado, porque un plan se puede editar o borrar antes de que llegue la cuota y
+entonces el presupuesto quedaría inflado con algo que nunca pasó. Gastado y comprometido
+salen de una misma lectura, para que una cuota que se confirma en el medio no aparezca en
+los dos lados. Una cuota en otra moneda se estima a la cotización de hoy. El panel del
+Dashboard sigue mostrando sólo lo gastado: es un resumen compacto, el detalle está en
+Presupuestos.

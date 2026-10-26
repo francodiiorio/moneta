@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { db } from '@/database/db'
 import { createBudget, deleteBudget } from '@/database/repositories/budgets.repo'
 import { createCategory } from '@/database/repositories/categories.repo'
@@ -30,6 +30,25 @@ describe('getBudgetsWithProgress', () => {
     expect(items[0]!.progress.actual).toEqual(money(4_000, 'ARS'))
     expect(items[0]!.progress.percentUsed).toBe(40)
     expect(missingRateCount).toBe(0)
+  })
+
+  it('projected cuotas of the month show as committed, never as spent', async () => {
+    const transport = await createCategory({ kind: 'expense', name: 'Transporte' })
+    const other = await createCategory({ kind: 'expense', name: 'Otros' })
+    await createBudget({ categoryId: transport.id, currency: 'ARS', period: 'monthly', amount: 370_000_00, startsOn: '2026-11' })
+    await saveExpense({ date: '2026-11-03', description: 'Nafta', categoryId: transport.id, amount: 60_000_00, currency: 'ARS', status: 'confirmed' })
+    await saveExpense({ date: '2026-11-30', description: 'cubiertas (cuota 3/6)', categoryId: transport.id, amount: 88_040_00, currency: 'ARS', status: 'projected' })
+    // Another month's, or another category's, isn't committed here.
+    await saveExpense({ date: '2026-12-30', description: 'cubiertas (cuota 4/6)', categoryId: transport.id, amount: 88_040_00, currency: 'ARS', status: 'projected' })
+    await saveExpense({ date: '2026-11-15', description: 'Cuota', categoryId: other.id, amount: 1_000_00, currency: 'ARS', status: 'projected' })
+
+    const { items } = await getBudgetsWithProgress('2026-11')
+    expect(items[0]!.progress).toMatchObject({
+      actual: money(60_000_00, 'ARS'),
+      committed: money(88_040_00, 'ARS'),
+      free: money(221_960_00, 'ARS'),
+      isOverBudget: false,
+    })
   })
 
   it('carries the category\'s color/icon, omitting them when unset', async () => {
@@ -121,5 +140,42 @@ describe('getBudgetsWithProgress', () => {
 
     const { missingRateCount } = await getBudgetsWithProgress('2026-08')
     expect(missingRateCount).toBe(1)
+  })
+
+  it('a yearly budget counts the cuotas still to come this year as committed, not next year’s', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-26T12:00:00'))
+    try {
+      const travel = await createCategory({ kind: 'expense', name: 'Viajes' })
+      await createBudget({ categoryId: travel.id, currency: 'ARS', period: 'yearly', amount: 1_000_000, startsOn: '2026-01' })
+      await saveExpense({ date: '2026-03-01', description: 'Vuelo', categoryId: travel.id, amount: 300_000, currency: 'ARS', status: 'confirmed' })
+      await saveExpense({ date: '2026-11-10', description: 'Hotel (cuota 2/3)', categoryId: travel.id, amount: 100_000, currency: 'ARS', status: 'projected' })
+      await saveExpense({ date: '2026-12-10', description: 'Hotel (cuota 3/3)', categoryId: travel.id, amount: 100_000, currency: 'ARS', status: 'projected' })
+      await saveExpense({ date: '2027-01-10', description: 'Otro (cuota 2/2)', categoryId: travel.id, amount: 50_000, currency: 'ARS', status: 'projected' })
+
+      const { items } = await getBudgetsWithProgress('2026-10')
+      expect(items[0]!.progress).toMatchObject({
+        actual: money(300_000, 'ARS'),
+        committed: money(200_000, 'ARS'),
+        free: money(500_000, 'ARS'),
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a projected cuota in another currency converts at the latest rate, or counts as missing without one', async () => {
+    const food = await createCategory({ kind: 'expense', name: 'Comida' })
+    await createBudget({ categoryId: food.id, currency: 'ARS', period: 'monthly', amount: 100_000, startsOn: '2026-01' })
+    await saveExpense({ date: '2026-08-20', description: 'Suscripción (cuota 2/3)', categoryId: food.id, amount: 10, currency: 'USD', status: 'projected' })
+
+    const withoutRate = await getBudgetsWithProgress('2026-08')
+    expect(withoutRate.missingRateCount).toBe(1)
+    expect(withoutRate.items[0]!.progress.committed).toEqual(money(0, 'ARS'))
+
+    await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1000 })
+    const withRate = await getBudgetsWithProgress('2026-08')
+    expect(withRate.missingRateCount).toBe(0)
+    expect(withRate.items[0]!.progress.committed).toEqual(money(10_000, 'ARS'))
   })
 })

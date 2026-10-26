@@ -55,11 +55,11 @@ export function BudgetsPage() {
       <MissingRateBanner count={result?.missingRateCount ?? 0} />
 
       <div className="flex items-center gap-1">
-        <Button variant="ghost" size="icon" onClick={() => setMonth(shiftMonth(month, -1))}>
+        <Button variant="ghost" size="icon" aria-label="Mes anterior" onClick={() => setMonth(shiftMonth(month, -1))}>
           <ChevronLeft className="size-4" />
         </Button>
         <span className="min-w-36 text-center text-sm font-medium capitalize">{formatMonthLabel(month)}</span>
-        <Button variant="ghost" size="icon" onClick={() => setMonth(shiftMonth(month, 1))}>
+        <Button variant="ghost" size="icon" aria-label="Mes siguiente" onClick={() => setMonth(shiftMonth(month, 1))}>
           <ChevronRight className="size-4" />
         </Button>
       </div>

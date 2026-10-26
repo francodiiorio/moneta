@@ -121,15 +121,50 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
   return byCategory(expenses.filter((e) => e.status === 'confirmed'))
 }
 
-/** Totals `items` per category in the base currency, biggest first. */
-async function byCategory(
-  items: readonly { amount: number; currency: string; date: DateStamp; categoryId: string }[],
-): Promise<CategoryBreakdown> {
+/**
+ * For budgets: what was spent in the range (confirmed) and what's already
+ * scheduled in it but hasn't happened yet (projected cuotas) — from ONE
+ * read, so a cuota confirmed in between can't show up in both or neither.
+ * A projected cuota in another currency converts at the latest rate on
+ * or before its date — today's, for a future one: an estimate.
+ */
+export async function getSpentAndCommittedByCategoryInRange(
+  start: DateStamp,
+  end: DateStamp,
+): Promise<{ spent: CategoryBreakdown; committed: CategoryBreakdown }> {
+  const [expenses, context] = await Promise.all([expensesRepo.listExpensesInRange(start, end), loadConversionContext()])
+  return {
+    spent: totalsByCategory(context, expenses.filter((e) => e.status === 'confirmed')),
+    committed: totalsByCategory(context, expenses.filter((e) => e.status === 'projected')),
+  }
+}
+
+interface ConversionContext {
+  settings: Awaited<ReturnType<typeof settingsRepo.getSettings>>
+  rates: Awaited<ReturnType<typeof exchangeRatesRepo.listExchangeRates>>
+  categories: Awaited<ReturnType<typeof categoriesRepo.listCategories>>
+}
+
+async function loadConversionContext(): Promise<ConversionContext> {
   const [settings, rates, categories] = await Promise.all([
     settingsRepo.getSettings(),
     exchangeRatesRepo.listExchangeRates(),
     categoriesRepo.listCategories(),
   ])
+  return { settings, rates, categories }
+}
+
+/** Totals `items` per category in the base currency, biggest first. */
+async function byCategory(
+  items: readonly { amount: number; currency: string; date: DateStamp; categoryId: string }[],
+): Promise<CategoryBreakdown> {
+  return totalsByCategory(await loadConversionContext(), items)
+}
+
+function totalsByCategory(
+  { settings, rates, categories }: ConversionContext,
+  items: readonly { amount: number; currency: string; date: DateStamp; categoryId: string }[],
+): CategoryBreakdown {
   const baseCurrency = settings.baseCurrency
   const profile = settings.rateProfile
   const categoryById = new Map(categories.map((c) => [c.id, c]))
