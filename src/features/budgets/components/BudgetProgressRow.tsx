@@ -14,7 +14,8 @@ interface BudgetProgressRowProps {
 export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
   const { progress } = item
   const barWidth = Math.min(100, Math.max(0, progress.percentUsed))
-  // Committed spend (projected cuotas) is drawn after what's spent, fainter.
+  // Committed spend (cuotas and recurring gastos to come) is drawn after
+  // what's spent, fainter.
   const committedWidth = Math.min(100 - barWidth, Math.max(0, progress.percentCommitted))
   const hasCommitted = progress.committed.amount > 0
   const wouldExceed = progress.free.amount < 0
@@ -65,7 +66,7 @@ export function BudgetProgressRow({ item, onDelete }: BudgetProgressRowProps) {
       </div>
       {hasCommitted && (
         <p className="mt-1 text-xs text-muted-foreground">
-          + <MoneyText value={progress.committed} /> comprometido en cuotas ·{' '}
+          + <MoneyText value={progress.committed} /> comprometido en cuotas y recurrentes ·{' '}
           {progress.isOverBudget ? (
             <span className="font-medium text-negative">
               terminarías <MoneyText value={progress.exceededBy} /> arriba

@@ -1563,8 +1563,10 @@ hay forma automática de saber cuál era la correcta. Se borra el plan y se vuel
 llegaba cada fecha: las cuotas `projected` no cuentan como gastado. El usuario no veía que
 parte del límite ya estaba tomada.
 
-**Decisión:** el presupuesto muestra las cuotas proyectadas del período como **comprometido**
-— un segundo tramo, más claro, en la barra y "+ $X comprometido en cuotas · quedan $Y
+**Decisión:** el presupuesto muestra como **comprometido** las cuotas proyectadas del período
+y los vencimientos de recurrentes activos que todavía no se generaron (un recurrente recién
+escribe el gasto el día que vence, así que una prepaga del 1° no figuraba en ningún lado) —
+un segundo tramo, más claro, en la barra y "+ $X comprometido en cuotas y recurrentes · quedan $Y
 libres" (o "te pasarías por $Y", o "terminarías $Y arriba" si ya te pasaste). No se suman
 a lo gastado: el porcentaje, el aviso de cerca del límite y "te pasaste" siguen siendo sólo
 lo confirmado, porque un plan se puede editar o borrar antes de que llegue la cuota y

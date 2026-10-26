@@ -3,6 +3,7 @@ import { db } from '@/database/db'
 import { createBudget, deleteBudget } from '@/database/repositories/budgets.repo'
 import { createCategory } from '@/database/repositories/categories.repo'
 import { createExchangeRate } from '@/database/repositories/exchangeRates.repo'
+import { createRecurringPlan, setRecurringPlanPaused } from '@/database/repositories/recurringPlans.repo'
 import { saveExpense } from '@/database/repositories/expenses.repo'
 import { money } from '@/domain/money'
 import { getBudgetsWithProgress } from './service'
@@ -14,6 +15,7 @@ afterEach(async () => {
     db.exchangeRates.clear(),
     db.settings.clear(),
     db.budgets.clear(),
+    db.recurringPlans.clear(),
   ])
 })
 
@@ -177,5 +179,28 @@ describe('getBudgetsWithProgress', () => {
     const withRate = await getBudgetsWithProgress('2026-08')
     expect(withRate.missingRateCount).toBe(0)
     expect(withRate.items[0]!.progress.committed).toEqual(money(10_000, 'ARS'))
+  })
+
+  it('a recurring gasto due later in the month counts as committed until it’s generated', async () => {
+    const health = await createCategory({ kind: 'expense', name: 'Salud' })
+    await createBudget({ categoryId: health.id, currency: 'ARS', period: 'monthly', amount: 410_000_00, startsOn: '2026-11' })
+    const plan = await createRecurringPlan({
+      template: { description: 'galeno', categoryId: health.id, amount: 295_421_51, currency: 'ARS' },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 1, startDate: '2026-11-01' },
+    })
+
+    const [item] = (await getBudgetsWithProgress('2026-11')).items
+    expect(item!.progress).toMatchObject({ actual: money(0, 'ARS'), committed: money(295_421_51, 'ARS') })
+
+    // Generated on its date: spent now, no longer committed.
+    await db.recurringPlans.update(plan.id, { lastMaterializedDate: '2026-11-01' })
+    await saveExpense({ date: '2026-11-01', description: 'galeno', categoryId: health.id, amount: 295_421_51, currency: 'ARS', status: 'confirmed', sourcePlanId: plan.id, occurrenceIndex: 0 })
+    const [after] = (await getBudgetsWithProgress('2026-11')).items
+    expect(after!.progress).toMatchObject({ actual: money(295_421_51, 'ARS'), committed: money(0, 'ARS') })
+
+    // A paused plan commits nothing.
+    await setRecurringPlanPaused(plan.id, true)
+    const [december] = (await getBudgetsWithProgress('2026-12')).items
+    expect(december!.progress.committed).toEqual(money(0, 'ARS'))
   })
 })

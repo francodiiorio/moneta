@@ -256,8 +256,10 @@ cuota puntual sin afectar el resto, y mantiene el historial inmutable — ver
   a `confirmed` el día que llega su fecha. `projected` está excluido de reportes
   (`reports/service.ts`) y de lo gastado en presupuestos, así que una cuota futura es
   visible (con badge en Movimientos) sin afectar ningún total. El presupuesto sí la
-  muestra aparte, como **comprometido** del período (`BudgetProgress.committed` / `free`):
-  nunca entra en el porcentaje usado ni en "te pasaste".
+  muestra aparte, como **comprometido** del período (`BudgetProgress.committed` / `free`),
+  junto con los vencimientos de recurrentes activos del período que todavía no se generaron
+  (`domain/recurrence:pendingOccurrencesInRange` — un recurrente no escribe nada antes de
+  su fecha): nunca entra en el porcentaje usado ni en "te pasaste".
 - Un plan **ya en curso** al cargarlo ("voy por la cuota 3") guarda `startIndex?` (índice
   0-based de la primera cuota que sigue Moneta, `< count`): sólo se escriben las cuotas
   desde ahí; las anteriores cuentan como pagadas en el progreso pero nunca existen como

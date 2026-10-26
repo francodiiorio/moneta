@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RecurrenceRule } from '@/domain/entities'
-import { describeRule, generateOccurrences, nextOccurrenceAfter, firstPendingOccurrence } from './occurrences'
+import { describeRule, generateOccurrences, nextOccurrenceAfter, firstPendingOccurrence, pendingOccurrencesInRange } from './occurrences'
 
 function rule(overrides: Partial<RecurrenceRule> & Pick<RecurrenceRule, 'freq' | 'startDate'>): RecurrenceRule {
   return { interval: 1, ...overrides }
@@ -102,5 +102,32 @@ describe('firstPendingOccurrence', () => {
 
   it('is undefined once the rule is exhausted', () => {
     expect(firstPendingOccurrence({ ...rule, maxOccurrences: 2 }, '2025-02-05')).toBeUndefined()
+  })
+})
+
+describe('pendingOccurrencesInRange', () => {
+  const monthly = { freq: 'monthly' as const, interval: 1, dayOfMonth: 1, startDate: '2026-10-01' }
+
+  it('the next month’s occurrence, not generated yet, is pending', () => {
+    expect(pendingOccurrencesInRange(monthly, '2026-10-01', '2026-11-01', '2026-11-30')).toEqual(['2026-11-01'])
+  })
+
+  it('an occurrence already generated is not pending', () => {
+    expect(pendingOccurrencesInRange(monthly, '2026-11-01', '2026-11-01', '2026-11-30')).toEqual([])
+  })
+
+  it('only the range: neither earlier nor later occurrences', () => {
+    expect(pendingOccurrencesInRange(monthly, undefined, '2026-11-01', '2026-12-31')).toEqual(['2026-11-01', '2026-12-01'])
+  })
+
+  it('respects the rule’s end', () => {
+    expect(pendingOccurrencesInRange({ ...monthly, endDate: '2026-11-15' }, '2026-10-01', '2026-11-01', '2026-12-31')).toEqual([
+      '2026-11-01',
+    ])
+  })
+
+  it('weekly: every one in the month', () => {
+    const weekly = { freq: 'weekly' as const, interval: 1, startDate: '2026-11-02' }
+    expect(pendingOccurrencesInRange(weekly, '2026-11-09', '2026-11-01', '2026-11-30')).toEqual(['2026-11-16', '2026-11-23', '2026-11-30'])
   })
 })

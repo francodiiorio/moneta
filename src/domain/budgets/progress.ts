@@ -42,10 +42,10 @@ export interface BudgetProgress {
   percentUsed: number
   isOverBudget: boolean
   /** Spend already scheduled in the period but not happened yet —
-   *  projected cuotas. Never part of `actual`, `percentUsed` or
-   *  `isOverBudget`: a cuota counts once its date comes (and a plan
-   *  can still be edited or deleted before then). In another currency,
-   *  an estimate at today's rate. */
+   *  projected cuotas and recurring gastos still to come. Never part of
+   *  `actual`, `percentUsed` or `isOverBudget`: it counts once its date
+   *  comes (and a plan can still be edited, paused or deleted before
+   *  then). In another currency, an estimate at today's rate. */
   committed: Money
   /** What's left once the committed spend lands too; negative when it
    *  would exceed the budget. */

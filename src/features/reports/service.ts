@@ -6,10 +6,12 @@ import {
   incomesRepo,
   investmentLotsRepo,
   investmentsRepo,
+  recurringPlansRepo,
   savingsHoldingsRepo,
   settingsRepo,
 } from '@/database/repositories'
 import { quantity } from '@/domain/decimal'
+import { pendingOccurrencesInRange } from '@/domain/recurrence'
 import { convert, MissingRateError } from '@/domain/currency'
 import type { ExchangeRate, InvestmentAsset, InvestmentLot, SavingsHolding } from '@/domain/entities'
 import { holdingsAsOf } from '@/domain/investments'
@@ -123,19 +125,35 @@ export async function getExpenseByCategoryInRange(start: DateStamp, end: DateSta
 
 /**
  * For budgets: what was spent in the range (confirmed) and what's already
- * scheduled in it but hasn't happened yet (projected cuotas) — from ONE
- * read, so a cuota confirmed in between can't show up in both or neither.
- * A projected cuota in another currency converts at the latest rate on
- * or before its date — today's, for a future one: an estimate.
+ * scheduled in it but hasn't happened yet — projected cuotas, and the
+ * occurrences of active recurring plans not generated yet (a recurring
+ * gasto only exists once its date comes). Expenses come from ONE read,
+ * so a cuota confirmed in between can't show up in both or neither. In
+ * another currency, a future one converts at the latest rate on or
+ * before its date — today's: an estimate.
  */
 export async function getSpentAndCommittedByCategoryInRange(
   start: DateStamp,
   end: DateStamp,
 ): Promise<{ spent: CategoryBreakdown; committed: CategoryBreakdown }> {
-  const [expenses, context] = await Promise.all([expensesRepo.listExpensesInRange(start, end), loadConversionContext()])
+  const [expenses, plans, context] = await Promise.all([
+    expensesRepo.listExpensesInRange(start, end),
+    recurringPlansRepo.listRecurringPlans(),
+    loadConversionContext(),
+  ])
+  const upcoming = plans
+    .filter((plan) => !plan.isPaused)
+    .flatMap((plan) =>
+      pendingOccurrencesInRange(plan.rule, plan.lastMaterializedDate, start, end).map((date) => ({
+        amount: plan.template.amount,
+        currency: plan.template.currency,
+        categoryId: plan.template.categoryId,
+        date,
+      })),
+    )
   return {
     spent: totalsByCategory(context, expenses.filter((e) => e.status === 'confirmed')),
-    committed: totalsByCategory(context, expenses.filter((e) => e.status === 'projected')),
+    committed: totalsByCategory(context, [...expenses.filter((e) => e.status === 'projected'), ...upcoming]),
   }
 }
 

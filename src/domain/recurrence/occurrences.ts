@@ -89,6 +89,20 @@ export function firstPendingOccurrence(rule: RecurrenceRule, lastMaterializedDat
   return generateOccurrences(rule, rule.startDate)[0] ?? nextOccurrenceAfter(rule, rule.startDate)
 }
 
+/** The occurrences of `rule` dated in [`start`, `end`] the plan hasn't
+ *  generated yet (after `lastMaterializedDate`) — what a budget counts as
+ *  committed: due in the period, not spent so far. */
+export function pendingOccurrencesInRange(
+  rule: RecurrenceRule,
+  lastMaterializedDate: DateStamp | undefined,
+  start: DateStamp,
+  end: DateStamp,
+): DateStamp[] {
+  return generateOccurrences(rule, end).filter(
+    (date) => date >= start && (lastMaterializedDate === undefined || date > lastMaterializedDate),
+  )
+}
+
 const FREQ_LABELS: Record<RecurrenceRule['freq'], { one: string; many: (n: number) => string }> = {
   daily: { one: 'Todos los días', many: (n) => `Cada ${n} días` },
   weekly: { one: 'Todas las semanas', many: (n) => `Cada ${n} semanas` },
