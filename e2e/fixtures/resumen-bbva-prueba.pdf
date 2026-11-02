@@ -1,0 +1,113 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 7 0 R >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Length 1881 >>
+stream
+BT /F1 8 Tf 1 0 0 1 62 570 Tm (Visa Gold) Tj ET
+BT /F1 8 Tf 1 0 0 1 115 570 Tm (cuenta 1111111111) Tj ET
+BT /F1 8 Tf 1 0 0 1 486 570 Tm (CONSOLIDADO) Tj ET
+BT /F1 8 Tf 1 0 0 1 88 541 Tm (CIERRE ACTUAL) Tj ET
+BT /F1 8 Tf 1 0 0 1 180 541 Tm (VENCIMIENTO ACTUAL) Tj ET
+BT /F1 8 Tf 1 0 0 1 298 541 Tm (SALDO ACTUAL $) Tj ET
+BT /F1 8 Tf 1 0 0 1 395 541 Tm (SALDO ACTUAL U$S) Tj ET
+BT /F1 8 Tf 1 0 0 1 502 541 Tm (PAGO MÍNIMO $) Tj ET
+BT /F1 8 Tf 1 0 0 1 88 530 Tm (22-Oct-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 180 530 Tm (04-Nov-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 298 530 Tm (45.300,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 395 530 Tm (0,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 502 530 Tm (9.000,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 458 464 Tm (Pesos) Tj ET
+BT /F1 8 Tf 1 0 0 1 533 464 Tm (Dólares) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 450 Tm (SALDO ANTERIOR) Tj ET
+BT /F1 8 Tf 1 0 0 1 437 450 Tm (20.000,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 556 450 Tm (0,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 171 197 Tm (CIERRE ANTERIOR) Tj ET
+BT /F1 8 Tf 1 0 0 1 267 197 Tm (VENCIMIENTO ANTERIOR) Tj ET
+BT /F1 8 Tf 1 0 0 1 387 197 Tm (PRÓXIMO CIERRE) Tj ET
+BT /F1 8 Tf 1 0 0 1 486 197 Tm (PRÓXIMO VENCIMIENTO) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 190 Tm (Otros períodos) Tj ET
+BT /F1 8 Tf 1 0 0 1 171 185 Tm (24-Sep-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 267 185 Tm (05-Oct-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 387 185 Tm (19-Nov-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 486 185 Tm (03-Dic-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 521 145 Tm (DETALLE) Tj ET
+BT /F1 8 Tf 1 0 0 1 63 107 Tm (Sus pagos y ajustes realizados) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 87 Tm (FECHA) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 87 Tm (DESCRIPCIÓN) Tj ET
+BT /F1 8 Tf 1 0 0 1 380 87 Tm (NRO. CUPÓN) Tj ET
+BT /F1 8 Tf 1 0 0 1 476 87 Tm (PESOS) Tj ET
+BT /F1 8 Tf 1 0 0 1 536 87 Tm (DÓLARES) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 72 Tm (05-Oct-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 72 Tm (SU PAGO EN PESOS) Tj ET
+BT /F1 8 Tf 1 0 0 1 446 72 Tm (-20.000,00) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Length 1747 >>
+stream
+BT /F1 8 Tf 1 0 0 1 63 722 Tm (Consumos Prueba Ejemplo) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 702 Tm (FECHA) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 702 Tm (DESCRIPCIÓN) Tj ET
+BT /F1 8 Tf 1 0 0 1 380 702 Tm (NRO. CUPÓN) Tj ET
+BT /F1 8 Tf 1 0 0 1 476 702 Tm (PESOS) Tj ET
+BT /F1 8 Tf 1 0 0 1 536 702 Tm (DÓLARES) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 687 Tm (15-Sep-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 687 Tm (MERPAGO*MERCADOLIBRE) Tj ET
+BT /F1 8 Tf 1 0 0 1 238 687 Tm (C.02/03) Tj ET
+BT /F1 8 Tf 1 0 0 1 400 687 Tm (373239) Tj ET
+BT /F1 8 Tf 1 0 0 1 462 687 Tm (15.000,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 674 Tm (08-Oct-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 674 Tm (DLO*RAPPI) Tj ET
+BT /F1 8 Tf 1 0 0 1 400 674 Tm (003720) Tj ET
+BT /F1 8 Tf 1 0 0 1 462 674 Tm (25.000,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 661 Tm (10-Oct-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 661 Tm (EMOVA SUBTE) Tj ET
+BT /F1 8 Tf 1 0 0 1 400 661 Tm (007107) Tj ET
+BT /F1 8 Tf 1 0 0 1 467 661 Tm (5.000,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 640 Tm (TOTAL CONSUMOS DE PRUEBA EJEMPLO) Tj ET
+BT /F1 8 Tf 1 0 0 1 457 640 Tm (45.000,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 557 640 Tm (0,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 63 606 Tm (Impuestos, cargos e intereses) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 586 Tm (FECHA) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 586 Tm (DESCRIPCIÓN) Tj ET
+BT /F1 8 Tf 1 0 0 1 476 586 Tm (PESOS) Tj ET
+BT /F1 8 Tf 1 0 0 1 536 586 Tm (DÓLARES) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 570 Tm (22-Oct-26) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 570 Tm (IMPUESTO DE SELLOS) Tj ET
+BT /F1 8 Tf 1 0 0 1 218 570 Tm ($) Tj ET
+BT /F1 8 Tf 1 0 0 1 462 570 Tm (300,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 114 550 Tm (SALDO ACTUAL) Tj ET
+BT /F1 8 Tf 1 0 0 1 439 550 Tm (45.300,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 553 550 Tm (0,00) Tj ET
+BT /F1 8 Tf 1 0 0 1 62 520 Tm (Legales y avisos) Tj ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000373 00000 n 
+0000000470 00000 n 
+0000002402 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+4200
+%%EOF

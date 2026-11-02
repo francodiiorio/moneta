@@ -83,7 +83,18 @@ const SECTIONS: GuideSection[] = [
   },
   {
     icon: Upload,
-    title: '7. Importá un extracto bancario',
+    title: '7. Importá el resumen de tu tarjeta',
+    steps: [
+      'En "Tarjetas y cuentas" → "Importar resumen", subí el PDF del resumen que te manda el banco (por ahora, Visa y Mastercard de BBVA). Se lee en tu dispositivo: el archivo no sale de él.',
+      'Moneta elige sola la tarjeta (por el número de cuenta que tenga en sus notas, o la única de esa marca) y te muestra todo antes de guardar: los consumos, las compras en cuotas (se crean desde la cuota que factura el banco), los impuestos y cargos, y lo que ya tenías cargado, que no se vuelve a importar.',
+      'Un crédito y el cargo que anula (un reintegro, una percepción devuelta) se cancelan entre sí. Arriba ves si el total coincide con el del banco.',
+      'La categoría de cada comercio sale de cómo lo categorizaste la última vez: si cambiás una, la próxima importación la respeta. También guarda las fechas reales del resumen y las del próximo.',
+    ],
+    link: { to: '/tarjetas/importar', label: 'Importar un resumen' },
+  },
+  {
+    icon: Upload,
+    title: '8. Importá un extracto bancario (CSV)',
     steps: [
       'Es una opción avanzada: activá "Opciones avanzadas" en Ajustes. Desde "Movimientos" → "Importar CSV", subís el archivo, elegís de dónde es (una cuenta, una tarjeta o ninguna) y le indicás qué columna es cuál (fecha, descripción, monto), la moneda y una categoría.',
       'De una cuenta: los gastos salen de esa cuenta, y si elegís una categoría de ingreso, los créditos (plata que entró) se importan como ingresos. De una tarjeta: los gastos entran en sus resúmenes; si es el CSV del resumen del banco, elegí ese resumen y entran todos ahí. Sin cuenta ni tarjeta, los créditos no se importan.',
@@ -94,7 +105,7 @@ const SECTIONS: GuideSection[] = [
   },
   {
     icon: Save,
-    title: '8. Hacé backup de tus datos',
+    title: '9. Hacé backup de tus datos',
     steps: [
       'Todo vive únicamente en tu navegador — no hay ningún servidor. En Ajustes, "Exportar backup" genera un archivo .finance con todos tus datos: es tu única copia de seguridad real.',
       '"Importar backup" te deja reemplazar todo o fusionar con lo que ya tenés (si hay un conflicto, tus datos locales siempre ganan).',

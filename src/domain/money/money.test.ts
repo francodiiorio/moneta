@@ -63,6 +63,20 @@ describe('arithmetic', () => {
   })
 })
 
+describe('times', () => {
+  it('multiplies by a whole count, exactly', async () => {
+    const { times } = await import('./money')
+    expect(times(money(16_916_18, 'ARS'), 12)).toEqual(money(202_994_16, 'ARS'))
+    expect(times(money(-5_90, 'USD'), 3)).toEqual(money(-17_70, 'USD'))
+    expect(times(money(1_00, 'ARS'), 0)).toEqual(money(0, 'ARS'))
+  })
+
+  it('rejects a fractional count', async () => {
+    const { times } = await import('./money')
+    expect(() => times(money(1_00, 'ARS'), 1.5)).toThrow(/entera/)
+  })
+})
+
 describe('roundHalfUp', () => {
   it('rounds ties away from zero symmetrically', () => {
     expect(roundHalfUp(2.5)).toBe(3)

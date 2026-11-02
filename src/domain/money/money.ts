@@ -66,6 +66,14 @@ export function isNegative(a: Money): boolean {
   return a.amount < 0
 }
 
+/** `a` taken `count` times — e.g. the total of N equal cuotas. A whole
+ *  count keeps it exact in minor units; anything else is rejected rather
+ *  than rounded. */
+export function times(a: Money, count: number): Money {
+  invariant(Number.isInteger(count), `La cantidad tiene que ser entera: ${count}`)
+  return money(a.amount * count, a.currency)
+}
+
 export function sumMoney(currency: CurrencyCode, items: readonly Money[]): Money {
   return items.reduce<Money>((acc, m) => add(acc, m), zero(currency))
 }

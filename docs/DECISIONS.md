@@ -1599,3 +1599,50 @@ de otro.
 sin red), ingreso recurrente (cambio aditivo de datos) y cuotas con tarjeta fechadas al
 cierre de su resumen (migración).
 
+## Importar el PDF del resumen de la tarjeta (Etapa 9, Fase 2)
+
+**Problema:** cargar un resumen a mano (decenas de consumos, cuotas de compras viejas,
+impuestos) era lo que más frenaba usar Moneta; en la práctica se cargaba fuera de la app.
+
+**Decisión:** `src/features/statementImport/` lee el PDF del resumen **en el dispositivo**
+con `pdfjs-dist` (dependencia nueva, versión fija; su worker se empaqueta con la app, sin
+CDN ni red: el PDF no sale del navegador, igual que el resto de los datos). El intérprete
+(`bbva.ts`) es puro y testeado: reconstruye las líneas por posición (`groupTokensIntoLines`
+barre la página de arriba abajo encadenando cada texto con el anterior, porque el monto de
+una fila cae apenas más abajo que su fecha y un pie de página apenas más arriba) y lee el
+formato BBVA (Visa y Mastercard): cierre, vencimiento, saldo, próximo cierre/vencimiento y
+cada línea del detalle con su cuota, si es adelanto, y su moneda por columna. Otros bancos
+serían otros intérpretes con la misma salida.
+
+La vista previa (`service.ts`) decide cada línea: **nueva**; **ya cargada** — un gasto
+con el mismo monto y moneda en esa tarjeta, a ±3 días o en el mismo resumen, cada uno
+contado una sola vez (la misma regla que la importación de CSV, `csvImport/matching.ts`;
+un gasto fijo pagado con la tarjeta cuenta como gasto), o el plan de la misma compra
+(fecha, cantidad de cuotas, moneda y monto de esa cuota ±1 centavo); una compra en cuotas
+parecida a un plan existente pero con otra fecha (±7 días) queda destildada y avisada en
+vez de duplicar todas sus cuotas futuras —; **se cancela** (un crédito y un cargo del
+mismo comercio, monto y moneda: un reintegro, una percepción devuelta; nunca una cuota);
+o **no se importa** (el pago del resumen anterior, un crédito sin par — Moneta no
+registra créditos —, un monto cero). Lo cargado o cancelado se puede tildar igual. Una
+compra en cuotas se crea como plan desde la cuota que factura el banco (`startIndex`),
+con total = cuota × cantidad (`times`) para que las que faltan coincidan exactas.
+
+El control contra el banco sale del **saldo impreso** (saldo − saldo anterior − pago del
+resumen anterior), no de las líneas leídas: si el intérprete no pudo leer alguna, la suma
+de las líneas no llega al saldo y la pantalla lo avisa en rojo (`unreadAmount`) en vez de
+decir "coincide". Del lado de Moneta se cuenta lo que tendrá ese resumen ya con sus fechas
+reales (los gastos que esas fechas reubican, `reassignedPeriods`), y una cuota que los
+días de la tarjeta ubican en otro resumen no suma acá. Un cargo fechado el día del cierre
+de una tarjeta que manda esas compras al resumen siguiente se fecha el último día que
+toma el resumen (como la conciliación). Todo se escribe en una sola transacción
+(`statementImport.repo.ts`), incluidas las fechas reales del resumen y del próximo —
+salvo las de un resumen que ya está pagado en Moneta (o cuyo siguiente lo está): esas no
+se mueven y la importación sigue. El worker del PDF se precachea con la app, así que
+también funciona sin conexión.
+
+**Categoría automática sin tabla nueva:** el nombre del comercio se normaliza ("DLO*RAPPI"
+→ "Rappi") y la categoría sale del último gasto con ese nombre — si el usuario la corrige,
+la próxima importación la respeta —; sin antecedente, de una lista de palabras clave hacia
+las categorías por defecto. Aprender de los gastos existentes evita una tabla de reglas con
+su versión de Dexie y de backup; si hiciera falta algo más fino, se agrega después.
+

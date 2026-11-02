@@ -46,6 +46,13 @@ export const router = createBrowserRouter([
         },
       },
       {
+        path: 'tarjetas/importar',
+        lazy: async () => {
+          const { ImportStatementPage } = await import('@/features/statementImport/routes/ImportStatementPage')
+          return { Component: ImportStatementPage }
+        },
+      },
+      {
         path: 'tarjetas/:cardId',
         lazy: async () => {
           const { CardStatementPage } = await import('@/features/cards/routes/CardStatementPage')

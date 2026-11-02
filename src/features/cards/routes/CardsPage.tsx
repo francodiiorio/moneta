@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { ChevronRight, CreditCard as CreditCardIcon, MoreVertical, Plus } from 'lucide-react'
+import { ChevronRight, CreditCard as CreditCardIcon, FileUp, MoreVertical, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/PageHeader'
 import { EmptyState } from '@/components/EmptyState'
@@ -143,10 +143,18 @@ export function CardsPage({ embedded = false }: EmbeddableProps = {}) {
         title="Tarjetas"
         description="Cuándo cierra y vence cada tarjeta, y cuánto vas a pagar en cada resumen."
         actions={
-          <Button onClick={openCreateDialog}>
-            <Plus className="size-4" />
-            Nueva tarjeta
-          </Button>
+          <>
+            <Button variant="outline" asChild>
+              <Link to="/tarjetas/importar">
+                <FileUp className="size-4" />
+                Importar resumen
+              </Link>
+            </Button>
+            <Button onClick={openCreateDialog}>
+              <Plus className="size-4" />
+              Nueva tarjeta
+            </Button>
+          </>
         }
       />
 

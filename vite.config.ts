@@ -14,7 +14,8 @@ export default defineConfig({
       workbox: {
         // Precache the app shell only — no runtime caching of network
         // requests, since this app never talks to a network.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // mjs: the PDF reader's worker (statement import), so it works offline too.
+        globPatterns: ['**/*.{js,mjs,css,html,svg,png,ico,woff2}'],
       },
       manifest: {
         name: 'Moneta',
