@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { settingsRepo } from '@/database/repositories'
 import type { Settings } from '@/domain/entities'
 import { formatRelativeTime } from '@/lib/dates'
+import { useAdvancedMode } from '@/features/settings/hooks/useAdvancedMode'
 import { RATE_PROFILE_LABELS } from '../labels'
 import { refreshQuotes } from '../service'
 
@@ -18,6 +20,7 @@ interface QuotesControlsProps {
 
 export function QuotesControls({ settings }: QuotesControlsProps) {
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const advanced = useAdvancedMode()
 
   async function handleToggleAuto(checked: boolean) {
     try {
@@ -72,6 +75,7 @@ export function QuotesControls({ settings }: QuotesControlsProps) {
           <Switch id="auto-quotes" checked={!!settings.autoQuotesEnabled} onCheckedChange={(c) => void handleToggleAuto(c)} />
         </div>
 
+        {advanced ? (
         <div className="flex flex-col gap-1.5 sm:w-64">
           <Label>Cotización USD para valuar tu patrimonio</Label>
           <Select value={settings.rateProfile ?? 'oficial'} onValueChange={(v) => void handleProfileChange(v)}>
@@ -87,6 +91,15 @@ export function QuotesControls({ settings }: QuotesControlsProps) {
             </SelectContent>
           </Select>
         </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Valuado con el dólar {RATE_PROFILE_LABELS[settings.rateProfile ?? 'oficial'] ?? settings.rateProfile} — se cambia en{' '}
+            <Link to="/ajustes" className="underline underline-offset-2 hover:text-foreground">
+              Ajustes
+            </Link>
+            .
+          </p>
+        )}
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">

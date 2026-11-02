@@ -134,14 +134,14 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
     try {
       if (plan) {
         await updateRecurringPlanFromForm(plan.id, values)
-        toast.success('Recurrente actualizado')
+        toast.success('Gasto fijo actualizado')
       } else {
         await createRecurringPlanFromForm(values)
-        toast.success('Recurrente creado')
+        toast.success('Gasto fijo creado')
       }
       onOpenChange(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo guardar el recurrente')
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar el gasto fijo')
       // MaterializationFailedError means the plan itself was already
       // created/updated successfully — only the immediate catch-up
       // failed. Close anyway: leaving the form open would invite
@@ -155,7 +155,7 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Editar recurrente' : 'Nuevo recurrente'}</DialogTitle>
+          <DialogTitle>{isEditing ? 'Editar gasto fijo' : 'Nuevo gasto fijo'}</DialogTitle>
           <DialogDescription>
             {isEditing
               ? 'Los movimientos ya generados quedan igual — el cambio rige desde la próxima vez que corresponda.'

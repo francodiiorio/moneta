@@ -27,7 +27,12 @@ import { useCardSummaries } from '../hooks/useCardSummaries'
 import { deleteCreditCard, setCreditCardArchived, type CardSummary } from '../service'
 import { useCardsUiStore } from '../store'
 
-export function CardsPage() {
+interface EmbeddableProps {
+  /** Rendered as a tab of a hub page (src/app/hubs), under its title. */
+  embedded?: boolean
+}
+
+export function CardsPage({ embedded = false }: EmbeddableProps = {}) {
   const summaries = useCardSummaries()
   const { formOpen, editingCardId, showArchived, openCreateDialog, openEditDialog, closeDialog, toggleShowArchived } =
     useCardsUiStore()
@@ -134,6 +139,7 @@ export function CardsPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
+        embedded={embedded}
         title="Tarjetas"
         description="Cuándo cierra y vence cada tarjeta, y cuánto vas a pagar en cada resumen."
         actions={

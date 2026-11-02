@@ -57,7 +57,7 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
           <p className="truncate text-sm font-medium">{item.description}</p>
           {item.status === 'projected' && (
             <Badge variant="secondary" className="shrink-0">
-              Proyectado
+              Por pagar
             </Badge>
           )}
         </div>

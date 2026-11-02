@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import type { CreditCard } from '@/domain/entities'
+import { useAdvancedMode } from '@/features/settings/hooks/useAdvancedMode'
 import { cardFormSchema, type CardFormValues } from '../schema'
 import { createCardFromForm, openingBasePeriod, openingFormValues, updateCardFromForm } from '../service'
 import { formatMonthLabel, shiftMonth } from '@/lib/dates'
@@ -42,6 +43,8 @@ const OPENING_OPEN_INPUTS = [
 
 export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps) {
   const form = useForm<CardFormValues>({ resolver: zodResolver(cardFormSchema), defaultValues: EMPTY })
+  // An advanced option, but never hidden while it's on for this card.
+  const showClosingDayOption = useAdvancedMode() || card?.closingDayToNext === true
 
   useEffect(() => {
     if (!open) return
@@ -148,24 +151,26 @@ export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps
                 )}
               />
             </div>
-            <FormField
-              control={form.control}
-              name="closingDayToNext"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start gap-3 rounded-lg border border-border p-3">
-                  <FormControl>
-                    <Switch checked={field.value} onCheckedChange={field.onChange} className="mt-0.5" />
-                  </FormControl>
-                  <div className="flex flex-col gap-1">
-                    <FormLabel>Lo comprado el día del cierre va al resumen siguiente</FormLabel>
-                    <FormDescription>
-                      Así lo hacen muchos bancos: el comercio presenta la compra después del corte. Activalo si en tu
-                      resumen las compras de ese día aparecen en el mes siguiente.
-                    </FormDescription>
-                  </div>
-                </FormItem>
-              )}
-            />
+            {showClosingDayOption && (
+              <FormField
+                control={form.control}
+                name="closingDayToNext"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start gap-3 rounded-lg border border-border p-3">
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} className="mt-0.5" />
+                    </FormControl>
+                    <div className="flex flex-col gap-1">
+                      <FormLabel>Lo comprado el día del cierre va al resumen siguiente</FormLabel>
+                      <FormDescription>
+                        Así lo hacen muchos bancos: el comercio presenta la compra después del corte. Activalo si en tu
+                        resumen las compras de ese día aparecen en el mes siguiente.
+                      </FormDescription>
+                    </div>
+                  </FormItem>
+                )}
+              />
+            )}
             <fieldset className="flex flex-col gap-3 rounded-lg border border-border p-3">
               <legend className="px-1 text-sm font-medium">Lo que ya debías al empezar (opcional)</legend>
               <p className="-mt-1 text-xs text-muted-foreground">

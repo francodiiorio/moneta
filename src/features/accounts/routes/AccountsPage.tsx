@@ -33,7 +33,12 @@ import { AdjustBalanceDialog } from '../components/AdjustBalanceDialog'
 import { ACCOUNT_TYPE_LABELS } from '../labels'
 import { deleteAccount, setAccountArchived, type AccountWithBalance } from '../service'
 
-export function AccountsPage() {
+interface EmbeddableProps {
+  /** Rendered as a tab of a hub page (src/app/hubs), under its title. */
+  embedded?: boolean
+}
+
+export function AccountsPage({ embedded = false }: EmbeddableProps = {}) {
   const accounts = useAccountsWithBalances()
   const navigate = useNavigate()
   const {
@@ -129,6 +134,7 @@ export function AccountsPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
+        embedded={embedded}
         title="Cuentas"
         description="Bancos, efectivo y billeteras. El saldo se calcula con tus ingresos, gastos con débito, transferencias y ajustes."
         actions={

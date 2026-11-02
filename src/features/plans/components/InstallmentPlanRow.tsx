@@ -2,7 +2,7 @@ import { Pencil, Trash2 } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
 import { CategoryIcon } from '@/components/CategoryIcon'
-import { formatMonthLabel } from '@/lib/dates'
+import { formatDueDate, todayStamp } from '@/lib/dates'
 import type { InstallmentPlanListItem } from '../service'
 
 interface InstallmentPlanRowProps {
@@ -16,16 +16,16 @@ interface InstallmentPlanRowProps {
 function progressText(item: InstallmentPlanListItem): { label: string; done: number; remaining: string | null } {
   const progress = item.cardProgress
   if (!progress) return { label: `Cuota ${item.confirmedCount} de ${item.count}`, done: item.confirmedCount, remaining: null }
-  const month = (period: string) => formatMonthLabel(period).toLowerCase()
   const { stage } = progress
+  const due = item.stageDueDate !== undefined ? formatDueDate(item.stageDueDate, todayStamp()) : undefined
   const label =
     stage.kind === 'finished'
       ? 'Terminada'
       : stage.kind === 'upcoming'
-        ? `Cuota ${stage.number} de ${item.count} · entra en el resumen de ${month(stage.firstPeriod)}`
+        ? `Cuota ${stage.number} de ${item.count} · ${due ?? 'todavía no entró en un resumen'}`
         : stage.inOpenStatement
           ? `Cuota ${stage.number} de ${item.count} · en el resumen en curso`
-          : `Cuota ${stage.number} de ${item.count} · en el resumen de ${month(stage.period)}`
+          : `Cuota ${stage.number} de ${item.count} · ${due ?? 'en un resumen cerrado'}`
   const remaining =
     progress.unbilledCount === 0
       ? null

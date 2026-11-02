@@ -73,3 +73,13 @@ describe('isValidDateStamp', () => {
     expect(isValidDateStamp('26-02-01')).toBe(false)
   })
 })
+
+describe('formatDueDate', () => {
+  it('upcoming, past, and in another year', async () => {
+    const { formatDueDate } = await import('./dates')
+    expect(formatDueDate('2026-11-05', '2026-11-01')).toBe('vence el 05/11')
+    expect(formatDueDate('2026-11-05', '2026-11-05')).toBe('vence el 05/11')
+    expect(formatDueDate('2026-10-05', '2026-11-01')).toBe('venció el 05/10')
+    expect(formatDueDate('2027-01-04', '2026-11-01')).toBe('vence el 04/01/2027')
+  })
+})

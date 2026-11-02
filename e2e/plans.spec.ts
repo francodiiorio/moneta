@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 async function createRecurringPlan(page: Page) {
-  await page.getByRole('button', { name: 'Nuevo recurrente' }).first().click()
+  await page.getByRole('button', { name: 'Nuevo gasto fijo' }).first().click()
   await page.getByLabel('Descripción').fill('Alquiler')
   await page.getByLabel('Monto').fill('100000')
   await page.getByText('Elegí una categoría').click()
@@ -14,7 +14,7 @@ async function createRecurringPlan(page: Page) {
   await page.getByRole('button', { name: 'Ir al mes anterior' }).click()
   await page.locator('.rdp-day:not(.rdp-outside) .rdp-day_button', { hasText: /^1$/ }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog', { name: 'Nuevo recurrente' })).not.toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Nuevo gasto fijo' })).not.toBeVisible()
 }
 
 test('a recurring plan starting today materializes its first payment immediately, no reload needed', async ({
@@ -24,14 +24,14 @@ test('a recurring plan starting today materializes its first payment immediately
   // until the next full app load — App.tsx only runs materializeDue() once
   // on mount, and creating a plan via the dialog doesn't trigger it again.
   await page.goto('/planes')
-  await page.getByRole('button', { name: 'Nuevo recurrente' }).first().click()
+  await page.getByRole('button', { name: 'Nuevo gasto fijo' }).first().click()
   await page.getByLabel('Descripción').fill('gym')
   await page.getByLabel('Monto').fill('55990')
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option').first().click()
   // Leave "Empieza" at its default (today) — no date picker interaction.
   await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog', { name: 'Nuevo recurrente' })).not.toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Nuevo gasto fijo' })).not.toBeVisible()
 
   await page.goto('/movimientos')
   await expect(page.getByText('gym').first()).toBeVisible()
@@ -88,8 +88,7 @@ test('una compra en cuotas que ya venías pagando arranca desde la cuota del res
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
-  await page.goto('/planes')
-  await page.getByRole('tab', { name: 'Cuotas' }).click()
+  await page.goto('/tarjetas?tab=cuotas')
   await page.getByRole('button', { name: 'Nueva compra en cuotas' }).first().click()
   await page.getByLabel('Descripción').fill('cubiertas')
   await page.getByLabel('Monto total').fill('528.240')

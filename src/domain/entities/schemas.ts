@@ -343,6 +343,11 @@ export const settingsSchema = z.object({
   // any unknown id (including one from an old backup for a theme since
   // removed) instead of failing validation.
   colorTheme: z.string().optional(),
+  // Shows the options most people never need (correcting a statement's
+  // dates by hand, reconciling with the bank, yearly budgets, rate
+  // profiles, CSV import). Off when absent — see ADR "De app contable a
+  // finanzas personales".
+  advancedMode: z.boolean().optional(),
 })
 export type Settings = z.infer<typeof settingsSchema>
 

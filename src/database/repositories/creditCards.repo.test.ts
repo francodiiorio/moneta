@@ -304,7 +304,7 @@ describe('revisión de la Fase 4b', () => {
       template: { description: 'Alquiler', categoryId: category.id, amount: 100, currency: 'ARS', accountId: account.id },
       rule: { freq: 'monthly', interval: 1, startDate: '2027-01-01' },
     })
-    await expect(deleteAccount(account.id)).rejects.toThrow(/recurrentes que debitan/)
+    await expect(deleteAccount(account.id)).rejects.toThrow(/gastos fijos que debitan/)
     const edit = { name: 'Galicia', type: 'bank' as const, openingBalance: 0, notes: undefined }
     await expect(updateAccount(account.id, { ...edit, currency: 'USD', openingDate: '2026-01-01' })).rejects.toThrow(/moneda/)
     await expect(updateAccount(account.id, { ...edit, currency: 'ARS', openingDate: '2027-02-01' })).rejects.toThrow(/saldo inicial/)

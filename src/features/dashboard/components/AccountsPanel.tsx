@@ -15,15 +15,15 @@ export function AccountsPanel({ hideAmounts }: AccountsPanelProps) {
   const accounts = useAccountsWithBalances()?.filter((a) => !a.isArchived)
 
   return (
-    <Panel title="Cuentas" icon={Wallet} to="/cuentas">
+    <Panel title="Cuentas" icon={Wallet} to="/tarjetas?tab=cuentas">
       {accounts === undefined ? (
         <div className="h-24 animate-pulse rounded-lg bg-muted" />
       ) : accounts.length === 0 ? (
-        <PanelEmpty text="Cargá tu banco o tu efectivo con el saldo de hoy." to="/cuentas" action="Crear una cuenta" />
+        <PanelEmpty text="Cargá tu banco o tu efectivo con el saldo de hoy." to="/tarjetas?tab=cuentas" action="Crear una cuenta" />
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {accounts.slice(0, 5).map((account) => (
-            <Link key={account.id} to="/cuentas" className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+            <Link key={account.id} to="/tarjetas?tab=cuentas" className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium">{account.name}</span>
                 <span className="block text-xs text-muted-foreground">

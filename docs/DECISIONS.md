@@ -1576,3 +1576,26 @@ salen de una misma lectura, para que una cuota que se confirma en el medio no ap
 los dos lados. Una cuota en otra moneda se estima a la cotización de hoy. El panel del
 Dashboard sigue mostrando sólo lo gastado: es un resumen compacto, el detalle está en
 Presupuestos.
+
+## De app contable a finanzas personales (Etapa 9)
+
+**Problema:** Moneta resolvía bien la exactitud (resúmenes que cuadran al centavo con el
+banco), pero lo mostraba todo: períodos, saldos iniciales, proyectado/confirmado,
+conciliación, versiones de presupuesto, siete perfiles de dólar, nueve secciones. En el uso
+real los datos se cargaban fuera de la app y las dudas eran casi siempre sobre conceptos
+internos (cuota 1/6 vs 2/6, el gasto del día de cierre, un presupuesto en 0% con cuotas por
+venir), no sobre las finanzas.
+
+**Decisión:** mantener el motor y cambiar la superficie, en cuatro fases (ver
+`docs/ROADMAP.md` Etapa 9). Lo avanzado no se borra — ya está hecho y testeado —: queda
+detrás de un **modo avanzado** apagado por defecto. Un valor que ya está activado (una
+tarjeta con "lo comprado el día del cierre va al siguiente", un presupuesto anual) se sigue
+mostrando aunque el modo esté apagado, para no esconder algo que afecta los números. Las
+pantallas que juntan secciones ("Tarjetas y cuentas", "Presupuesto") se arman en
+`src/app/hubs/` con las pantallas de cada feature, así ningún feature importa componentes
+de otro.
+
+**Aceptado para fases siguientes:** una dependencia nueva para leer PDFs (`pdfjs-dist`,
+sin red), ingreso recurrente (cambio aditivo de datos) y cuotas con tarjeta fechadas al
+cierre de su resumen (migración).
+

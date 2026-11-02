@@ -272,7 +272,8 @@ test('/ajustes/tasas redirects to Patrimonio, and a manual rate can be loaded fr
 
   await page.getByRole('tab', { name: 'Cotizaciones' }).click()
   await expect(page.getByText('Actualización automática', { exact: true })).toBeVisible()
-  await expect(page.getByText('Cotización USD para valuar tu patrimonio')).toBeVisible()
+  // The rate profile is chosen in Ajustes; here it's just stated.
+  await expect(page.getByText(/Valuado con el dólar Oficial/)).toBeVisible()
 
   // Two "Nueva tasa" buttons exist while the list is empty (PageHeader's
   // action + EmptyState's own CTA) — .first() picks the header one.

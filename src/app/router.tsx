@@ -34,17 +34,15 @@ export const router = createBrowserRouter([
         },
       },
       {
+        // Cuentas is a tab of Tarjetas y cuentas (Etapa 9) — old links still land on it.
         path: 'cuentas',
-        lazy: async () => {
-          const { AccountsPage } = await import('@/features/accounts/routes/AccountsPage')
-          return { Component: AccountsPage }
-        },
+        Component: () => <Navigate to="/tarjetas?tab=cuentas" replace />,
       },
       {
         path: 'tarjetas',
         lazy: async () => {
-          const { CardsPage } = await import('@/features/cards/routes/CardsPage')
-          return { Component: CardsPage }
+          const { MoneyHubPage } = await import('./hubs/MoneyHubPage')
+          return { Component: MoneyHubPage }
         },
       },
       {
@@ -57,16 +55,15 @@ export const router = createBrowserRouter([
       {
         path: 'presupuestos',
         lazy: async () => {
-          const { BudgetsPage } = await import('@/features/budgets/routes/BudgetsPage')
-          return { Component: BudgetsPage }
+          const { BudgetHubPage } = await import('./hubs/BudgetHubPage')
+          return { Component: BudgetHubPage }
         },
       },
       {
+        // Planes was split (Etapa 9): recurring plans are Presupuesto →
+        // Gastos fijos, installments Tarjetas y cuentas → Cuotas.
         path: 'planes',
-        lazy: async () => {
-          const { PlansPage } = await import('@/features/plans/routes/PlansPage')
-          return { Component: PlansPage }
-        },
+        Component: () => <Navigate to="/presupuestos?tab=fijos" replace />,
       },
       {
         path: 'patrimonio',

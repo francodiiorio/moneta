@@ -11,14 +11,14 @@ export function UpcomingPanel() {
   const today = todayStamp()
 
   return (
-    <Panel title="Se viene" icon={CalendarClock} to="/planes" linkLabel="Planes">
+    <Panel title="Se viene" icon={CalendarClock} to="/presupuestos?tab=fijos" linkLabel="Gastos fijos">
       {upcoming === undefined ? (
         <div className="h-24 animate-pulse rounded-lg bg-muted" />
       ) : upcoming.length === 0 ? (
         <PanelEmpty
           text="Nada en el próximo mes. Cargá tus cuotas y gastos fijos para verlos venir."
-          to="/planes"
-          action="Ir a Planes"
+          to="/presupuestos?tab=fijos"
+          action="Cargar un gasto fijo"
         />
       ) : (
         <div className="flex flex-col divide-y divide-border">

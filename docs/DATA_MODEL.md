@@ -397,6 +397,12 @@ validación. Cada paleta define sólo tokens decorativos/estructurales (fondo, t
 `primary`, etc.) — `--positive`/`--negative`/`--destructive` y la paleta categórica de
 gráficos (`--chart-1..6`) son constantes entre todas las paletas, porque están validadas
 para contraste y daltonismo independientemente de la estética elegida.
+`advancedMode` (opcional, ausente = `false`) muestra las opciones que casi nadie necesita:
+corregir a mano las fechas de un resumen, conciliar con el banco, "lo comprado el día del
+cierre va al resumen siguiente", presupuestos anuales e importar CSV. Sólo cambia qué se
+muestra, nunca un cálculo; y un valor que ya está activado (una tarjeta con la opción del día
+de cierre, un resumen con fechas corregidas) se sigue mostrando aunque el modo esté apagado.
+Ver ADR "De app contable a finanzas personales".
 
 Los siete son opcionales — agregados sobre un documento que ya existía, así que una fila
 persistida antes de que existieran no los tiene.

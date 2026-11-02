@@ -46,7 +46,7 @@ export function WelcomeHero() {
         </ul>
         <div className="mt-7 flex flex-wrap gap-2">
           <Button asChild size="lg">
-            <Link to="/cuentas">
+            <Link to="/tarjetas?tab=cuentas">
               Crear mi primera cuenta
               <ArrowRight className="size-4" />
             </Link>

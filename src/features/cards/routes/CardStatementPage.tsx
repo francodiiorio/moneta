@@ -25,6 +25,7 @@ import { PayStatementDialog } from '../components/PayStatementDialog'
 import { ReconcileStatementDialog } from '../components/ReconcileStatementDialog'
 import { DueBadge } from '../components/DueBadge'
 import { MoneyTotals } from '@/components/MoneyTotals'
+import { useAdvancedMode } from '@/features/settings/hooks/useAdvancedMode'
 import { useOpenPeriod } from '../hooks/useOpenPeriod'
 import { useStatementDetail } from '../hooks/useStatementDetail'
 import { undoStatementPayment, type StatementStatus } from '../service'
@@ -51,6 +52,7 @@ function StatementBrowser({ cardId }: { cardId: string }) {
   const param = searchParams.get('resumen')
   const period: MonthStamp | undefined = param && isValidMonthStamp(param) ? param : (openPeriod ?? undefined)
   const detail = useStatementDetail(cardId, period)
+  const advanced = useAdvancedMode()
   const [editingDates, setEditingDates] = useState(false)
   const [paying, setPaying] = useState(false)
   const [reconciling, setReconciling] = useState(false)
@@ -139,9 +141,14 @@ function StatementBrowser({ cardId }: { cardId: string }) {
                 <p>
                   Vence el <span className="font-medium">{formatFullDate(detail.dueDate)}</span>
                 </p>
-                <Button variant="link" size="sm" className="h-auto px-0" onClick={() => setEditingDates(true)}>
-                  {detail.isCorrected ? 'Fechas corregidas · editar' : 'Corregir fechas'}
-                </Button>
+                {/* Correcting any statement by hand is advanced; the open one
+                    asks for the bank's dates below, and a corrected one stays
+                    editable. */}
+                {(advanced || detail.isCorrected) && (
+                  <Button variant="link" size="sm" className="h-auto px-0" onClick={() => setEditingDates(true)}>
+                    {detail.isCorrected ? 'Fechas corregidas · editar' : 'Corregir fechas'}
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -220,9 +227,11 @@ function StatementBrowser({ cardId }: { cardId: string }) {
               <div className="flex flex-col gap-2 sm:flex-row">
                 {/* Before paying: the bank's total may carry taxes or fees
                     Moneta doesn't have yet. */}
-                <Button variant="outline" className="w-full sm:w-fit" onClick={() => setReconciling(true)}>
-                  Conciliar con el banco
-                </Button>
+                {advanced && (
+                  <Button variant="outline" className="w-full sm:w-fit" onClick={() => setReconciling(true)}>
+                    Conciliar con el banco
+                  </Button>
+                )}
                 {/* Even with nothing loaded: the bank may have billed it. */}
                 <Button className="w-full sm:w-fit" onClick={() => setPaying(true)}>
                   Pagar resumen
@@ -251,7 +260,7 @@ function StatementBrowser({ cardId }: { cardId: string }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p className="truncate text-sm font-medium">{expense.description}</p>
-                      {expense.status === 'projected' && <Badge variant="secondary">Proyectado</Badge>}
+                      {expense.status === 'projected' && <Badge variant="secondary">Por pagar</Badge>}
                     </div>
                     <p className="truncate text-xs text-muted-foreground">{expense.categoryLabel}</p>
                   </div>

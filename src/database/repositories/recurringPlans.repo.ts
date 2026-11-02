@@ -28,7 +28,7 @@ async function assertPaymentMethod(input: CreateRecurringPlanInput, lastMaterial
     } else {
       const account = await db.accounts.get(accountId)
       invariant(account, `Cuenta no encontrada: ${accountId}`)
-      invariant(account.currency === currency, `La cuenta "${account.name}" es en ${account.currency}, el recurrente es en ${currency}`)
+      invariant(account.currency === currency, `La cuenta "${account.name}" es en ${account.currency}, el gasto fijo es en ${currency}`)
     }
   }
   if (cardId !== undefined) await getCardCalendar(cardId)
@@ -78,7 +78,7 @@ export async function updateRecurringPlan(id: string, input: CreateRecurringPlan
 
   const updated = await db.transaction('rw', [db.recurringPlans, db.accounts, db.creditCards, db.cardStatements], async () => {
     const existing = await db.recurringPlans.get(id)
-    invariant(existing, `No se encontró el recurrente: ${id}`)
+    invariant(existing, `No se encontró el gasto fijo: ${id}`)
     await assertPaymentMethod(input, existing.lastMaterializedDate)
     return db.recurringPlans.update(id, {
       template: input.template,
@@ -86,10 +86,10 @@ export async function updateRecurringPlan(id: string, input: CreateRecurringPlan
       updatedAt: new Date().toISOString(),
     })
   })
-  invariant(updated === 1, `No se encontró el recurrente: ${id}`)
+  invariant(updated === 1, `No se encontró el gasto fijo: ${id}`)
 
   const plan = await db.recurringPlans.get(id)
-  invariant(plan, `No se encontró el recurrente: ${id}`)
+  invariant(plan, `No se encontró el gasto fijo: ${id}`)
   return plan
 }
 

@@ -25,10 +25,10 @@ const SECTIONS: GuideSection[] = [
     icon: ArrowLeftRight,
     title: '1. Cargá gastos e ingresos',
     steps: [
-      'En "Cuentas" creá tus cuentas (banco, efectivo, billetera virtual) con su moneda y el saldo que tenían a una fecha. Desde ahí, Moneta calcula el saldo solo.',
+      'En "Tarjetas y cuentas" → pestaña Cuentas creá tus cuentas (banco, efectivo, billetera virtual) con su moneda y el saldo que tenían a una fecha. Desde ahí, Moneta calcula el saldo solo.',
       'Desde "Movimientos" → "Nuevo movimiento", elegí Gasto o Ingreso e indicá la descripción, el monto, la categoría y la cuenta. Un ingreso siempre entra a una cuenta; un gasto con débito sale de una, y uno con tarjeta de crédito se carga sin cuenta.',
       'Para pasar plata entre tus cuentas (o comprar dólares), usá "Nuevo movimiento" → Transferencia. No cuenta como gasto ni ingreso: sólo mueve saldos. Si las cuentas son de distinta moneda, cargá lo que salió y lo que entró, y Moneta te muestra la cotización que te hicieron.',
-      'En "Tarjetas" cargá cada tarjeta con su día de cierre y de vencimiento. Al cargar un gasto, elegila en "Medio de pago": entra sola en el resumen que corresponde según la fecha (o elegí otro, si el comercio lo presentó tarde). Si un mes el banco mueve las fechas, corregilas en ese resumen y los gastos se reacomodan. Cuando pagás un resumen cerrado, registralo con "Pagar": elegís de qué cuenta sale cada moneda (si pagás dólares con pesos, cargás cuánto te debitaron) y baja el saldo de la cuenta sin crear un gasto nuevo — las compras ya se contaron.',
+      'En "Tarjetas y cuentas" cargá cada tarjeta con su día de cierre y de vencimiento. Al cargar un gasto, elegila en "Medio de pago": entra sola en el resumen que corresponde según la fecha (o elegí otro, si el comercio lo presentó tarde). Como el banco mueve el cierre de un mes a otro, el resumen en curso te pide las fechas reales, y al pagar un resumen cargás las del próximo. Cuando pagás un resumen cerrado, registralo con "Pagar": elegís de qué cuenta sale cada moneda (si pagás dólares con pesos, cargás cuánto te debitaron) y baja el saldo de la cuenta sin crear un gasto nuevo — las compras ya se contaron.',
       'Si el saldo no coincide con el del banco, usá "Ajustar saldo" en la cuenta: se guarda la diferencia como un ajuste visible en Movimientos, sin tocar nada de lo cargado.',
       'Podés crear una categoría nueva al vuelo mientras estás cargando un movimiento.',
     ],
@@ -53,12 +53,12 @@ const SECTIONS: GuideSection[] = [
   },
   {
     icon: CalendarSync,
-    title: '4. Automatizá recurrentes y cuotas',
+    title: '4. Automatizá gastos fijos y cuotas',
     steps: [
-      'En "Planes" → pestaña Recurrentes, cargá un gasto que se repite (alquiler, suscripción) y se va a generar solo cada vez que abras la app. Si se debita de una cuenta o se paga con tarjeta, elegilo en "Medio de pago".',
-      'En la pestaña Cuotas, cargá una compra en cuotas una sola vez con el monto total y la cantidad — Moneta arma todo el cronograma. Si la hiciste con tarjeta, elegila: cada cuota cae en un resumen, empezando por el de la compra. Las cuotas que todavía no vencieron aparecen como "Proyectado" en Movimientos.',
+      'En "Presupuesto" → pestaña Gastos fijos, cargá un gasto que se repite (alquiler, prepaga, suscripción) y se va a anotar solo cada vez que abras la app. Si se debita de una cuenta o se paga con tarjeta, elegilo en "Medio de pago".',
+      'En "Tarjetas y cuentas" → pestaña Cuotas, cargá una compra en cuotas una sola vez con el monto total y la cantidad — Moneta arma todo el cronograma. Si la hiciste con tarjeta, elegila: cada cuota cae en un resumen, empezando por el de la compra. Las cuotas que todavía no vencieron aparecen como "Por pagar" en Movimientos.',
     ],
-    link: { to: '/planes', label: 'Ir a Planes' },
+    link: { to: '/presupuestos?tab=fijos', label: 'Ir a Gastos fijos' },
   },
   {
     icon: Landmark,
@@ -76,8 +76,8 @@ const SECTIONS: GuideSection[] = [
     icon: BarChart3,
     title: '6. Mirá tus reportes',
     steps: [
-      'El Dashboard resume el mes en curso: gastos y patrimonio, de un vistazo.',
-      '"Reportes" tiene el detalle: gasto por categoría y la evolución de tu patrimonio (cuentas, ahorros e inversiones, convertidos a tu moneda base) en los últimos 6 meses.',
+      'Inicio resume el mes en curso: gastos y patrimonio, de un vistazo.',
+      '"Reportes" (arriba a la derecha en el celular, abajo en la barra lateral en la compu) tiene el detalle: gasto por categoría y la evolución de tu patrimonio (cuentas, ahorros e inversiones, convertidos a tu moneda base) en los últimos 6 meses.',
     ],
     link: { to: '/reportes', label: 'Ir a Reportes' },
   },
@@ -85,7 +85,7 @@ const SECTIONS: GuideSection[] = [
     icon: Upload,
     title: '7. Importá un extracto bancario',
     steps: [
-      'Desde "Movimientos" → "Importar CSV", subís el archivo, elegís de dónde es (una cuenta, una tarjeta o ninguna) y le indicás qué columna es cuál (fecha, descripción, monto), la moneda y una categoría.',
+      'Es una opción avanzada: activá "Opciones avanzadas" en Ajustes. Desde "Movimientos" → "Importar CSV", subís el archivo, elegís de dónde es (una cuenta, una tarjeta o ninguna) y le indicás qué columna es cuál (fecha, descripción, monto), la moneda y una categoría.',
       'De una cuenta: los gastos salen de esa cuenta, y si elegís una categoría de ingreso, los créditos (plata que entró) se importan como ingresos. De una tarjeta: los gastos entran en sus resúmenes; si es el CSV del resumen del banco, elegí ese resumen y entran todos ahí. Sin cuenta ni tarjeta, los créditos no se importan.',
       'Al importar a una cuenta, cargá el saldo que muestra el extracto: si no coincide con el de Moneta, registrás un ajuste por la diferencia. En un resumen de tarjeta cerrado, "Conciliar con el banco" compara con el total del banco y registra lo que el banco cobró de más (impuestos, intereses, comisiones) como gasto de ese resumen.',
       'Antes de confirmar, revisás una vista previa: los posibles duplicados y las filas que no se pudieron leer quedan destildados por defecto, así nunca se importa nada sin que lo veas primero.',

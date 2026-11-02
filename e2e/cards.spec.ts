@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { enableAdvancedMode } from './helpers.js'
 
 // Etapa 8, Fase 4: una compra con tarjeta entra al resumen que corresponde
 // según los días de cierre, y se ve en Tarjetas y en el Dashboard.
@@ -24,7 +25,7 @@ test('un gasto con tarjeta entra al resumen en curso y se ve en Tarjetas y el Da
   await page.getByRole('option', { name: 'Ropa' }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
-  await expect(page.getByText(/Ropa · Visa Galicia · resumen de/)).toBeVisible()
+  await expect(page.getByText(/Ropa · Visa Galicia · vence el \d{2}\/\d{2}/)).toBeVisible()
 
   await page.goto('/tarjetas')
   await page.getByRole('link', { name: 'Ver resúmenes' }).click()
@@ -114,8 +115,7 @@ test('una compra en cuotas con tarjeta pone una cuota en cada resumen', async ({
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
-  await page.goto('/planes')
-  await page.getByRole('tab', { name: 'Cuotas' }).click()
+  await page.goto('/tarjetas?tab=cuotas')
   await page.getByRole('button', { name: 'Nueva compra en cuotas' }).first().click()
   await page.getByLabel('Descripción').fill('Heladera')
   await page.getByLabel('Monto total').fill('300.000')
@@ -134,7 +134,7 @@ test('una compra en cuotas con tarjeta pone una cuota en cada resumen', async ({
   await expect(page.getByText('Heladera (cuota 1/3)')).toBeVisible()
   await page.getByRole('button', { name: 'Resumen siguiente' }).click()
   await expect(page.getByText('Heladera (cuota 2/3)')).toBeVisible()
-  await expect(page.getByText('Proyectado')).toBeVisible()
+  await expect(page.getByText('Por pagar')).toBeVisible()
   await page.getByRole('button', { name: 'Resumen siguiente' }).click()
   await expect(page.getByText('Heladera (cuota 3/3)')).toBeVisible()
 })
@@ -186,7 +186,7 @@ test('pagar el resumen cerrado desde una cuenta y deshacerlo', async ({ page }) 
   await expect(page.getByText(/70[.,]000,00/).first()).toBeVisible()
 
   await page.goto('/movimientos')
-  await expect(page.getByText(/^Resumen Visa de /)).toBeVisible()
+  await expect(page.getByText(/^Pago resumen Visa · venc(e|ió) el /)).toBeVisible()
   await expect(page.getByText('Pago de tarjeta · Galicia')).toBeVisible()
 
   await page.goto('/tarjetas')
@@ -204,6 +204,7 @@ test('pagar el resumen cerrado desde una cuenta y deshacerlo', async ({ page }) 
 // Etapa 8, Fase 6: conciliar un resumen cerrado contra el total del banco
 // registra la diferencia (impuestos, comisiones) como gasto del resumen.
 test('conciliar un resumen con el total del banco registra la diferencia', async ({ page }) => {
+  await enableAdvancedMode(page)
   await page.goto('/tarjetas')
   await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
   await page.getByLabel('Nombre').fill('Visa')
@@ -245,6 +246,7 @@ test('conciliar un resumen con el total del banco registra la diferencia', async
 
 // Las compras del día de cierre pueden ir al resumen siguiente, por tarjeta.
 test('la opción de compras del día de cierre se guarda y se ve en la tarjeta', async ({ page }) => {
+  await enableAdvancedMode(page)
   await page.goto('/tarjetas')
   await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
   await page.getByLabel('Nombre').fill('visa 2551')

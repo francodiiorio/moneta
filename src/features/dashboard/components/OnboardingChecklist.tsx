@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn'
 import type { OnboardingStep, OnboardingStepId } from '../service'
 
 const STEP_COPY: Record<OnboardingStepId, { title: string; description: string; to: string }> = {
-  account: { title: 'Creá una cuenta', description: 'Tu banco o tu efectivo, con el saldo de hoy.', to: '/cuentas' },
+  account: { title: 'Creá una cuenta', description: 'Tu banco o tu efectivo, con el saldo de hoy.', to: '/tarjetas?tab=cuentas' },
   card: { title: 'Agregá tu tarjeta', description: 'Con sus días de cierre y vencimiento.', to: '/tarjetas' },
   expense: { title: 'Cargá tu primer gasto', description: 'A mano, o importando el extracto del banco.', to: '/movimientos' },
   income: { title: 'Registrá un ingreso', description: 'Tu sueldo o lo que entre a una cuenta.', to: '/movimientos' },

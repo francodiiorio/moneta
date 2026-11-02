@@ -5,6 +5,7 @@ import { ChevronRight, HelpCircle, Tag } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -18,6 +19,7 @@ import { useSettings } from '../hooks/useSettings'
 import { settingsRepo } from '@/database/repositories'
 import { CURRENCIES } from '@/domain/money'
 import { COLOR_THEMES, DEFAULT_COLOR_THEME } from '@/app/color-themes'
+import { RATE_PROFILE_LABELS } from '@/features/networth/labels'
 
 const CURRENCY_OPTIONS = Object.keys(CURRENCIES)
 
@@ -86,6 +88,29 @@ export function SettingsPage() {
           </div>
 
           <div className="grid gap-2">
+            <Label>Dólar para valuar</Label>
+            {settings ? (
+              <Select
+                value={settings.rateProfile ?? 'oficial'}
+                onValueChange={(value) => void settingsRepo.updateSettings({ rateProfile: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(RATE_PROFILE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="h-9 animate-pulse rounded-md bg-muted" />
+            )}
+          </div>
+
+          <div className="grid gap-2">
             <Label>Paleta de color</Label>
             {settings ? (
               <Select
@@ -131,6 +156,26 @@ export function SettingsPage() {
           </div>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         </Link>
+      </Card>
+
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div>
+            <Label htmlFor="advanced-mode" className="font-medium">
+              Opciones avanzadas
+            </Label>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Corregir a mano las fechas de un resumen, conciliar con el banco, compras del día de cierre al
+              resumen siguiente, presupuestos anuales e importar CSV.
+            </p>
+          </div>
+          <Switch
+            id="advanced-mode"
+            checked={settings?.advancedMode === true}
+            disabled={!settings}
+            onCheckedChange={(checked) => void settingsRepo.updateSettings({ advancedMode: checked })}
+          />
+        </CardContent>
       </Card>
 
       <BackupCard />

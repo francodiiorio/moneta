@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { currentMonthStamp } from '@/lib/dates'
+import { useAdvancedMode } from '@/features/settings/hooks/useAdvancedMode'
 import { useExpenseCategories } from '../hooks/useExpenseCategories'
 import { createBudgetFromForm } from '../service'
 import { budgetFormSchema, type BudgetFormValues } from '../schema'
@@ -30,6 +31,8 @@ function defaultValues(): BudgetFormValues {
 
 export function BudgetFormDialog({ open, onOpenChange }: BudgetFormDialogProps) {
   const categories = useExpenseCategories()
+  // Yearly budgets are an advanced option: a plain budget is monthly.
+  const advanced = useAdvancedMode()
 
   const form = useForm<BudgetFormValues>({
     resolver: zodResolver(budgetFormSchema),
@@ -89,28 +92,30 @@ export function BudgetFormDialog({ open, onOpenChange }: BudgetFormDialogProps) 
               )}
             />
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="period"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Período</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="monthly">Mensual</SelectItem>
-                        <SelectItem value="yearly">Anual</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <div className={advanced ? 'grid grid-cols-2 gap-4' : 'grid gap-4'}>
+              {advanced && (
+                <FormField
+                  control={form.control}
+                  name="period"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Período</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="monthly">Mensual</SelectItem>
+                          <SelectItem value="yearly">Anual</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}

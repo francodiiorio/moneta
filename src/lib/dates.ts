@@ -90,6 +90,14 @@ export function formatShortDate(date: DateStamp): string {
   return format(fromDateStamp(date), 'dd/MM')
 }
 
+/** When a card statement is (or was) due, the way the bank says it:
+ *  "vence el 05/11", "venció el 05/11" once past, with the year when it
+ *  isn't `today`'s ("vence el 05/01/2027"). */
+export function formatDueDate(due: DateStamp, today: DateStamp): string {
+  const date = due.slice(0, 4) === today.slice(0, 4) ? formatShortDate(due) : format(fromDateStamp(due), 'dd/MM/yyyy')
+  return `${due < today ? 'venció' : 'vence'} el ${date}`
+}
+
 /** `dd/mm/aaaa` — the app's one date display format, regardless of the
  *  browser's own locale (see `components/DateField`, which never uses
  *  the native `<input type="date">` for exactly this reason). */

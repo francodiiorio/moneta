@@ -9,7 +9,7 @@ import {
 import type { Account, Category, CreditCard, ExpenseTemplate, InstallmentPlan, RecurringPlan } from '@/domain/entities'
 import type { ExpenseInput } from '@/database/repositories/expenses.repo'
 import { describeRule, generateOccurrences, nextOccurrenceAfter } from '@/domain/recurrence'
-import { cardInstallmentProgress, cuotaInOpenStatement, statementPeriodFor, type CardInstallmentProgress } from '@/domain/cards'
+import { cardInstallmentProgress, cuotaInOpenStatement, statementDates, statementPeriodFor, type CardCalendar, type CardInstallmentProgress } from '@/domain/cards'
 import { money, parseAmount, sub, sumMoney, type Money } from '@/domain/money'
 import { todayStamp, type DateStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
@@ -262,7 +262,7 @@ async function materializeAfterWrite(planId: string, failureMessage: string): Pr
 export async function createRecurringPlanFromForm(values: RecurringPlanFormValues): Promise<RecurringPlan> {
   const write = buildRecurringPlanWrite(values)
   const plan = await recurringPlansRepo.createRecurringPlan(write)
-  await materializeAfterWrite(plan.id, 'El recurrente se creó, pero no se pudo generar su primer movimiento')
+  await materializeAfterWrite(plan.id, 'El gasto fijo se creó, pero no se pudo generar su primer movimiento')
   return plan
 }
 
@@ -273,7 +273,7 @@ export async function createRecurringPlanFromForm(values: RecurringPlanFormValue
 export async function updateRecurringPlanFromForm(id: string, values: RecurringPlanFormValues): Promise<RecurringPlan> {
   const write = buildRecurringPlanWrite(values)
   const plan = await recurringPlansRepo.updateRecurringPlan(id, write)
-  await materializeAfterWrite(id, 'El recurrente se actualizó, pero no se pudo poner al día')
+  await materializeAfterWrite(id, 'El gasto fijo se actualizó, pero no se pudo poner al día')
   return plan
 }
 
@@ -284,7 +284,7 @@ export async function updateRecurringPlanFromForm(id: string, values: RecurringP
  *  the same way), which is fine — the point is the un-pause case. */
 export async function setRecurringPlanPaused(id: string, isPaused: boolean): Promise<void> {
   await recurringPlansRepo.setRecurringPlanPaused(id, isPaused)
-  await materializeAfterWrite(id, 'No se pudo poner al día el recurrente')
+  await materializeAfterWrite(id, 'No se pudo poner al día el gasto fijo')
 }
 
 export async function removeRecurringPlan(
@@ -311,6 +311,9 @@ export interface InstallmentPlanListItem {
   /** Bought with a card: progress the way the bank counts it — by the
    *  statement each cuota is billed in, not by its date. */
   cardProgress?: CardInstallmentProgress
+  /** When the statement `cardProgress.stage` points at is due — how the
+   *  bank names it ("vence el 04/11"). */
+  stageDueDate?: DateStamp
 }
 
 export async function listInstallmentPlansWithProgress(today: DateStamp = todayStamp()): Promise<InstallmentPlanListItem[]> {
@@ -324,8 +327,11 @@ export async function listInstallmentPlansWithProgress(today: DateStamp = todayS
   const categoryById = new Map(categories.map((c) => [c.id, c] as [string, Category]))
   // The statement open today, per card a plan is paid with.
   const openPeriodByCard = new Map<string, string>()
+  const calendarByCard = new Map<string, CardCalendar>()
   for (const cardId of new Set(plans.flatMap((p) => (p.cardId !== undefined ? [p.cardId] : [])))) {
-    openPeriodByCard.set(cardId, statementPeriodFor(await creditCardsRepo.getCardCalendar(cardId), today))
+    const calendar = await creditCardsRepo.getCardCalendar(cardId)
+    calendarByCard.set(cardId, calendar)
+    openPeriodByCard.set(cardId, statementPeriodFor(calendar, today))
   }
 
   // Indexed by occurrenceIndex, not just counted, so that deleting or
@@ -369,6 +375,10 @@ export async function listInstallmentPlansWithProgress(today: DateStamp = todayS
     const tracked =
       openPeriod === undefined || cuotas.length === 0 ? undefined : cardInstallmentProgress(cuotas, openPeriod, plan.currency)
     const cardProgress = tracked && { ...tracked, billedCount: tracked.billedCount + startIndex }
+    const stage = cardProgress?.stage
+    const stagePeriod = stage?.kind === 'upcoming' ? stage.firstPeriod : stage?.kind === 'billing' ? stage.period : undefined
+    const calendar = plan.cardId !== undefined ? calendarByCard.get(plan.cardId) : undefined
+    const stageDueDate = stagePeriod && calendar ? statementDates(calendar, stagePeriod).dueDate : undefined
     return {
       id: plan.id,
       plan,
@@ -382,6 +392,7 @@ export async function listInstallmentPlansWithProgress(today: DateStamp = todayS
       confirmedCount: plan.scheduleCache.filter((_, index) => isPaid(index)).length,
       remaining: sub(totalAmount, confirmedAmount),
       ...(cardProgress !== undefined && { cardProgress }),
+      ...(stageDueDate !== undefined && { stageDueDate }),
     }
   })
 }

@@ -245,6 +245,37 @@ Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
    muestran ingresos, gastos y balance neto (ingresos − gastos) del mes, el ingreso por
    categoría, y una tabla de los últimos 6 meses. Sin cambios de schema.
 
+## Etapa 9 — De app contable a finanzas personales (en curso)
+
+El motor no cambia (centavos exactos, resúmenes que cuadran con el banco, backup
+versionado); cambia lo que la app muestra y lo que pide. Ver ADR "De app contable a
+finanzas personales" en `docs/DECISIONS.md`. Cada fase se publica por separado.
+
+1. **Simplificar** (hecho) — navegación de 9 secciones a 5 (Inicio, Movimientos, Tarjetas
+   y cuentas, Presupuesto, Patrimonio); Reportes y Ajustes pasan a una navegación
+   secundaria (abajo en la barra lateral, íconos arriba en el celular); Ayuda sigue
+   saliendo de Ajustes. Planes se reparte: las cuotas a "Tarjetas y cuentas", los
+   recurrentes a "Presupuesto" como "Gastos fijos"; `/cuentas` y `/planes` redirigen.
+   **Modo avanzado** (`Settings.advancedMode`, apagado por defecto) que esconde corregir
+   fechas de un resumen a mano, conciliar con el banco, "lo comprado el día del cierre va
+   al siguiente", presupuestos anuales e importar CSV. El dólar para valuar se elige en
+   Ajustes (Patrimonio sólo lo dice). Vocabulario: "Proyectado" → "Por pagar",
+   "recurrente" → "gasto fijo"; los resúmenes se nombran por su vencimiento ("vence el
+   05/11", "venció el…").
+2. **Cargar sin esfuerzo** — importar el PDF del resumen del banco (BBVA Visa/Master) en
+   el dispositivo (`pdfjs-dist`, worker local): consumos, cuotas desde la cuota que
+   figura, impuestos, créditos que se cancelan, próximo cierre/vencimiento, detección de
+   duplicados y control contra el saldo del resumen. Categoría automática por comercio
+   (aprende de las correcciones). Carga rápida en el celular.
+3. **Inicio: "¿cuánto me queda?"** — un número (ingresos − fijos − tarjetas que vencen −
+   otros gastos) y tres bloques. Ingreso recurrente (sueldo). Las cuotas con tarjeta toman
+   la fecha de cierre de su resumen (migración de las ya cargadas).
+4. **Que vuelvas a abrirla** — vencimientos exportables al calendario del celular (.ics),
+   línea de tiempo "libre de cuotas", observaciones simples por comercio y categoría.
+
+Fuera de esta etapa, a decidir aparte: sincronizar celular y compu (requiere revisar la
+restricción de privacidad), gasto ajustado por inflación (necesita el IPC).
+
 ## Backlog / no priorizado
 
 - ~~Code-splitting por ruta~~ (hecho) — `src/app/router.tsx` usa `lazy` de React Router

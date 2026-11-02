@@ -1,12 +1,9 @@
 import { create } from 'zustand'
 
-export type PlansTab = 'recurring' | 'installments'
+export type PlanKind = 'recurring' | 'installments'
 
 /** UI-only state — plan *data* always comes from useLiveQuery. */
 interface PlansUiState {
-  tab: PlansTab
-  setTab: (tab: PlansTab) => void
-
   // One dialog, two modes — same pattern as networth's Savings dialog:
   // `editingRecurringId === null` means "creating a new one".
   recurringDialogOpen: boolean
@@ -26,12 +23,13 @@ interface PlansUiState {
   installmentEditId: string | null
   openInstallmentEditDialog: (id: string) => void
   closeInstallmentEditDialog: () => void
+
+  /** Leaving a plans tab closes its dialogs: this store outlives the page,
+   *  and a dialog left open would reappear on the next visit. */
+  closeAll: () => void
 }
 
 export const usePlansUiStore = create<PlansUiState>((set) => ({
-  tab: 'recurring',
-  setTab: (tab) => set({ tab }),
-
   recurringDialogOpen: false,
   editingRecurringId: null,
   openCreateRecurringDialog: () => set({ recurringDialogOpen: true, editingRecurringId: null }),
@@ -45,4 +43,7 @@ export const usePlansUiStore = create<PlansUiState>((set) => ({
   installmentEditId: null,
   openInstallmentEditDialog: (id) => set({ installmentEditId: id }),
   closeInstallmentEditDialog: () => set({ installmentEditId: null }),
+
+  closeAll: () =>
+    set({ recurringDialogOpen: false, editingRecurringId: null, installmentDialogOpen: false, installmentEditId: null }),
 }))

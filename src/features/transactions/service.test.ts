@@ -375,7 +375,9 @@ describe('gastos con tarjeta en Movimientos (Fase 4)', () => {
     const items = await listTransactionsForMonth('2026-08')
     const auto = items.find((i) => i.description === 'Auto')
     const pinned = items.find((i) => i.description === 'Fijado')
-    expect(auto).toMatchObject({ cardId: card.id, statementPeriod: '2026-08', statementPinned: false, accountLabel: 'Visa · resumen de agosto 2026' })
+    expect(auto).toMatchObject({ cardId: card.id, statementPeriod: '2026-08', statementPinned: false })
+    // August's statement, named by when it's due.
+    expect(auto?.accountLabel).toMatch(/^Visa · venc(e|ió) el 05\/09/)
     expect(pinned).toMatchObject({ statementPeriod: '2026-09', statementPinned: true })
   })
 })
@@ -410,10 +412,11 @@ describe('statement payments in Movimientos (Fase 5)', () => {
     })
 
     const rows = await listTransactionsForMonth('2026-10', { accountId: pesos.id })
+    // September's statement, due Oct 5.
+    expect(rows[0]?.description).toMatch(/^Pago resumen Visa · venc(e|ió) el 05\/10/)
     expect(rows).toEqual([
       expect.objectContaining({
         kind: 'cardPayment',
-        description: 'Resumen Visa de septiembre 2026',
         amount: { amount: -12_500_00, currency: 'ARS' },
         counterpart: { amount: 10_00, currency: 'USD' },
         accountLabel: 'Galicia',

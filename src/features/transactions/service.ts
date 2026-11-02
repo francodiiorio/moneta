@@ -12,8 +12,8 @@ import {
 } from '@/database/repositories'
 import type { Account, Category, CategoryKind, Expense } from '@/domain/entities'
 import { money, negate, parseAmount, type Money } from '@/domain/money'
-import { statementPeriodFor, type CardCalendar } from '@/domain/cards'
-import { formatMonthLabel, monthRange, type DateStamp, type MonthStamp } from '@/lib/dates'
+import { statementDates, statementPeriodFor, type CardCalendar } from '@/domain/cards'
+import { formatDueDate, monthRange, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 import type { ExpenseFormValues, IncomeFormValues, MovementFormValues, MovementKind, TransferFormValues } from './schema'
 
@@ -70,7 +70,8 @@ export interface TransactionListItem {
   categoryColor?: string
   categoryIcon?: string
   accountId?: string
-  /** The account, card ("Visa · resumen de octubre 2026") or both
+  /** The account, card with its statement's due date ("Visa · vence el
+   *  05/11") or both
    *  accounts of a transfer ("Galicia → Caja USD"). */
   accountLabel?: string
   /** For a gasto paid with a credit card, and for a statement payment
@@ -118,8 +119,9 @@ export async function listTransactionsForMonth(
     creditCardsRepo.listCreditCards(),
   ])
   const cardName = new Map(cards.map((c) => [c.id, c.name]))
+  const today = todayStamp()
   const calendars = new Map<string, CardCalendar>()
-  for (const cardId of new Set(expenses.flatMap((e) => (e.cardId ? [e.cardId] : [])))) {
+  for (const cardId of new Set([...expenses.flatMap((e) => (e.cardId ? [e.cardId] : [])), ...payments.map((p) => p.cardId)])) {
     calendars.set(cardId, await creditCardsRepo.getCardCalendar(cardId))
   }
 
@@ -158,7 +160,14 @@ export async function listTransactionsForMonth(
             const calendar = calendars.get(expense.cardId)
             return calendar !== undefined && statementPeriodFor(calendar, expense.date) !== expense.statementPeriod
           })(),
-          accountLabel: `${cardName.get(expense.cardId) ?? 'Tarjeta'} · resumen de ${formatMonthLabel(expense.statementPeriod).toLowerCase()}`,
+          // The statement by when it's due — how the bank and the user name it.
+          accountLabel: (() => {
+            const calendar = calendars.get(expense.cardId)
+            const card = cardName.get(expense.cardId) ?? 'Tarjeta'
+            return calendar === undefined
+              ? card
+              : `${card} · ${formatDueDate(statementDates(calendar, expense.statementPeriod).dueDate, today)}`
+          })(),
         }),
     })),
     ...incomes.map((income) => ({
@@ -242,7 +251,13 @@ export async function listTransactionsForMonth(
       kind: 'cardPayment' as const,
       date: payment.date,
       createdAt: payment.createdAt,
-      description: `Resumen ${cardName.get(payment.cardId) ?? 'de tarjeta'} de ${formatMonthLabel(payment.period).toLowerCase()}`,
+      description: (() => {
+        const calendar = calendars.get(payment.cardId)
+        const card = cardName.get(payment.cardId) ?? 'tarjeta'
+        return calendar === undefined
+          ? `Pago resumen ${card}`
+          : `Pago resumen ${card} · ${formatDueDate(statementDates(calendar, payment.period).dueDate, today)}`
+      })(),
       status: 'confirmed' as const,
       amount: negate(money(payment.debitedAmount, payment.debitedCurrency)),
       signed: true,

@@ -23,7 +23,12 @@ import { BudgetProgressRow } from '../components/BudgetProgressRow'
 import { BudgetEditDialog } from '../components/BudgetEditDialog'
 import { removeBudget, type BudgetProgressItem } from '../service'
 
-export function BudgetsPage() {
+interface EmbeddableProps {
+  /** Rendered as a tab of a hub page (src/app/hubs), under its title. */
+  embedded?: boolean
+}
+
+export function BudgetsPage({ embedded = false }: EmbeddableProps = {}) {
   const { month, setMonth, dialogOpen, openCreateDialog, closeDialog } = useBudgetsUiStore()
   const result = useBudgetsWithProgress(month)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
@@ -44,8 +49,9 @@ export function BudgetsPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
+        embedded={embedded}
         title="Presupuestos"
-        description="Límites de gasto por categoría, mensuales o anuales."
+        description="Un tope de gasto por categoría para cada mes."
         actions={
           <Button onClick={openCreateDialog}>
             <Plus className="size-4" />

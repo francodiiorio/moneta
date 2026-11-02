@@ -739,6 +739,32 @@ describe('cuotas que ya venías pagando (B)', () => {
   })
 })
 
+describe('stageDueDate', () => {
+  afterEach(async () => {
+    await Promise.all([db.creditCards.clear(), db.cardStatements.clear()])
+  })
+
+  it('names the statement a card cuota is in by its due date — the corrected one when the bank moved it', async () => {
+    const { createCreditCard } = await import('@/database/repositories/creditCards.repo')
+    const { setStatementOverride } = await import('@/database/repositories/cardStatements.repo')
+    const { category } = await setup()
+    const card = await createCreditCard({ name: 'visa', closingDay: 22, dueDay: 4 })
+    // Bought after October's close: no cuota billed yet, the first goes in November's.
+    await createInstallmentPlan(
+      { description: 'Valija', categoryId: category.id, currency: 'ARS', totalAmount: 600, count: 6, firstDueDate: '2026-10-30', purchaseDate: '2026-10-30', cardId: card.id },
+      '2026-10-20',
+    )
+    const [upcoming] = await listInstallmentPlansWithProgress('2026-10-20')
+    expect(upcoming?.cardProgress?.stage.kind).toBe('upcoming')
+    expect(upcoming?.stageDueDate).toBe('2026-12-04')
+
+    await setStatementOverride({ cardId: card.id, period: '2026-11', closeDate: '2026-11-19', dueDate: '2026-12-03' })
+    const [billing] = await listInstallmentPlansWithProgress('2026-11-01')
+    expect(billing?.cardProgress?.stage.kind).toBe('billing')
+    expect(billing?.stageDueDate).toBe('2026-12-03')
+  })
+})
+
 describe('revisión de B', () => {
   afterEach(async () => {
     await Promise.all([db.creditCards.clear(), db.cardStatements.clear()])

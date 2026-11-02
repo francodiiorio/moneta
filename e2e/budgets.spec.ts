@@ -12,8 +12,7 @@ test('un presupuesto muestra lo comprometido en cuotas del mes, sin contarlo com
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   // Bought today in 6 cuotas: next month's is still projected.
-  await page.goto('/planes')
-  await page.getByRole('tab', { name: 'Cuotas' }).click()
+  await page.goto('/tarjetas?tab=cuotas')
   await page.getByRole('button', { name: 'Nueva compra en cuotas' }).first().click()
   await page.getByLabel('Descripción').fill('cubiertas')
   await page.getByLabel('Monto total').fill('600.000')

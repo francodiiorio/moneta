@@ -166,12 +166,12 @@ export async function updateAccount(id: string, input: UpdateAccountInput): Prom
     for (const plan of await recurringPlansDebiting(id)) {
       invariant(
         input.currency === existing.currency,
-        `No se puede cambiar la moneda: el recurrente "${plan.template.description}" debita de esta cuenta`,
+        `No se puede cambiar la moneda: el gasto fijo "${plan.template.description}" debita de esta cuenta`,
       )
       const next = firstPendingOccurrence(plan.rule, plan.lastMaterializedDate)
       invariant(
         next === undefined || input.openingDate <= next,
-        `El recurrente "${plan.template.description}" debita de esta cuenta desde ${formatFullDate(next ?? input.openingDate)}: el saldo inicial no puede ser posterior`,
+        `El gasto fijo "${plan.template.description}" debita de esta cuenta desde ${formatFullDate(next ?? input.openingDate)}: el saldo inicial no puede ser posterior`,
       )
     }
 
@@ -218,7 +218,7 @@ export async function deleteAccount(id: string): Promise<void> {
     const plans = await recurringPlansDebiting(id)
     invariant(
       plans.length === 0,
-      `Hay recurrentes que debitan de esta cuenta (${plans.map((p) => p.template.description).join(', ')}) — cambiales el medio de pago primero`,
+      `Hay gastos fijos que debitan de esta cuenta (${plans.map((p) => p.template.description).join(', ')}) — cambiales el medio de pago primero`,
     )
     await db.accounts.delete(id)
   })

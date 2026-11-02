@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { PageHeader } from '@/components/PageHeader'
+import { useAdvancedMode } from '@/features/settings/hooks/useAdvancedMode'
 import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
 import {
@@ -85,6 +86,7 @@ function dateLabel(date: string): string {
 }
 
 export function TransactionsPage() {
+  const advanced = useAdvancedMode()
   const transactions = useTransactions()
   const categories = useAllCategories()
   const accounts = useAccounts()
@@ -142,12 +144,14 @@ export function TransactionsPage() {
         description="Tus gastos, ingresos y transferencias."
         actions={
           <>
-            <Button variant="outline" asChild>
-              <Link to="/movimientos/importar">
-                <Upload className="size-4" />
-                Importar CSV
-              </Link>
-            </Button>
+            {advanced && (
+              <Button variant="outline" asChild>
+                <Link to="/movimientos/importar">
+                  <Upload className="size-4" />
+                  Importar CSV
+                </Link>
+              </Button>
+            )}
             <Button onClick={() => openCreateDialog()}>
               <Plus className="size-4" />
               Nuevo movimiento
