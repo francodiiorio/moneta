@@ -84,7 +84,8 @@ export interface UpcomingItem {
   date: DateStamp
   description: string
   amount: Money
-  kind: 'installment' | 'recurring'
+  /** 'income': a salary coming in, not a payment. */
+  kind: 'installment' | 'recurring' | 'income'
   categoryColor?: string
   categoryIcon?: string
 }
@@ -135,7 +136,7 @@ export async function getUpcoming(today: DateStamp = todayStamp(), days = 31): P
           date,
           description: plan.template.description,
           amount: money(plan.template.amount, plan.template.currency),
-          kind: 'recurring' as const,
+          kind: plan.kind === 'income' ? ('income' as const) : ('recurring' as const),
           ...decorate(plan.template.categoryId),
         })),
     )

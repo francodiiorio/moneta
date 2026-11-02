@@ -160,12 +160,21 @@ Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con ac
   siguiente, entre los cierres vecinos (`statementOverrideProblem`), y un gasto no puede
   ir a un resumen que cerró antes de su fecha.
 - **Cuotas con tarjeta** (Fase 4b, `InstallmentPlan.cardId?`): la cuota *i* va al resumen
-  de la compra + *i* (una por resumen, nunca dos en uno) y se fecha el día de compra *i*
-  meses después, pero no después del último día de compra de ese resumen
-  (`domain/cards:installmentPlacement`). Con tarjeta, `firstDueDate === purchaseDate`
+  de la compra + *i* (una por resumen, nunca dos en uno). La primera es la compra y lleva
+  su fecha; desde la Etapa 9 cada cuota siguiente se fecha el **último día de compra de su
+  resumen** — el mes en que se paga, y se cuenta como gastada ese día —, no el día de compra
+  corrido *i* meses (`domain/cards:installmentPlacement`; Dexie v11 y backup v11 re-fechan
+  las cargadas antes, `domain/cards:cardCuotaRedates`). Con tarjeta, `firstDueDate === purchaseDate`
   (invariante del repository e import). Al corregir fechas de la tarjeta, las cuotas de
-  resúmenes todavía abiertos se recalculan con esa misma regla (no por fecha); editar el
-  plan deja cada cuota proyectada en su resumen y su fecha.
+  resúmenes todavía abiertos se recalculan con esa misma regla (no por fecha); las de uno
+  cerrado se quedan en él y siguen su nuevo último día (con su estado según esa fecha). Una
+  cuota que quedó de un plan borrado (se reconoce por su descripción "(cuota i/n)") también
+  se queda en su resumen. Editar el plan deja cada cuota proyectada en su resumen y su
+  fecha.
+- **Ingreso fijo** (Etapa 9, `RecurringPlan.kind: 'income'`; ausente = gasto): un sueldo.
+  Su plantilla lleva una categoría de ingreso y la cuenta a la que entra (nunca tarjeta);
+  cada vencimiento se materializa como un `Income` con `sourcePlanId` / `occurrenceIndex`.
+  Un plan no cambia de tipo. No cuenta como comprometido en presupuestos.
 - **Recurrentes con medio de pago** (Fase 4b, `ExpenseTemplate.accountId?` / `cardId?`,
   excluyentes): cada gasto generado sale de la cuenta o entra al resumen de su fecha. Al
   guardar el plan se valida que la cuenta acepte su primera fecha (moneda, saldo inicial)
@@ -212,6 +221,10 @@ Expense       { …, cardId?, statementPeriod? }   // juntos; excluyentes con ac
   Import valida tarjeta, período, unicidad por moneda, y la cuenta con
   `statementPaymentProblem`; merge además lo valida contra la cuenta **local**. Una
   tarjeta con pagos no se borra; una cuenta con pagos tampoco (es un movimiento).
+- **Dexie v11** (Etapa 9, sin cambio de tablas) y **backup v11** (la forma de la v10, más
+  los campos opcionales de la Etapa 9: `RecurringPlan.kind`, `Income.sourcePlanId` /
+  `occurrenceIndex`): re-fechan las cuotas con tarjeta después de la primera al último día
+  de compra de su resumen, con su estado según esa fecha.
 - Borrar una tarjeta sólo se puede sin gastos; si no, se archiva.
 
 - **Compra de inversión con cuenta de origen** (Fase 3): `InvestmentLot` suma
@@ -584,7 +597,9 @@ Reglas (ver `src/features/backups/`):
   (Fase 5) suma `statementPayments` (vacío al migrar un v9, `migrations/v9_to_v10.ts`);
   en merge, un resumen que el local ya pagó (en cualquier moneda) conserva sus pagos y
   saltea todos los del archivo; uno nuevo se valida contra la cuenta local, y un período
-  corregido que movería el cierre de un resumen pagado acá se saltea.
+  corregido que movería el cierre de un resumen pagado acá se saltea. La v11 (Etapa 9) tiene
+  la forma de la v10; `migrations/v10_to_v11.ts` re-fecha las cuotas con tarjeta de un
+  archivo v10 (ver "Cuotas con tarjeta").
 - Como una migración vieja (`schemas/v1.ts`, `v2.ts`, `v3.ts`) tiene que seguir validando
   un archivo `.finance` exactamente como lo hacía cuando esa versión era la última, esos
   schemas **no** pueden depender de los tipos de dominio actuales una vez que el dominio

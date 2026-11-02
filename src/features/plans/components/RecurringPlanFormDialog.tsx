@@ -29,7 +29,7 @@ import type { RecurringPlan } from '@/domain/entities'
 import { CURRENCIES, formatAmountInput, money } from '@/domain/money'
 import { cn } from '@/lib/cn'
 import { todayStamp } from '@/lib/dates'
-import { useExpenseCategories } from '../hooks/useExpenseCategories'
+import { useCategoriesOf } from '../hooks/useCategoriesOf'
 import { usePaymentOptions } from '../hooks/usePaymentOptions'
 import { createRecurringPlanFromForm, MaterializationFailedError, updateRecurringPlanFromForm } from '../service'
 import {
@@ -45,11 +45,14 @@ interface RecurringPlanFormDialogProps {
   /** Defined when editing an existing plan, undefined when creating one —
    *  same convention as TransactionFormDialog's `item`. */
   plan: RecurringPlan | undefined
+  /** For a new plan: a gasto fijo or an ingreso fijo (a salary). */
+  newKind?: 'expense' | 'income'
   onOpenChange: (open: boolean) => void
 }
 
-function defaultValues(): RecurringPlanFormValues {
+function defaultValues(kind: 'expense' | 'income'): RecurringPlanFormValues {
   return {
+    kind,
     description: '',
     categoryId: '',
     currency: 'ARS',
@@ -69,6 +72,7 @@ const NO_METHOD = '__none__'
 function planToFormValues(plan: RecurringPlan): RecurringPlanFormValues {
   const { template, rule } = plan
   return {
+    kind: plan.kind ?? 'expense',
     description: template.description,
     categoryId: template.categoryId,
     currency: template.currency,
@@ -90,20 +94,23 @@ const FREQ_LABELS: Record<RecurringPlanFormValues['freq'], string> = {
   yearly: 'Anual',
 }
 
-export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringPlanFormDialogProps) {
-  const categories = useExpenseCategories()
+export function RecurringPlanFormDialog({ open, plan, newKind = 'expense', onOpenChange }: RecurringPlanFormDialogProps) {
   const isEditing = !!plan
+  const kind = plan?.kind ?? (plan ? 'expense' : newKind)
+  const isIncome = kind === 'income'
+  const categories = useCategoriesOf(kind)
+  const noun = isIncome ? 'ingreso fijo' : 'gasto fijo'
 
   const form = useForm<RecurringPlanFormValues>({
     resolver: zodResolver(recurringPlanFormSchema),
-    defaultValues: defaultValues(),
+    defaultValues: defaultValues(newKind),
   })
 
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   useEffect(() => {
     if (open) {
-      form.reset(plan ? planToFormValues(plan) : defaultValues())
+      form.reset(plan ? planToFormValues(plan) : defaultValues(newKind))
       // Open by default when editing a plan that already uses one of these
       // — otherwise the user has no way to notice it's there without
       // clicking to expand, and might assume the plan has no end.
@@ -134,14 +141,14 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
     try {
       if (plan) {
         await updateRecurringPlanFromForm(plan.id, values)
-        toast.success('Gasto fijo actualizado')
+        toast.success(isIncome ? 'Ingreso fijo actualizado' : 'Gasto fijo actualizado')
       } else {
         await createRecurringPlanFromForm(values)
-        toast.success('Gasto fijo creado')
+        toast.success(isIncome ? 'Ingreso fijo creado' : 'Gasto fijo creado')
       }
       onOpenChange(false)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'No se pudo guardar el gasto fijo')
+      toast.error(error instanceof Error ? error.message : `No se pudo guardar el ${noun}`)
       // MaterializationFailedError means the plan itself was already
       // created/updated successfully — only the immediate catch-up
       // failed. Close anyway: leaving the form open would invite
@@ -155,7 +162,7 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Editar gasto fijo' : 'Nuevo gasto fijo'}</DialogTitle>
+          <DialogTitle>{isEditing ? `Editar ${noun}` : `Nuevo ${noun}`}</DialogTitle>
           <DialogDescription>
             {isEditing
               ? 'Los movimientos ya generados quedan igual — el cambio rige desde la próxima vez que corresponda.'
@@ -172,7 +179,7 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
                 <FormItem>
                   <FormLabel>Descripción</FormLabel>
                   <FormControl>
-                    <Input placeholder="Ej: Alquiler" {...field} />
+                    <Input placeholder={isIncome ? 'Ej: Sueldo' : 'Ej: Alquiler'} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -224,9 +231,9 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
               name="paymentMethod"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Medio de pago (opcional)</FormLabel>
+                  <FormLabel>{isIncome ? 'Entra a' : 'Medio de pago (opcional)'}</FormLabel>
                   <Select
-                    value={field.value || NO_METHOD}
+                    value={field.value || (isIncome ? '' : NO_METHOD)}
                     onValueChange={(next) => {
                       if (next === '') return // spurious Radix value on remount
                       const value = next === NO_METHOD ? '' : next
@@ -238,14 +245,14 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
                   >
                     <FormControl>
                       <SelectTrigger className="w-full">
-                        <SelectValue />
+                        <SelectValue placeholder="Elegí la cuenta" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value={NO_METHOD}>Sin especificar</SelectItem>
+                      {!isIncome && <SelectItem value={NO_METHOD}>Sin especificar</SelectItem>}
                       {accountOptions.length > 0 && (
                         <SelectGroup>
-                          <SelectLabel>Débito</SelectLabel>
+                          <SelectLabel>{isIncome ? 'Cuenta' : 'Débito'}</SelectLabel>
                           {accountOptions.map((account) => (
                             <SelectItem key={account.id} value={encodePaymentMethod({ accountId: account.id })}>
                               {account.name} · {account.currency}
@@ -253,7 +260,7 @@ export function RecurringPlanFormDialog({ open, plan, onOpenChange }: RecurringP
                           ))}
                         </SelectGroup>
                       )}
-                      {cardOptions.length > 0 && (
+                      {!isIncome && cardOptions.length > 0 && (
                         <SelectGroup>
                           <SelectLabel>Tarjeta de crédito</SelectLabel>
                           {cardOptions.map((card) => (

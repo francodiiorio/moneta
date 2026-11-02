@@ -1646,3 +1646,43 @@ la próxima importación la respeta —; sin antecedente, de una lista de palabr
 las categorías por defecto. Aprender de los gastos existentes evita una tabla de reglas con
 su versión de Dexie y de backup; si hiciera falta algo más fino, se agrega después.
 
+## Cuotas con tarjeta: se cuentan en el mes de su resumen (Etapa 9, Fase 3)
+
+**Problema:** una cuota con tarjeta se fechaba el día de la compra corrido *i* meses. La
+cuota que el banco cobra en el resumen de octubre de una compra del 24 de abril quedaba
+fechada el 24 de septiembre, así que sumaba al reporte y al presupuesto de septiembre
+aunque se pagara con el resumen de octubre.
+
+**Decisión:** la primera cuota es la compra y conserva su fecha; cada una de las
+siguientes se fecha el **último día que toma su resumen** (`lastPurchaseDay`: el cierre, o
+el día anterior si las compras del día de cierre van al siguiente) y se considera gastada
+ese día — como el banco: se factura al cerrar. Corregir las fechas de un resumen mueve sus
+cuotas con el cierre. Lo ya cargado se re-fecha con una migración de Dexie (v11) y los
+archivos `.finance` viejos con la migración de backup v10→v11, las dos con la misma función
+pura (`cardCuotaRedates`), que también ajusta el estado (por pagar / gastada) según la
+fecha nueva. Las cuotas sin tarjeta no cambian: siguen la fecha de vencimiento que cargó el
+usuario.
+
+Consecuencias aceptadas: los reportes y presupuestos de meses ya pasados cambian (una cuota
+del resumen de octubre deja de sumar en septiembre). Una cuota que quedó de un plan borrado
+se queda en su resumen (se la reconoce por su descripción "(cuota i/n)", porque un gasto
+fijo también lleva `sourcePlanId`). Las migraciones usan la regla de `lastPurchaseDay`
+vigente; si esa regla cambiara, una migración nueva re-fecharía de nuevo.
+
+## Ingreso fijo: el sueldo (Etapa 9, Fase 3)
+
+**Problema:** sin ingresos cargados no hay "¿cuánto me queda?" ni tasa de ahorro, y cargar
+el sueldo a mano cada mes es justo el tipo de carga que la app quiere evitar.
+
+**Decisión:** un plan recurrente puede generar ingresos (`RecurringPlan.kind: 'income'`,
+opcional: los planes de antes son gastos). Entra a una cuenta, con una categoría de
+ingreso, nunca a una tarjeta; cada vencimiento es un `Income` vinculado al plan
+(`sourcePlanId`), así "borrar también lo generado" y el conteo funcionan igual que con los
+gastos. Un plan no cambia de tipo (su historia es de un solo tipo). Vive junto a los gastos
+fijos, en Presupuesto → Fijos, y no cuenta como gasto comprometido. Igual que un gasto
+generado, un ingreso generado que el usuario edita pierde el vínculo con su plan (pasa a
+ser suyo); y el merge de backup los deduplica por plan + fecha y repara el "generado hasta"
+del plan también con sus ingresos, para que dos dispositivos con el mismo sueldo no lo
+dupliquen. El import rechaza un plan cuya categoría no es de su tipo (fallaría en cada
+arranque, sin aviso).
+

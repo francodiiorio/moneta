@@ -1,6 +1,6 @@
 import { db } from '../db'
 import type { CreditCard } from '@/domain/entities'
-import {
+import { PLAN_CUOTA_DESCRIPTION,
   installmentPlacement,
   lastPurchaseDay,
   openingBalancesProblem,
@@ -63,9 +63,13 @@ export async function getCardCalendar(cardId: string): Promise<CardCalendar> {
  * many moved.
  *
  * - Cuotas of a card installment plan follow their own rule
- *   (domain/cards:installmentPlacement — purchase's statement + i, dated
- *   within it), recomputed with the new calendar; only ones whose
- *   statement is still open move, a closed one was already billed.
+ *   (domain/cards:installmentPlacement — purchase's statement + i, the
+ *   later ones dated on its last purchase day), recomputed with the new
+ *   calendar; only ones whose statement is still open move — a closed one
+ *   was already billed and only follows its statement's new last day.
+ * - A cuota left behind by a deleted plan stays in its statement too
+ *   (it sits on that statement's last day: by date it would slip to the
+ *   next one at the first earlier close).
  * - Everything else: only the ones that were where automatic placement
  *   put them under the old calendar move (domain/cards:reassignedPeriods);
  *   the ones pinned by hand stay.
@@ -73,6 +77,8 @@ export async function getCardCalendar(cardId: string): Promise<CardCalendar> {
 /** Marks the gastos statement reconciliation creates: the bank's charges
  *  of THAT statement, so they never move to another one. */
 export const STATEMENT_RECONCILE_TAG = 'conciliacion-resumen'
+
+const ORPHAN_CUOTA = PLAN_CUOTA_DESCRIPTION
 
 export async function reassignCardExpenses(cardId: string, before: CardCalendar, after: CardCalendar): Promise<number> {
   const today = todayStamp()
@@ -91,6 +97,19 @@ export async function reassignCardExpenses(cardId: string, before: CardCalendar,
       continue
     }
     const plan = expense.sourcePlanId !== undefined ? cardPlans.get(expense.sourcePlanId) : undefined
+    if (
+      !plan &&
+      expense.sourcePlanId !== undefined &&
+      expense.statementPeriod !== undefined &&
+      ORPHAN_CUOTA.test(expense.description)
+    ) {
+      const last = lastPurchaseDay(after, expense.statementPeriod)
+      const date = expense.occurrenceIndex === 0 ? (expense.date > last ? last : expense.date) : last
+      if (date !== expense.date) {
+        await db.expenses.update(expense.id, { date, status: date <= today ? 'confirmed' : 'projected', updatedAt: now })
+      }
+      continue
+    }
     if (!plan || expense.occurrenceIndex === undefined || expense.statementPeriod === undefined) {
       others.push(expense)
       continue
@@ -109,16 +128,28 @@ export async function reassignCardExpenses(cardId: string, before: CardCalendar,
       `La compra en cuotas "${plan.description}" se cargó a mitad de camino y quedaría corrida — borrala y volvé a cargarla después del cambio`,
     )
     if (!anchorMoved && lastPurchaseDay(before, expense.statementPeriod) < today) {
-      // A closed statement keeps its cuotas — but one dated on its closing
-      // day, once closing-day purchases go to the next statement, would sit
-      // past the last day its statement takes: re-dated, never moved.
+      // A closed statement keeps its cuotas, re-dated where its last
+      // purchase day now is: the first cuota (the purchase) only when its
+      // day falls past it — closing-day purchases now go to the next
+      // statement —, a later one always (it's dated on that day).
       const last = lastPurchaseDay(after, expense.statementPeriod)
-      if (expense.date > last) await db.expenses.update(expense.id, { date: last, updatedAt: now })
+      const date = expense.occurrenceIndex === 0 ? (expense.date > last ? last : expense.date) : last
+      if (date !== expense.date) {
+        // Spent once its date comes: a close corrected to a later day can
+        // put it in the future again.
+        await db.expenses.update(expense.id, { date, status: date <= today ? 'confirmed' : 'projected', updatedAt: now })
+      }
       continue
     }
     const placement = installmentPlacement(after, plan.purchaseDate, expense.occurrenceIndex)
     if (placement.period === expense.statementPeriod && placement.date === expense.date) continue
-    await db.expenses.update(expense.id, { statementPeriod: placement.period, date: placement.date, updatedAt: now })
+    await db.expenses.update(expense.id, {
+      statementPeriod: placement.period,
+      date: placement.date,
+      // Spent once its (new) date comes.
+      status: placement.date <= today ? 'confirmed' : 'projected',
+      updatedAt: now,
+    })
     moved += 1
   }
 

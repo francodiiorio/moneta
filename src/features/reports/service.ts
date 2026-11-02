@@ -142,7 +142,8 @@ export async function getSpentAndCommittedByCategoryInRange(
     loadConversionContext(),
   ])
   const upcoming = plans
-    .filter((plan) => !plan.isPaused)
+    // A salary isn't spend: only gasto plans are committed.
+    .filter((plan) => !plan.isPaused && plan.kind !== 'income')
     .flatMap((plan) =>
       pendingOccurrencesInRange(plan.rule, plan.lastMaterializedDate, start, end).map((date) => ({
         amount: plan.template.amount,

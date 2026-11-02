@@ -31,7 +31,7 @@ test('old URLs land on their new place', async ({ page }) => {
 
   await page.goto('/planes')
   await expect(page).toHaveURL(/\/presupuestos\?tab=fijos/)
-  await expect(page.getByRole('tab', { name: 'Gastos fijos', selected: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Fijos', selected: true })).toBeVisible()
 })
 
 // Lo avanzado no aparece hasta activarlo en Ajustes.

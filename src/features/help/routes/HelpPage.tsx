@@ -56,10 +56,10 @@ const SECTIONS: GuideSection[] = [
     icon: CalendarSync,
     title: '4. Automatizá gastos fijos y cuotas',
     steps: [
-      'En "Presupuesto" → pestaña Gastos fijos, cargá un gasto que se repite (alquiler, prepaga, suscripción) y se va a anotar solo cada vez que abras la app. Si se debita de una cuenta o se paga con tarjeta, elegilo en "Medio de pago".',
+      'En "Presupuesto" → pestaña Fijos, cargá lo que se repite: tu sueldo ("Nuevo ingreso fijo", con la cuenta a la que entra) y los gastos fijos (alquiler, prepaga, suscripción). Se anotan solos cada vez que abras la app. Si un gasto fijo se debita de una cuenta o se paga con tarjeta, elegilo en "Medio de pago".',
       'En "Tarjetas y cuentas" → pestaña Cuotas, cargá una compra en cuotas una sola vez con el monto total y la cantidad — Moneta arma todo el cronograma. Si la hiciste con tarjeta, elegila: cada cuota cae en un resumen, empezando por el de la compra. Las cuotas que todavía no vencieron aparecen como "Por pagar" en Movimientos.',
     ],
-    link: { to: '/presupuestos?tab=fijos', label: 'Ir a Gastos fijos' },
+    link: { to: '/presupuestos?tab=fijos', label: 'Ir a Fijos' },
   },
   {
     icon: Landmark,

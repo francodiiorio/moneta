@@ -114,3 +114,29 @@ test('una compra en cuotas que ya venías pagando arranca desde la cuota del res
   await expect(page.getByText('Cuota 2 de 6 · en el resumen en curso')).toBeVisible()
   await expect(page.getByText('4 cuotas')).toBeVisible()
 })
+
+// Etapa 9, Fase 3b: el sueldo como ingreso fijo — entra solo a su cuenta.
+test('un ingreso fijo (sueldo) se anota solo en su cuenta', async ({ page }) => {
+  await page.goto('/cuentas')
+  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
+  await page.getByLabel('Nombre').fill('BBVA')
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+
+  await page.goto('/presupuestos?tab=fijos')
+  await page.getByRole('button', { name: 'Nuevo ingreso fijo' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Nuevo ingreso fijo' })
+  await dialog.getByLabel('Descripción').fill('Sueldo')
+  await dialog.getByLabel('Monto').fill('1.500.000')
+  await dialog.getByLabel('Entra a').click()
+  await page.getByRole('option', { name: /BBVA/ }).click()
+  await dialog.getByLabel('Categoría').click()
+  await page.getByRole('option', { name: 'Sueldo' }).click()
+  await dialog.getByRole('button', { name: 'Guardar' }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByText('Entra a · BBVA')).toBeVisible()
+
+  await page.goto('/movimientos')
+  await expect(page.getByText('Sueldo').first()).toBeVisible()
+  await expect(page.getByText(/1\.500\.000,00/).first()).toBeVisible()
+})

@@ -820,10 +820,10 @@ describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
     expect(await db.expenses.count()).toBe(1)
   })
 
-  it('exports as version 10', async () => {
+  it('exports as version 11', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
-    expect(payload.version).toBe(10)
+    expect(payload.version).toBe(11)
     expect(payload.data.accounts).toHaveLength(2)
     expect(payload.data.incomes).toHaveLength(1)
     expect(payload.data.accountAdjustments).toHaveLength(1)
@@ -1330,5 +1330,140 @@ describe('pagos de resúmenes en el backup (Fase 5)', () => {
     payload.data.statementPayments[0]!.debitedAmount = 1
     const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
     await expect(importBackup(file)).rejects.toThrow(/misma moneda/)
+  })
+})
+
+describe('migration — v10 to v11 (Etapa 9: cuotas con tarjeta al cierre de su resumen)', () => {
+  it('re-dates a v10 file’s card cuotas after the first, and sets their status by that date', async () => {
+    const { migrateV10ToV11 } = await import('./migrations/v10_to_v11')
+    const payload = await buildBackupPayload()
+    const now = '2026-01-01T00:00:00.000Z'
+    const data = {
+      ...payload.data,
+      creditCards: [{ id: 'visa', name: 'Visa', closingDay: 22, dueDay: 4, isArchived: false, order: 0, createdAt: now, updatedAt: now }],
+      cardStatements: [{ id: 's', cardId: 'visa', period: '2026-11', closeDate: '2026-11-19', dueDate: '2026-12-03', createdAt: now, updatedAt: now }],
+      installmentPlans: [
+        { id: 'p', description: 'Equipaje', categoryId: 'c', currency: 'ARS', totalAmount: 600, count: 6, firstDueDate: '2026-04-24', purchaseDate: '2026-04-24', scheduleCache: [100, 100, 100, 100, 100, 100], cardId: 'visa', createdAt: now, updatedAt: now },
+      ],
+      expenses: [
+        { id: 'c0', sourcePlanId: 'p', occurrenceIndex: 0, date: '2026-04-24', status: 'confirmed' as const, cardId: 'visa', statementPeriod: '2026-05', amount: 100, currency: 'ARS', categoryId: 'c', description: 'x', createdAt: now, updatedAt: now },
+        { id: 'c5', sourcePlanId: 'p', occurrenceIndex: 5, date: '2026-09-24', status: 'confirmed' as const, cardId: 'visa', statementPeriod: '2026-10', amount: 100, currency: 'ARS', categoryId: 'c', description: 'x', createdAt: now, updatedAt: now },
+        { id: 'c6', sourcePlanId: 'p', occurrenceIndex: 6, date: '2026-10-24', status: 'confirmed' as const, cardId: 'visa', statementPeriod: '2026-11', amount: 100, currency: 'ARS', categoryId: 'c', description: 'x', createdAt: now, updatedAt: now },
+      ],
+    }
+    const migrated = migrateV10ToV11(data, '2026-11-02')
+    expect(migrated.expenses.map((e) => [e.id, e.date, e.status])).toEqual([
+      ['c0', '2026-04-24', 'confirmed'],
+      ['c5', '2026-10-22', 'confirmed'],
+      // Its statement closes Nov 19 (corrected): not spent yet.
+      ['c6', '2026-11-19', 'projected'],
+    ])
+  })
+})
+
+describe('migrateToLatest — a version 10 file', () => {
+  it('goes through the v10→v11 migration (its card cuotas re-dated) and validates', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    const cardPlan = payload.data.installmentPlans.find((p) => p.cardId !== undefined)
+    expect(cardPlan).toBeDefined()
+    const stale = { ...payload, version: 10 }
+    // Pretend it was exported under the old rule: no cuota on its statement's last day.
+    const now = '2026-07-15T00:00:00.000Z'
+    stale.data = {
+      ...payload.data,
+      // Its cuota 2, dated under the old rule: the purchase day shifted a month.
+      expenses: [
+        ...payload.data.expenses,
+        {
+          id: generateId(),
+          date: '2026-08-15',
+          description: 'Heladera en 3 cuotas (cuota 2/3)',
+          categoryId: cardPlan!.categoryId,
+          amount: 100_000,
+          currency: 'ARS',
+          status: 'confirmed' as const,
+          sourcePlanId: cardPlan!.id,
+          occurrenceIndex: 1,
+          cardId: cardPlan!.cardId!,
+          statementPeriod: '2026-08',
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    }
+    const migrated = migrateToLatest(stale)
+    const cuotas = migrated.expenses.filter((e) => e.sourcePlanId === cardPlan!.id && (e.occurrenceIndex ?? 0) > 0)
+    expect(cuotas).toHaveLength(1)
+    expect(cuotas[0]!.date).not.toBe('2026-08-15')
+    expect(cuotas[0]!.date.startsWith('2026-08')).toBe(true)
+  })
+})
+
+describe('ingreso fijo (sueldo) en el backup', () => {
+  const now = '2026-01-01T00:00:00.000Z'
+  async function salary() {
+    const sueldo = { id: generateId(), name: 'Sueldo', kind: 'income' as const, order: 0, isArchived: false, createdAt: now, updatedAt: now }
+    const account = { id: generateId(), name: 'BBVA', type: 'bank' as const, currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01', isArchived: false, order: 0, createdAt: now, updatedAt: now }
+    const plan = {
+      id: generateId(),
+      kind: 'income' as const,
+      template: { description: 'Sueldo', categoryId: sueldo.id, amount: 1_500_000_00, currency: 'ARS', accountId: account.id },
+      rule: { freq: 'monthly' as const, interval: 1, dayOfMonth: 1, startDate: '2026-10-01' },
+      isPaused: false,
+      lastMaterializedDate: '2026-11-01',
+      createdAt: now,
+      updatedAt: now,
+    }
+    const income = (date: string) => ({
+      id: generateId(),
+      date,
+      amount: 1_500_000_00,
+      currency: 'ARS',
+      accountId: account.id,
+      categoryId: sueldo.id,
+      description: 'Sueldo',
+      sourcePlanId: plan.id,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await db.categories.add(sueldo)
+    await db.accounts.add(account)
+    await db.recurringPlans.add(plan)
+    await db.incomes.bulkAdd([income('2026-10-01'), income('2026-11-01')])
+    return { sueldo, plan, income }
+  }
+
+  it('round-trips a salary plan and its ingresos', async () => {
+    const { plan } = await salary()
+    const exported = await exportBackup()
+    await clearAllTables()
+    await importBackup(new File([exported.blob], exported.filename, { type: 'application/json' }))
+    expect(await db.recurringPlans.get(plan.id)).toMatchObject({ kind: 'income' })
+    expect(await db.incomes.filter((i) => i.sourcePlanId === plan.id).count()).toBe(2)
+  })
+
+  it('merging another device’s copy of the same salary never doubles it, and repairs the watermark', async () => {
+    const { plan, income } = await salary()
+    const payload = await buildBackupPayload()
+    // The other device generated the same months under its own ids, plus December.
+    payload.data.incomes = [income('2026-10-01'), income('2026-11-01'), income('2026-12-01')]
+    const file = new File([JSON.stringify(payload)], 'otro.finance', { type: 'application/json' })
+    const result = await importBackup(file, { mode: 'merge' })
+    expect(result.merged?.incomes).toEqual({ added: 1, skipped: 2 })
+    expect(await db.incomes.filter((i) => i.sourcePlanId === plan.id).count()).toBe(3)
+    expect((await db.recurringPlans.get(plan.id))?.lastMaterializedDate).toBe('2026-12-01')
+  })
+
+  it('a salary plan with a gasto category is rejected — it would fail on every app open', async () => {
+    await salary()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    const gasto = { id: generateId(), name: 'Comida', kind: 'expense' as const, order: 1, isArchived: false, createdAt: now, updatedAt: now }
+    payload.data.categories.push(gasto)
+    payload.data.recurringPlans[0]!.template.categoryId = gasto.id
+    payload.data.incomes = []
+    const file = new File([JSON.stringify(payload)], 'mal.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow(/categoría no es del tipo del plan/)
   })
 })

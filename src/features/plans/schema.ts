@@ -17,6 +17,8 @@ const positiveIntString = z
   .refine((v) => Number.isInteger(Number(v)) && Number(v) > 0, { message: 'Tiene que ser un número entero mayor a cero' })
 
 export const recurringPlanFormSchema = z.object({
+  /** A gasto fijo or an ingreso fijo (a salary). */
+  kind: z.enum(['expense', 'income']),
   description: z.string().min(1, 'La descripción es obligatoria').max(120),
   categoryId: z.string().min(1, 'Elegí una categoría'),
   currency: z.string().min(3).max(8),
@@ -29,6 +31,9 @@ export const recurringPlanFormSchema = z.object({
   maxOccurrences: z.string().optional(),
   /** '' = sin especificar; 'account:<id>' = débito; 'card:<id>' = tarjeta. */
   paymentMethod: z.string().refine((v) => v === '' || /^(account|card):.+$/.test(v), { message: 'Medio de pago inválido' }),
+}).refine((v) => v.kind !== 'income' || v.paymentMethod.startsWith('account:'), {
+  path: ['paymentMethod'],
+  message: 'Elegí la cuenta a la que entra',
 })
 export type RecurringPlanFormValues = z.infer<typeof recurringPlanFormSchema>
 

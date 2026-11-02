@@ -42,7 +42,8 @@ export function RecurringPlanRow({ item, onEdit, onTogglePaused, onDelete }: Rec
       </div>
 
       <p className="shrink-0 text-sm font-semibold">
-        <MoneyText value={item.amount} />
+        {/* A salary comes in: shown with its sign, like an ingreso in Movimientos. */}
+        <MoneyText value={item.amount} signColor={item.kind === 'income'} />
       </p>
 
       <Button variant="ghost" size="icon" className="shrink-0" onClick={onEdit}>

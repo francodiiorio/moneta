@@ -40,8 +40,14 @@ export function PlansPage({ kind }: PlansPageProps) {
 }
 
 function RecurringPlans() {
-  const { recurringDialogOpen, editingRecurringId, openCreateRecurringDialog, openEditRecurringDialog, closeRecurringDialog } =
-    usePlansUiStore()
+  const {
+    recurringDialogOpen,
+    editingRecurringId,
+    newRecurringKind,
+    openCreateRecurringDialog,
+    openEditRecurringDialog,
+    closeRecurringDialog,
+  } = usePlansUiStore()
   const plans = useRecurringPlans()
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [deleteGenerated, setDeleteGenerated] = useState(false)
@@ -78,13 +84,19 @@ function RecurringPlans() {
     <div className="flex flex-col gap-4">
       <PageHeader
         embedded
-        title="Gastos fijos"
-        description="Gastos que se repiten solos: prepaga, alquiler, suscripciones."
+        title="Fijos"
+        description="Lo que se repite solo: el sueldo, la prepaga, el alquiler, las suscripciones."
         actions={
-          <Button onClick={openCreateRecurringDialog}>
-            <Plus className="size-4" />
-            Nuevo gasto fijo
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => openCreateRecurringDialog('income')}>
+              <Plus className="size-4" />
+              Nuevo ingreso fijo
+            </Button>
+            <Button onClick={() => openCreateRecurringDialog('expense')}>
+              <Plus className="size-4" />
+              Nuevo gasto fijo
+            </Button>
+          </>
         }
       />
 
@@ -93,9 +105,9 @@ function RecurringPlans() {
       ) : plans.length === 0 ? (
         <EmptyState
           icon={CalendarSync}
-          title="Todavía no tenés gastos fijos"
-          description="Cargá la prepaga, el alquiler o una suscripción una vez y se anota sola cada mes."
-          action={<Button onClick={openCreateRecurringDialog}>Nuevo gasto fijo</Button>}
+          title="Todavía no tenés nada fijo"
+          description="Cargá tu sueldo, la prepaga o el alquiler una vez y se anotan solos cada mes."
+          action={<Button onClick={() => openCreateRecurringDialog('income')}>Cargar mi sueldo</Button>}
         />
       ) : (
         <div className="flex flex-col gap-3">
@@ -117,13 +129,14 @@ function RecurringPlans() {
       <RecurringPlanFormDialog
         open={recurringDialogOpen}
         plan={editingPlan}
+        newKind={newRecurringKind}
         onOpenChange={(open) => (open ? undefined : closeRecurringDialog())}
       />
 
       <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => !open && setPendingDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar este gasto fijo?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar {pendingDelete?.kind === 'income' ? 'este ingreso fijo' : 'este gasto fijo'}?</AlertDialogTitle>
             <AlertDialogDescription>
               Los movimientos que ya se generaron quedan intactos — sólo se detienen los futuros.
             </AlertDialogDescription>

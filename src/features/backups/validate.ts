@@ -106,6 +106,11 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
   }
   for (const plan of data.recurringPlans) {
     const { accountId, cardId, description } = plan.template
+    // A salary uses an income category; a gasto plan never does — or the
+    // plan would fail to generate on every app open, silently.
+    if ((plan.kind === 'income') !== (categoryKindById.get(plan.template.categoryId) === 'income')) {
+      throw new Error(`Recurrente "${description}" (${plan.id}): su categoría no es del tipo del plan`)
+    }
     if (cardId !== undefined && !calendarByCard.has(cardId)) {
       throw new Error(`Recurrente "${description}" (${plan.id}): la tarjeta ${cardId} no existe en el backup`)
     }

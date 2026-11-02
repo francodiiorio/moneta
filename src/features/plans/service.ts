@@ -3,6 +3,7 @@ import {
   categoriesRepo,
   creditCardsRepo,
   expensesRepo,
+  incomesRepo,
   installmentPlansRepo,
   recurringPlansRepo,
 } from '@/database/repositories'
@@ -95,10 +96,27 @@ async function materializeDueUnsafe(today: DateStamp = todayStamp()): Promise<Ma
         .filter((occurrence) => occurrence.date > since)
       if (due.length === 0) continue
 
+      const throughDate = due[due.length - 1]!.date
+      if (plan.kind === 'income') {
+        // A salary: an ingreso into its account (the schema guarantees one).
+        const { description, categoryId, amount, currency, accountId } = plan.template
+        const entries = due.map((occurrence) => ({
+          date: occurrence.date,
+          description,
+          categoryId,
+          amount,
+          currency,
+          accountId: accountId!,
+          sourcePlanId: plan.id,
+          occurrenceIndex: occurrence.index,
+        }))
+        await recurringPlansRepo.materializeIncomePlan(plan.id, entries, throughDate)
+        recurringCreated += entries.length
+        continue
+      }
       const entries = due.map((occurrence) =>
         buildTemplateEntry(plan.template, occurrence.date, plan.id, occurrence.index),
       )
-      const throughDate = due[due.length - 1]!.date
       await recurringPlansRepo.materializePlan(plan.id, entries, throughDate)
       recurringCreated += entries.length
     } catch (error) {
@@ -148,8 +166,11 @@ export interface RecurringPlanListItem {
   categoryLabel?: string
   categoryColor?: string
   categoryIcon?: string
-  /** "Débito · Galicia" / "Tarjeta · Visa" — absent when unspecified. */
+  /** "Débito · Galicia" / "Tarjeta · Visa" / "Entra a · Galicia" — absent
+   *  when unspecified. */
   paymentLabel?: string
+  /** What it generates: a gasto, or an ingreso (a salary). */
+  kind: 'expense' | 'income'
   amount: Money
   ruleDescription: string
   isPaused: boolean
@@ -161,10 +182,11 @@ export interface RecurringPlanListItem {
 }
 
 export async function listRecurringPlansWithNext(): Promise<RecurringPlanListItem[]> {
-  const [plans, categories, planExpenses, { accounts, cards }] = await Promise.all([
+  const [plans, categories, planExpenses, incomes, { accounts, cards }] = await Promise.all([
     recurringPlansRepo.listRecurringPlans(),
     categoriesRepo.listCategories(),
     expensesRepo.listPlanExpenses(),
+    incomesRepo.listIncomesInRange('0000-01-01', '9999-12-31'),
     listPaymentOptions(),
   ])
   const categoryById = new Map(categories.map((c) => [c.id, c] as [string, Category]))
@@ -173,9 +195,9 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
   const today = todayStamp()
 
   const generatedCountByPlanId = new Map<string, number>()
-  for (const expense of planExpenses) {
-    if (!expense.sourcePlanId) continue
-    generatedCountByPlanId.set(expense.sourcePlanId, (generatedCountByPlanId.get(expense.sourcePlanId) ?? 0) + 1)
+  for (const entry of [...planExpenses, ...incomes]) {
+    if (!entry.sourcePlanId) continue
+    generatedCountByPlanId.set(entry.sourcePlanId, (generatedCountByPlanId.get(entry.sourcePlanId) ?? 0) + 1)
   }
 
   return plans.map((plan) => {
@@ -189,7 +211,10 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
       categoryLabel: category?.name ?? '—',
       ...(category?.color !== undefined && { categoryColor: category.color }),
       ...(category?.icon !== undefined && { categoryIcon: category.icon }),
-      ...(template.accountId !== undefined && { paymentLabel: `Débito · ${accountName.get(template.accountId) ?? 'cuenta'}` }),
+      kind: plan.kind ?? 'expense',
+      ...(template.accountId !== undefined && {
+        paymentLabel: `${plan.kind === 'income' ? 'Entra a' : 'Débito'} · ${accountName.get(template.accountId) ?? 'cuenta'}`,
+      }),
       ...(template.cardId !== undefined && { paymentLabel: `Tarjeta · ${cardName.get(template.cardId) ?? 'tarjeta'}` }),
       amount: money(template.amount, template.currency),
       ruleDescription: describeRule(plan.rule),
@@ -202,7 +227,11 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
 
 /** Shared by create and update — building a template+rule from form values
  *  never depends on whether a plan already exists. */
-function buildRecurringPlanWrite(values: RecurringPlanFormValues): { template: ExpenseTemplate; rule: RecurringPlan['rule'] } {
+function buildRecurringPlanWrite(values: RecurringPlanFormValues): {
+  kind?: RecurringPlan['kind']
+  template: ExpenseTemplate
+  rule: RecurringPlan['rule']
+} {
   const amount = parseAmount(values.amount, values.currency)
 
   const template: ExpenseTemplate = {
@@ -218,6 +247,7 @@ function buildRecurringPlanWrite(values: RecurringPlanFormValues): { template: E
   const maxOccurrences = values.maxOccurrences ? Number(values.maxOccurrences) : undefined
 
   return {
+    ...(values.kind === 'income' && { kind: 'income' as const }),
     template,
     rule: {
       freq: values.freq,

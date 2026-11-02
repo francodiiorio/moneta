@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { money } from '@/domain/money'
 import {
+  cardCuotaRedates,
   cuotaInOpenStatement,
   installmentPlacement,
   lastPurchaseDay,
@@ -135,24 +136,29 @@ describe('installmentPlacement', () => {
   const all = (cal: CardCalendar, purchase: string, count: number) =>
     Array.from({ length: count }, (_, i) => installmentPlacement(cal, purchase, i))
 
-  it('one cuota per statement, starting at the purchase’s, dated the purchase day', () => {
+  it('one cuota per statement, starting at the purchase’s: the first on the purchase day, each later one on its statement’s close', () => {
     expect(all(visa, '2026-10-10', 3)).toEqual([
       { period: '2026-10', date: '2026-10-10' },
-      { period: '2026-11', date: '2026-11-10' },
-      { period: '2026-12', date: '2026-12-10' },
+      { period: '2026-11', date: '2026-11-25' },
+      { period: '2026-12', date: '2026-12-25' },
     ])
+  })
+
+  it('a later cuota is counted in the month its statement closes, not the purchase day shifted (Apr 24 → October’s cuota in October)', () => {
+    const bbva: CardCalendar = { card: { closingDay: 22, dueDay: 4 }, overrides: [] }
+    expect(installmentPlacement(bbva, '2026-04-24', 5)).toEqual({ period: '2026-10', date: '2026-10-22' })
   })
 
   it('a purchase after the close starts on the next statement', () => {
     expect(all(visa, '2026-10-26', 2).map((p) => p.period)).toEqual(['2026-11', '2026-12'])
   })
 
-  it('a close moved before the cuota’s day keeps it in its statement, dated at the close', () => {
+  it('a corrected close moves the cuota’s date with it', () => {
     const cal: CardCalendar = { ...visa, overrides: [{ period: '2026-11', closeDate: '2026-11-08', dueDate: '2026-11-18' }] }
     expect(all(cal, '2026-10-10', 3)).toEqual([
       { period: '2026-10', date: '2026-10-10' },
       { period: '2026-11', date: '2026-11-08' },
-      { period: '2026-12', date: '2026-12-10' },
+      { period: '2026-12', date: '2026-12-25' },
     ])
   })
 
@@ -183,13 +189,10 @@ describe('compras del día de cierre al resumen siguiente (closingDayToNext)', (
     expect(statementPeriodFor(corrected, '2026-11-01')).toBe('2026-12')
   })
 
-  it('a cuota is capped at the last day its statement takes, never on the close itself', () => {
-    // Bought Oct 22 (→ November): cuota 2 goes to December, dated Nov 22
-    // while that's within December's statement…
+  it('a later cuota is dated on the last day its statement takes — the day before the close, never the close itself', () => {
+    // Bought Oct 22 (→ November): cuota 2 goes to December.
     const capped: CardCalendar = { ...visaNext, overrides: [{ period: '2026-12', closeDate: '2026-12-20', dueDate: '2027-01-04' }] }
-    expect(installmentPlacement(capped, '2026-10-22', 1)).toEqual({ period: '2026-12', date: '2026-11-22' })
-    // …and when December's statement closes on Nov 22, capped at Nov 21:
-    // the close itself would belong to the next statement.
+    expect(installmentPlacement(capped, '2026-10-22', 1)).toEqual({ period: '2026-12', date: '2026-12-19' })
     const late: CardCalendar = { ...visaNext, overrides: [{ period: '2026-12', closeDate: '2026-11-22', dueDate: '2026-12-04' }] }
     expect(installmentPlacement(late, '2026-10-22', 1)).toEqual({ period: '2026-12', date: '2026-11-21' })
   })
@@ -241,5 +244,67 @@ describe('cuotaInOpenStatement', () => {
     expect(cuotaInOpenStatement(card, '2026-09-30', '2026-10-25')).toBe(2)
     expect(cuotaInOpenStatement(card, '2026-07-10', '2026-10-25')).toBe(5)
     expect(cuotaInOpenStatement(card, '2026-10-24', '2026-10-25')).toBe(1)
+  })
+})
+
+describe('cardCuotaRedates', () => {
+  const bbva: CardCalendar = { card: { closingDay: 22, dueDay: 4 }, overrides: [] }
+  const next: CardCalendar = { card: { closingDay: 22, dueDay: 4, closingDayToNext: true }, overrides: [] }
+  const calendars = new Map([
+    ['visa', bbva],
+    ['master', next],
+  ])
+  const cuota = (id: string, index: number, date: string, extra: Partial<Parameters<typeof cardCuotaRedates>[0][number]> = {}) => ({
+    id,
+    date,
+    description: `${id} (cuota ${index + 1}/6)`,
+    status: 'confirmed' as const,
+    cardId: 'visa',
+    statementPeriod: '2026-10',
+    sourcePlanId: 'plan',
+    occurrenceIndex: index,
+    ...extra,
+  })
+
+  it('re-dates later cuotas to their statement’s last purchase day; the first, other plans and unknown cards stay', () => {
+    const changes = cardCuotaRedates(
+      [
+        cuota('first', 0, '2026-04-24'),
+        cuota('later', 5, '2026-09-24'),
+        cuota('noCard', 1, '2026-09-24', { sourcePlanId: 'loan' }),
+        cuota('unknownCard', 1, '2026-09-24', { cardId: 'gone' }),
+        cuota('toNext', 2, '2026-09-24', { cardId: 'master' }),
+      ],
+      new Set(['plan']),
+      calendars,
+      '2026-11-02',
+    )
+    expect(changes).toEqual([
+      { id: 'later', date: '2026-10-22', status: 'confirmed' },
+      // Closing-day purchases go to the next statement: the day before the close.
+      { id: 'toNext', date: '2026-10-21', status: 'confirmed' },
+    ])
+  })
+
+  it('a cuota whose plan was deleted is re-dated too — a recurring gasto without a plan isn’t', () => {
+    const changes = cardCuotaRedates(
+      [
+        cuota('orphan', 3, '2026-09-24', { sourcePlanId: 'deleted' }),
+        cuota('recurring', 3, '2026-09-24', { sourcePlanId: 'deleted', description: 'Netflix' }),
+      ],
+      new Set(['plan']),
+      calendars,
+      '2026-11-02',
+      new Set(['plan']),
+    )
+    expect(changes).toEqual([{ id: 'orphan', date: '2026-10-22', status: 'confirmed' }])
+  })
+
+  it('a date still to come is projected; today’s is spent; running it twice changes nothing', () => {
+    const today = cardCuotaRedates([cuota('t', 1, '2026-10-01')], new Set(['plan']), calendars, '2026-10-22')
+    expect(today).toEqual([{ id: 't', date: '2026-10-22', status: 'confirmed' }])
+    const ahead = cardCuotaRedates([cuota('a', 1, '2026-10-01')], new Set(['plan']), calendars, '2026-10-21')
+    expect(ahead).toEqual([{ id: 'a', date: '2026-10-22', status: 'projected' }])
+    expect(cardCuotaRedates([cuota('a', 1, '2026-10-22', { status: 'projected' })], new Set(['plan']), calendars, '2026-10-21')).toEqual([])
   })
 })

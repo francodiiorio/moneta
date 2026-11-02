@@ -16,6 +16,7 @@ describe('payment method encoding', () => {
 
   it('the form schema rejects a malformed value', () => {
     const base = {
+      kind: 'expense' as const,
       description: 'x',
       categoryId: 'c',
       currency: 'ARS',
@@ -26,5 +27,12 @@ describe('payment method encoding', () => {
     }
     expect(recurringPlanFormSchema.safeParse({ ...base, paymentMethod: 'bank:x' }).success).toBe(false)
     expect(recurringPlanFormSchema.safeParse({ ...base, paymentMethod: 'card:c1' }).success).toBe(true)
+  })
+
+  it('an ingreso fijo needs the account it goes into — never a card', () => {
+    const base = { kind: 'income' as const, description: 'Sueldo', categoryId: 'c', currency: 'ARS', amount: '1', freq: 'monthly' as const, interval: '1', startDate: '2026-01-01' }
+    expect(recurringPlanFormSchema.safeParse({ ...base, paymentMethod: '' }).success).toBe(false)
+    expect(recurringPlanFormSchema.safeParse({ ...base, paymentMethod: 'card:c1' }).success).toBe(false)
+    expect(recurringPlanFormSchema.safeParse({ ...base, paymentMethod: 'account:a1' }).success).toBe(true)
   })
 })

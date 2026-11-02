@@ -36,14 +36,14 @@ export function App() {
           const total = recurringCreated + installmentsConfirmed
           if (total > 0) {
             const parts = []
-            if (recurringCreated > 0) parts.push(`${recurringCreated} gasto${recurringCreated === 1 ? '' : 's'} fijo${recurringCreated === 1 ? '' : 's'}`)
+            if (recurringCreated > 0) parts.push(`${recurringCreated} fijo${recurringCreated === 1 ? '' : 's'}`)
             if (installmentsConfirmed > 0) parts.push(`${installmentsConfirmed} cuota${installmentsConfirmed === 1 ? '' : 's'}`)
             toast.info(`Se pusieron al día ${parts.join(' y ')}`)
           }
           if (failedPlanIds.length > 0) {
             toast.error(
               `No se pudo${failedPlanIds.length === 1 ? '' : 'ieron'} poner al día ${failedPlanIds.length} ` +
-                `gasto${failedPlanIds.length === 1 ? '' : 's'} fijo${failedPlanIds.length === 1 ? '' : 's'} — revisalo en Presupuesto → Gastos fijos`,
+                `fijo${failedPlanIds.length === 1 ? '' : 's'} — revisalo en Presupuesto → Fijos`,
             )
           }
         })

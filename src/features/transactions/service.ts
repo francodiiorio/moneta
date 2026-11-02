@@ -432,7 +432,7 @@ export async function listQuickPicks(kind: MovementKind, today: DateStamp = toda
   const [entries, accounts, cards] = await Promise.all([
     kind === 'expense'
       ? expensesRepo.listExpensesInRange(from, today).then((list) => list.filter((e) => e.sourcePlanId === undefined && e.status === 'confirmed'))
-      : incomesRepo.listIncomesInRange(from, today),
+      : incomesRepo.listIncomesInRange(from, today).then((list) => list.filter((i) => i.sourcePlanId === undefined)),
     accountsRepo.listAccounts(),
     creditCardsRepo.listCreditCards(),
   ])

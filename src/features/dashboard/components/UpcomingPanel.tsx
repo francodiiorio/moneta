@@ -11,7 +11,7 @@ export function UpcomingPanel() {
   const today = todayStamp()
 
   return (
-    <Panel title="Se viene" icon={CalendarClock} to="/presupuestos?tab=fijos" linkLabel="Gastos fijos">
+    <Panel title="Se viene" icon={CalendarClock} to="/presupuestos?tab=fijos" linkLabel="Fijos">
       {upcoming === undefined ? (
         <div className="h-24 animate-pulse rounded-lg bg-muted" />
       ) : upcoming.length === 0 ? (
@@ -30,12 +30,12 @@ export function UpcomingPanel() {
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   {formatShortDate(item.date)} · {relativeDays(daysBetween(today, item.date))}
                   <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                    {item.kind === 'installment' ? 'Cuota' : 'Fijo'}
+                    {item.kind === 'installment' ? 'Cuota' : item.kind === 'income' ? 'Ingreso' : 'Fijo'}
                   </Badge>
                 </span>
               </span>
               <span className="shrink-0 text-sm font-medium">
-                <MoneyText value={item.amount} />
+                <MoneyText value={item.amount} signColor={item.kind === 'income'} />
               </span>
             </div>
           ))}

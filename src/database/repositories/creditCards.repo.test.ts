@@ -217,8 +217,8 @@ describe('cuotas y recurrentes con tarjeta (Fase 4b)', () => {
     const cuotas = (await db.expenses.toArray()).sort((a, b) => (a.occurrenceIndex ?? 0) - (b.occurrenceIndex ?? 0))
     expect(cuotas.map((c) => [c.date, c.statementPeriod, c.cardId])).toEqual([
       ['2026-10-26', '2026-11', card.id],
-      ['2026-11-26', '2026-12', card.id],
-      ['2026-12-26', '2027-01', card.id],
+      ['2026-12-25', '2026-12', card.id],
+      ['2027-01-25', '2027-01', card.id],
     ])
     expect(cuotas.map((c) => c.status)).toEqual(['confirmed', 'projected', 'projected'])
   })
@@ -448,5 +448,47 @@ describe('revisión: la opción del día de cierre con cuotas y resúmenes conci
         updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, closingDayToNext: true, notes: undefined }),
       ).rejects.toThrow(/pagado o conciliado/)
     })
+  })
+})
+
+describe('cuotas al cierre de su resumen (Etapa 9)', () => {
+  it('a closed statement’s close corrected to a later day takes its cuota with it — no longer spent if that’s ahead', async () => {
+    const { createInstallmentPlan } = await import('./installmentPlans.repo')
+    const card = await createCreditCard({ name: 'Visa 30', closingDay: 30, dueDay: 10 })
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-02T12:00:00'))
+    try {
+      const plan = await createInstallmentPlan(
+        { description: 'Tele', categoryId: category.id, currency: 'ARS', totalAmount: 200_00, count: 2, firstDueDate: '2026-09-10', purchaseDate: '2026-09-10', cardId: card.id },
+        '2026-11-02',
+      )
+      const second = async () => (await db.expenses.where('sourcePlanId').equals(plan.id).toArray()).find((e) => e.occurrenceIndex === 1)
+      expect(await second()).toMatchObject({ date: '2026-10-30', status: 'confirmed', statementPeriod: '2026-10' })
+      await setStatementOverride({ cardId: card.id, period: '2026-10', closeDate: '2026-11-05', dueDate: '2026-11-15' })
+      expect(await second()).toMatchObject({ date: '2026-11-05', status: 'projected', statementPeriod: '2026-10' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a cuota left by a deleted plan stays in its statement when its close moves earlier', async () => {
+    const { createInstallmentPlan, deleteInstallmentPlan } = await import('./installmentPlans.repo')
+    const card = await createCreditCard({ name: 'Visa 30', closingDay: 30, dueDay: 10 })
+    const category = await createCategory({ kind: 'expense', name: 'Comida' })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-02T12:00:00'))
+    try {
+      const plan = await createInstallmentPlan(
+        { description: 'Tele', categoryId: category.id, currency: 'ARS', totalAmount: 200_00, count: 2, firstDueDate: '2026-09-10', purchaseDate: '2026-09-10', cardId: card.id },
+        '2026-11-02',
+      )
+      await deleteInstallmentPlan(plan.id)
+      await setStatementOverride({ cardId: card.id, period: '2026-10', closeDate: '2026-10-28', dueDate: '2026-11-08' })
+      const orphan = (await db.expenses.toArray()).find((e) => e.occurrenceIndex === 1)
+      expect(orphan).toMatchObject({ statementPeriod: '2026-10', date: '2026-10-28' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

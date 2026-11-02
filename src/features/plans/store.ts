@@ -8,7 +8,9 @@ interface PlansUiState {
   // `editingRecurringId === null` means "creating a new one".
   recurringDialogOpen: boolean
   editingRecurringId: string | null
-  openCreateRecurringDialog: () => void
+  /** What a new plan generates (an ingreso fijo is a salary). */
+  newRecurringKind: 'expense' | 'income'
+  openCreateRecurringDialog: (kind?: 'expense' | 'income') => void
   openEditRecurringDialog: (id: string) => void
   closeRecurringDialog: () => void
 
@@ -32,7 +34,8 @@ interface PlansUiState {
 export const usePlansUiStore = create<PlansUiState>((set) => ({
   recurringDialogOpen: false,
   editingRecurringId: null,
-  openCreateRecurringDialog: () => set({ recurringDialogOpen: true, editingRecurringId: null }),
+  newRecurringKind: 'expense',
+  openCreateRecurringDialog: (kind = 'expense') => set({ recurringDialogOpen: true, editingRecurringId: null, newRecurringKind: kind }),
   openEditRecurringDialog: (id) => set({ recurringDialogOpen: true, editingRecurringId: id }),
   closeRecurringDialog: () => set({ recurringDialogOpen: false, editingRecurringId: null }),
 

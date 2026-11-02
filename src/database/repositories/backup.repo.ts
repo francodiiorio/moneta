@@ -282,6 +282,9 @@ async function assertMergedMovementsFit(added: {
   }
   for (const plan of added.recurringPlans) {
     const { accountId, cardId, description } = plan.template
+    if ((plan.kind === 'income') !== (categoryKindById.get(plan.template.categoryId) === 'income')) {
+      throw new Error(`Recurrente "${description}" (${plan.id}): su categoría no es del tipo del plan (en tu base local)`)
+    }
     if (cardId !== undefined && !cardIds.has(cardId)) {
       throw new Error(`Recurrente "${description}" (${plan.id}): la tarjeta ${cardId} no existe`)
     }
@@ -360,6 +363,19 @@ async function assertMergedMovementsFit(added: {
  */
 export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary> {
   return db.transaction('rw', allTables(), async () => {
+    // A salary's ingresos are deduplicated like a recurring gasto's (see
+    // above): by id and by plan + date — each device materializes the same
+    // occurrence under its own random id.
+    const incomeOccurrenceKeys = new Set(
+      (await db.incomes.toArray()).filter((i) => i.sourcePlanId !== undefined).map((i) => `${i.sourcePlanId}:${i.date}`),
+    )
+    const incomingIncomes = data.incomes.filter((i) => {
+      if (i.sourcePlanId === undefined) return true
+      const key = `${i.sourcePlanId}:${i.date}`
+      if (incomeOccurrenceKeys.has(key)) return false
+      incomeOccurrenceKeys.add(key)
+      return true
+    })
     const [
       categories,
       recurringPlans,
@@ -388,7 +404,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       addMissing(db.assetPrices, data.assetPrices),
       addMissing(db.investmentLots, data.investmentLots),
       addMissing(db.accounts, data.accounts),
-      addMissing(db.incomes, data.incomes),
+      addMissing(db.incomes, incomingIncomes),
       addMissing(db.accountAdjustments, data.accountAdjustments),
       addMissing(db.transfers, data.transfers),
       addMissing(db.creditCards, data.creditCards),
@@ -493,9 +509,13 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
     const allPlans = await db.recurringPlans.toArray()
     await Promise.all(
       allPlans.map(async (plan) => {
-        const planExpenses = await db.expenses.where('sourcePlanId').equals(plan.id).toArray()
-        if (planExpenses.length === 0) return
-        const latestDate = planExpenses.reduce((max, e) => (e.date > max ? e.date : max), '')
+        // A salary plan generates ingresos, a gasto plan gastos.
+        const generated = [
+          ...(await db.expenses.where('sourcePlanId').equals(plan.id).toArray()),
+          ...(await db.incomes.filter((i) => i.sourcePlanId === plan.id).toArray()),
+        ]
+        if (generated.length === 0) return
+        const latestDate = generated.reduce((max, e) => (e.date > max ? e.date : max), '')
         if (!plan.lastMaterializedDate || latestDate > plan.lastMaterializedDate) {
           await db.recurringPlans.update(plan.id, { lastMaterializedDate: latestDate })
         }
@@ -515,7 +535,7 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       assetPrices: { added: assetPrices.added.length, skipped: assetPrices.skipped },
       investmentLots: { added: investmentLots.added.length, skipped: investmentLots.skipped },
       accounts: { added: accounts.added.length, skipped: accounts.skipped },
-      incomes: { added: incomes.added.length, skipped: incomes.skipped },
+      incomes: { added: incomes.added.length, skipped: data.incomes.length - incomes.added.length },
       accountAdjustments: { added: accountAdjustments.added.length, skipped: accountAdjustments.skipped },
       transfers: { added: transfers.added.length, skipped: transfers.skipped },
       creditCards: { added: creditCards.added.length, skipped: creditCards.skipped },

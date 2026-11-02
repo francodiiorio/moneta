@@ -1,17 +1,14 @@
 import type { CardStatement, CreditCard, Expense } from '@/domain/entities'
 import { money, sumMoney, type Money } from '@/domain/money'
-import { addMonths } from 'date-fns'
 import {
   addDays,
   dayOfMonth,
   formatMonthLabel,
-  fromDateStamp,
   isValidDateStamp,
   monthOf,
   monthRange,
   monthsBetween,
   shiftMonth,
-  toDateStamp,
   type DateStamp,
   type MonthStamp,
 } from '@/lib/dates'
@@ -212,15 +209,68 @@ export interface InstallmentPlacement {
 /**
  * Where cuota `index` (0-based) of a card purchase on `purchaseDate`
  * goes: the purchase's own statement + `index` — a card bills one cuota
- * per cycle, never two in one statement nor none in another — dated the
- * purchase day `index` months later, but never after the last day that
- * statement takes (a cuota can't sit in a statement that closed before it). Used
- * both when the plan is created and when corrected dates re-place its
- * cuotas, so both paths always agree.
+ * per cycle, never two in one statement nor none in another. The first
+ * cuota is the purchase itself, on its day; each later one is billed — and
+ * counted as spent — when its statement closes, so it's dated on the last
+ * day that statement takes (never the purchase day shifted months: the
+ * October statement's cuota of an April 24 purchase would be dated
+ * September 24 and land in September's reports). Used both when the plan
+ * is created and when corrected dates re-place its cuotas, so both paths
+ * always agree.
  */
 export function installmentPlacement(calendar: CardCalendar, purchaseDate: DateStamp, index: number): InstallmentPlacement {
   const period = shiftMonth(statementPeriodFor(calendar, purchaseDate), index)
-  const sameDay = toDateStamp(addMonths(fromDateStamp(purchaseDate), index))
-  const last = lastPurchaseDay(calendar, period)
-  return { period, date: sameDay <= last ? sameDay : last }
+  return { period, date: index === 0 ? purchaseDate : lastPurchaseDay(calendar, period) }
+}
+
+/** A card's calendar from its stored rows: the card and the statements
+ *  whose dates were corrected. */
+export function cardCalendarOf(
+  card: CardCalendar['card'],
+  statements: readonly (Pick<CardStatement, 'period' | 'closeDate' | 'dueDate'> & { cardId: string })[],
+  cardId: string,
+): CardCalendar {
+  return { card, overrides: statements.filter((s) => s.cardId === cardId) }
+}
+
+export type DatedCuota = Pick<
+  Expense,
+  'id' | 'date' | 'status' | 'cardId' | 'statementPeriod' | 'sourcePlanId' | 'occurrenceIndex' | 'description'
+>
+
+/** How a plan names each cuota it generates ("Heladera (cuota 2/6)") —
+ *  what tells a cuota whose plan was deleted apart from a recurring gasto,
+ *  which also carries a sourcePlanId. */
+export const PLAN_CUOTA_DESCRIPTION = /\(cuota \d+\/\d+\)$/
+
+/**
+ * The card cuotas (after the first) not yet dated the way
+ * installmentPlacement dates them — on their statement's last purchase
+ * day —, with their new date and status (spent once that day comes). For
+ * migrating cuotas loaded under the old rule; returns only what changes.
+ */
+export function cardCuotaRedates(
+  expenses: readonly DatedCuota[],
+  cardPlanIds: ReadonlySet<string>,
+  calendars: ReadonlyMap<string, CardCalendar>,
+  today: DateStamp,
+  /** Every plan that still exists (installment and recurring): given, a
+   *  card cuota whose plan is gone — left when it was deleted — is
+   *  re-dated too. */
+  existingPlanIds?: ReadonlySet<string>,
+): { id: string; date: DateStamp; status: Expense['status'] }[] {
+  return expenses.flatMap((expense) => {
+    if (expense.sourcePlanId === undefined) return []
+    const orphan =
+      existingPlanIds !== undefined &&
+      !existingPlanIds.has(expense.sourcePlanId) &&
+      PLAN_CUOTA_DESCRIPTION.test(expense.description)
+    if (!cardPlanIds.has(expense.sourcePlanId) && !orphan) return []
+    if (expense.occurrenceIndex === undefined || expense.occurrenceIndex < 1) return []
+    const calendar = expense.cardId !== undefined ? calendars.get(expense.cardId) : undefined
+    if (!calendar || expense.statementPeriod === undefined) return []
+    const date = lastPurchaseDay(calendar, expense.statementPeriod)
+    const status = date <= today ? 'confirmed' : 'projected'
+    return date === expense.date && status === expense.status ? [] : [{ id: expense.id, date, status }]
+  })
 }

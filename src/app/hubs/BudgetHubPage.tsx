@@ -8,7 +8,7 @@ export function BudgetHubPage() {
       title="Presupuesto"
       tabs={[
         { value: 'presupuestos', label: 'Presupuestos', content: <BudgetsPage embedded /> },
-        { value: 'fijos', label: 'Gastos fijos', content: <PlansPage kind="recurring" /> },
+        { value: 'fijos', label: 'Fijos', content: <PlansPage kind="recurring" /> },
       ]}
     />
   )

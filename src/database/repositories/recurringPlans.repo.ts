@@ -5,10 +5,13 @@ import { invariant } from '@/lib/invariant'
 import { firstPendingOccurrence } from '@/domain/recurrence'
 import type { DateStamp } from '@/lib/dates'
 import { deleteAllBySourcePlanId, saveExpense, type ExpenseInput } from './expenses.repo'
+import { saveIncome, type IncomeInput } from './incomes.repo'
 import { assertAccountAccepts } from './accounts.repo'
 import { getCardCalendar } from './creditCards.repo'
 
 export interface CreateRecurringPlanInput {
+  /** Absent: a gasto. See RecurringPlan.kind. */
+  kind?: RecurringPlan['kind']
   template: ExpenseTemplate
   rule: RecurrenceRule
 }
@@ -21,6 +24,12 @@ export interface CreateRecurringPlanInput {
  *  Otherwise every app open would fail to materialize it. */
 async function assertPaymentMethod(input: CreateRecurringPlanInput, lastMaterializedDate?: DateStamp): Promise<void> {
   const { accountId, cardId, currency } = input.template
+  if (input.kind === 'income') {
+    invariant(accountId !== undefined, 'Un ingreso fijo necesita la cuenta a la que entra')
+    invariant(cardId === undefined, 'Un ingreso fijo no puede entrar a una tarjeta')
+    const category = await db.categories.get(input.template.categoryId)
+    invariant(category?.kind === 'income', 'Un ingreso fijo necesita una categoría de ingreso')
+  }
   if (accountId !== undefined) {
     const firstPending = firstPendingOccurrence(input.rule, lastMaterializedDate)
     if (firstPending !== undefined) {
@@ -44,13 +53,14 @@ export async function createRecurringPlan(input: CreateRecurringPlanInput): Prom
   const now = new Date().toISOString()
   const plan: RecurringPlan = {
     id: generateId(),
+    ...(input.kind === 'income' && { kind: 'income' as const }),
     template: input.template,
     rule: input.rule,
     isPaused: false,
     createdAt: now,
     updatedAt: now,
   }
-  await db.transaction('rw', [db.recurringPlans, db.accounts, db.creditCards, db.cardStatements], async () => {
+  await db.transaction('rw', [db.recurringPlans, db.accounts, db.creditCards, db.cardStatements, db.categories], async () => {
     await assertPaymentMethod(input)
     await db.recurringPlans.add(plan)
   })
@@ -76,9 +86,11 @@ export async function createRecurringPlan(input: CreateRecurringPlanInput): Prom
 export async function updateRecurringPlan(id: string, input: CreateRecurringPlanInput): Promise<RecurringPlan> {
   invariant(input.template.amount > 0, `El monto debe ser mayor a cero, recibido: ${input.template.amount}`)
 
-  const updated = await db.transaction('rw', [db.recurringPlans, db.accounts, db.creditCards, db.cardStatements], async () => {
+  const updated = await db.transaction('rw', [db.recurringPlans, db.accounts, db.creditCards, db.cardStatements, db.categories], async () => {
     const existing = await db.recurringPlans.get(id)
     invariant(existing, `No se encontró el gasto fijo: ${id}`)
+    // What a plan generates never changes: its history is one kind.
+    invariant((existing.kind ?? 'expense') === (input.kind ?? 'expense'), 'Un gasto fijo no se puede convertir en ingreso fijo, ni al revés')
     await assertPaymentMethod(input, existing.lastMaterializedDate)
     return db.recurringPlans.update(id, {
       template: input.template,
@@ -115,9 +127,11 @@ export async function deleteRecurringPlan(
   id: string,
   options?: { deleteGeneratedExpenses?: boolean },
 ): Promise<void> {
-  await db.transaction('rw', db.recurringPlans, db.expenses, async () => {
+  await db.transaction('rw', db.recurringPlans, db.expenses, db.incomes, async () => {
     if (options?.deleteGeneratedExpenses) {
       await deleteAllBySourcePlanId(id)
+      // An income plan's ingresos (no index on it: a small table, scanned).
+      await db.incomes.filter((income) => income.sourcePlanId === id).delete()
     }
     await db.recurringPlans.delete(id)
   })
@@ -142,6 +156,25 @@ export async function materializePlan(
   await db.transaction('rw', tables, async () => {
     for (const entry of entries) {
       await saveExpense(entry)
+    }
+    await db.recurringPlans.update(planId, {
+      lastMaterializedDate: throughDate,
+      updatedAt: new Date().toISOString(),
+    })
+  })
+}
+
+/** materializePlan for an income plan: its ingresos and the watermark,
+ *  atomically. */
+export async function materializeIncomePlan(
+  planId: string,
+  entries: readonly IncomeInput[],
+  throughDate: DateStamp,
+): Promise<void> {
+  if (entries.length === 0) return
+  await db.transaction('rw', [db.recurringPlans, db.incomes, db.categories, db.accounts], async () => {
+    for (const entry of entries) {
+      await saveIncome(entry)
     }
     await db.recurringPlans.update(planId, {
       lastMaterializedDate: throughDate,

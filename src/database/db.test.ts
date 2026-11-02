@@ -283,3 +283,54 @@ describe('db.version(9) upgrade — legacy plan templates are cleaned', () => {
     }
   })
 })
+
+// Etapa 9, Fase 3: a card plan's later cuotas were dated on the purchase
+// day shifted N months (an October-statement cuota of an April 24 purchase
+// on September 24). version(11) re-dates them to their statement's last
+// purchase day — and their status to match.
+describe('db.version(11) upgrade — card cuotas dated on their statement’s close', () => {
+  it('re-dates every card cuota after the first, leaves the first and non-card plans alone', async () => {
+    // A database at version 10: version 11 changes no table, so its stores
+    // are the current ones.
+    const reference = new MonetaDatabase(`moneta-test-ref-${Date.now()}`)
+    const stores = Object.fromEntries(
+      reference.tables.map((t) => [t.name, [t.schema.primKey.src, ...t.schema.indexes.map((i) => i.src)].join(', ')]),
+    )
+    const name = `moneta-test-upgrade-v11-${Date.now()}`
+    const legacyDb = new Dexie(name)
+    legacyDb.version(10).stores(stores)
+    await legacyDb.open()
+    const now = '2026-01-01T00:00:00.000Z'
+    await legacyDb.table('creditCards').add({ id: 'visa', name: 'Visa', closingDay: 22, dueDay: 4, isArchived: false, order: 0, createdAt: now, updatedAt: now })
+    await legacyDb.table('cardStatements').add({ id: 's1', cardId: 'visa', period: '2026-11', closeDate: '2026-11-19', dueDate: '2026-12-03', createdAt: now, updatedAt: now })
+    const plan = { categoryId: 'c', currency: 'ARS', totalAmount: 600, count: 6, scheduleCache: [100, 100, 100, 100, 100, 100], createdAt: now, updatedAt: now }
+    await legacyDb.table('installmentPlans').bulkAdd([
+      { ...plan, id: 'card-plan', description: 'Equipaje', firstDueDate: '2026-04-24', purchaseDate: '2026-04-24', cardId: 'visa' },
+      { ...plan, id: 'loan', description: 'Préstamo', firstDueDate: '2026-09-10', purchaseDate: '2026-09-10' },
+    ])
+    const cuota = (id: string, sourcePlanId: string, occurrenceIndex: number, date: string, status: string, extra = {}) => ({
+      id, sourcePlanId, occurrenceIndex, date, status, amount: 100, currency: 'ARS', categoryId: 'c', description: id, createdAt: now, updatedAt: now, ...extra,
+    })
+    await legacyDb.table('expenses').bulkAdd([
+      cuota('c0', 'card-plan', 0, '2026-04-24', 'confirmed', { cardId: 'visa', statementPeriod: '2026-05' }),
+      cuota('c5', 'card-plan', 5, '2026-09-24', 'confirmed', { cardId: 'visa', statementPeriod: '2026-10' }),
+      // Old rule: dated Oct 24, already "spent"; its statement closes Nov 19.
+      cuota('c6', 'card-plan', 6, '2026-10-24', 'confirmed', { cardId: 'visa', statementPeriod: '2026-11' }),
+      cuota('l1', 'loan', 1, '2026-10-10', 'confirmed'),
+    ])
+    legacyDb.close()
+
+    const upgraded = new MonetaDatabase(name)
+    try {
+      await upgraded.open()
+      const byId = new Map((await upgraded.expenses.toArray()).map((e) => [e.id, e]))
+      expect(byId.get('c0')).toMatchObject({ date: '2026-04-24', status: 'confirmed' })
+      expect(byId.get('c5')).toMatchObject({ date: '2026-10-22', status: 'confirmed' })
+      expect(byId.get('c6')?.date).toBe('2026-11-19')
+      expect(byId.get('l1')).toMatchObject({ date: '2026-10-10', status: 'confirmed' })
+    } finally {
+      upgraded.close()
+      await Dexie.delete(name)
+    }
+  })
+})
