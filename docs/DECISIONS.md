@@ -1748,3 +1748,21 @@ con una nube ajena, y los nombres de tarjeta y de gastos fijos ya dicen bastante
 
 **Descartado:** una suscripción `webcal://` (necesita un servidor) y Web Push (también,
 y en iOS sólo con la PWA instalada).
+
+## "Libre de cuotas": cada cuota en el mes en que se paga (Etapa 9, Fase 4)
+
+**Problema:** la pestaña Cuotas listaba compra por compra cuánto faltaba, pero no
+respondía lo que se pregunta quien tiene varias: ¿cuándo termino de pagar todo, y cuánto
+se me va cada mes hasta entonces?
+
+**Decisión:** arriba de la lista, `domain/installments:cuotaTimeline` arma los meses desde
+el actual hasta la última cuota (con los huecos), un total por moneda por mes, qué compra
+termina cada mes, y el primer mes libre. Una cuota con tarjeta cuenta en el mes en que
+**vence su resumen** — cuando sale la plata —, igual que "¿cuánto me queda?"; una sin
+tarjeta, en su fecha. Así "este mes pagás $X en cuotas" coincide con el Inicio (y no con
+Presupuestos, que mira el mes del resumen: es cuánto se gastó, no cuándo se paga). Las
+cuotas del mes ya generadas también cuentan: se pagan este mes. La barra de cada mes se
+mide en la moneda base a la tasa de hoy sólo para dibujarla (sin tasa, esa parte no
+suma); el monto que se lee es el de cada moneda, sin convertir. Una compra borrada sale
+de la línea de tiempo aunque sus cuotas ya generadas sigan en su resumen (y en el Inicio):
+borrarla es decir que ya no se sigue como compra en cuotas.

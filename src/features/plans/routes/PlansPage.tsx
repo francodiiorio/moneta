@@ -19,11 +19,13 @@ import { Label } from '@/components/ui/label'
 import { usePlansUiStore, type PlanKind } from '../store'
 import { useRecurringPlans } from '../hooks/useRecurringPlans'
 import { useInstallmentPlans } from '../hooks/useInstallmentPlans'
+import { useCuotaTimeline } from '../hooks/useCuotaTimeline'
 import { RecurringPlanFormDialog } from '../components/RecurringPlanFormDialog'
 import { InstallmentPlanFormDialog } from '../components/InstallmentPlanFormDialog'
 import { InstallmentPlanEditDialog } from '../components/InstallmentPlanEditDialog'
 import { RecurringPlanRow } from '../components/RecurringPlanRow'
 import { InstallmentPlanRow } from '../components/InstallmentPlanRow'
+import { CuotaTimeline } from '../components/CuotaTimeline'
 import { removeInstallmentPlan, removeRecurringPlan, setRecurringPlanPaused } from '../service'
 
 interface PlansPageProps {
@@ -173,6 +175,7 @@ function InstallmentPlans() {
     closeInstallmentEditDialog,
   } = usePlansUiStore()
   const plans = useInstallmentPlans()
+  const timeline = useCuotaTimeline()
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const editingPlan = plans?.find((item) => item.id === installmentEditId)?.plan ?? null
@@ -213,16 +216,19 @@ function InstallmentPlans() {
           action={<Button onClick={openInstallmentDialog}>Nueva compra en cuotas</Button>}
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {plans.map((item) => (
-            <InstallmentPlanRow
-              key={item.id}
-              item={item}
-              onEdit={() => openInstallmentEditDialog(item.id)}
-              onDelete={() => setPendingDeleteId(item.id)}
-            />
-          ))}
-        </div>
+        <>
+          <CuotaTimeline timeline={timeline} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {plans.map((item) => (
+              <InstallmentPlanRow
+                key={item.id}
+                item={item}
+                onEdit={() => openInstallmentEditDialog(item.id)}
+                onDelete={() => setPendingDeleteId(item.id)}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       <InstallmentPlanFormDialog

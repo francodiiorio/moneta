@@ -2,17 +2,21 @@ import {
   accountsRepo,
   categoriesRepo,
   creditCardsRepo,
+  exchangeRatesRepo,
   expensesRepo,
   incomesRepo,
   installmentPlansRepo,
   recurringPlansRepo,
+  settingsRepo,
 } from '@/database/repositories'
 import type { Account, Category, CreditCard, ExpenseTemplate, InstallmentPlan, RecurringPlan } from '@/domain/entities'
 import type { ExpenseInput } from '@/database/repositories/expenses.repo'
 import { describeRule, generateOccurrences, nextOccurrenceAfter } from '@/domain/recurrence'
 import { cardInstallmentProgress, cuotaInOpenStatement, statementDates, statementPeriodFor, type CardCalendar, type CardInstallmentProgress } from '@/domain/cards'
 import { money, parseAmount, sub, sumMoney, type Money } from '@/domain/money'
-import { todayStamp, type DateStamp } from '@/lib/dates'
+import { convert, MissingRateError } from '@/domain/currency'
+import { cuotaTimeline, type TimelineCuota } from '@/domain/installments'
+import { monthOf, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 import { parsePaymentMethod } from './schema'
 import type { InstallmentPlanEditFormValues, InstallmentPlanFormValues, RecurringPlanFormValues } from './schema'
@@ -501,3 +505,76 @@ export async function removeInstallmentPlan(id: string): Promise<void> {
 }
 
 export const listExpenseCategories = () => categoriesRepo.listActiveCategories('expense')
+
+export interface CuotaTimelineMonth {
+  month: MonthStamp
+  /** One per currency. */
+  totals: Money[]
+  /** The month's size next to the largest one (0–1), in the base currency
+   *  at today's rate — only to draw it; an amount without a rate is left
+   *  out of it. */
+  share: number
+  /** Descriptions of the purchases whose last cuota is this month. */
+  ending: string[]
+}
+
+export interface CuotaTimelineView {
+  /** The month it starts from — "this month" when it was computed. */
+  from: MonthStamp
+  months: CuotaTimelineMonth[]
+  freeFrom: MonthStamp | undefined
+}
+
+/**
+ * What's left to pay in cuotas, month by month from this one, and the
+ * month you're free of them. A card cuota counts in the month its
+ * statement is due (when the money leaves), any other on its own date.
+ */
+export async function getCuotaTimeline(today: DateStamp = todayStamp()): Promise<CuotaTimelineView> {
+  const [plans, planExpenses, settings, rates] = await Promise.all([
+    installmentPlansRepo.listInstallmentPlans(),
+    expensesRepo.listPlanExpenses(),
+    settingsRepo.getSettings(),
+    exchangeRatesRepo.listExchangeRates(),
+  ])
+  const planById = new Map(plans.map((p) => [p.id, p]))
+  const calendars = new Map<string, CardCalendar>()
+  const cuotas: TimelineCuota[] = []
+  for (const expense of planExpenses) {
+    if (expense.sourcePlanId === undefined || !planById.has(expense.sourcePlanId)) continue
+    let month = monthOf(expense.date)
+    if (expense.cardId !== undefined && expense.statementPeriod !== undefined) {
+      const calendar = calendars.get(expense.cardId) ?? (await creditCardsRepo.getCardCalendar(expense.cardId))
+      calendars.set(expense.cardId, calendar)
+      month = monthOf(statementDates(calendar, expense.statementPeriod).dueDate)
+    }
+    cuotas.push({ planId: expense.sourcePlanId, month, amount: money(expense.amount, expense.currency) })
+  }
+
+  const from = monthOf(today)
+  const timeline = cuotaTimeline(cuotas, from)
+  const inBase = (totals: readonly Money[]) =>
+    sumMoney(
+      settings.baseCurrency,
+      totals.flatMap((t) => {
+        try {
+          return [convert(t, settings.baseCurrency, rates, today, settings.rateProfile)]
+        } catch (error) {
+          if (error instanceof MissingRateError) return []
+          throw error
+        }
+      }),
+    ).amount
+  const sizes = timeline.months.map((m) => inBase(m.totals))
+  const largest = Math.max(0, ...sizes)
+  return {
+    from,
+    freeFrom: timeline.freeFrom,
+    months: timeline.months.map((m, i) => ({
+      month: m.month,
+      totals: m.totals,
+      share: largest > 0 ? (sizes[i] ?? 0) / largest : 0,
+      ending: m.endingPlanIds.map((id) => planById.get(id)?.description ?? '').filter(Boolean),
+    })),
+  }
+}

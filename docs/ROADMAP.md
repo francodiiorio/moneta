@@ -278,8 +278,10 @@ finanzas personales" en `docs/DECISIONS.md`. Cada fase se publica por separado.
 4. **Que vuelvas a abrirla** — (4a, hecho) vencimientos al calendario del celular: desde
    "Se viene", un `.ics` armado en el dispositivo con los cierres y vencimientos de cada
    tarjeta y los gastos fijos y cuotas que no van con tarjeta, de los próximos 12 meses,
-   con aviso el día antes; montos opcionales (apagados por defecto). Pendiente: línea de tiempo
-   "libre de cuotas", observaciones simples por comercio y categoría.
+   con aviso el día antes; montos opcionales (apagados por defecto). (4b, hecho) "Libre de
+   cuotas": la pestaña Cuotas arranca con el mes en que terminás de pagarlas y una barra
+   por mes con lo que se va (las de tarjeta en el mes en que vence su resumen) y qué
+   compra termina. Pendiente: observaciones simples por comercio y categoría.
 
 Fuera de esta etapa, a decidir aparte: sincronizar celular y compu (requiere revisar la
 restricción de privacidad), gasto ajustado por inflación (necesita el IPC).

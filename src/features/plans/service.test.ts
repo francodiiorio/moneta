@@ -6,12 +6,14 @@ import { createCategory } from '@/database/repositories/categories.repo'
 import { createRecurringPlan, listRecurringPlans, setRecurringPlanPaused } from '@/database/repositories/recurringPlans.repo'
 import * as recurringPlansRepoModule from '@/database/repositories/recurringPlans.repo'
 import { createInstallmentPlan } from '@/database/repositories/installmentPlans.repo'
+import { createCreditCard } from '@/database/repositories/creditCards.repo'
 import * as expensesRepoModule from '@/database/repositories/expenses.repo'
 import { generateId } from '@/lib/ids'
 import { todayStamp } from '@/lib/dates'
 import type { RecurrenceRule, ExpenseTemplate } from '@/domain/entities'
 import {
   createRecurringPlanFromForm,
+  getCuotaTimeline,
   listInstallmentPlansWithProgress,
   listRecurringPlansWithNext,
   materializeDue,
@@ -961,5 +963,69 @@ describe('ingreso fijo (sueldo)', () => {
     const { getSpentAndCommittedByCategoryInRange } = await import('@/features/reports/service')
     const { committed } = await getSpentAndCommittedByCategoryInRange('2099-01-01', '2099-01-31')
     expect(committed.items).toEqual([])
+  })
+})
+
+describe('getCuotaTimeline', () => {
+  afterEach(async () => {
+    await Promise.all([db.creditCards.clear(), db.cardStatements.clear()])
+  })
+
+  it('a card cuota counts when its statement is due, any other on its date; free the month after the last', async () => {
+    const category = await createCategory({ kind: 'expense', name: 'Hogar' })
+    const visa = await createCreditCard({ name: 'Visa', closingDay: 22, dueDay: 4 })
+    // Statements of Oct, Nov and Dec: due Nov 4, Dec 4 and Jan 4.
+    await createInstallmentPlan(
+      { description: 'Heladera', categoryId: category.id, currency: 'ARS', totalAmount: 300_00, count: 3, firstDueDate: '2026-10-10', purchaseDate: '2026-10-10', cardId: visa.id },
+      '2026-10-10',
+    )
+    await createInstallmentPlan(
+      { description: 'Préstamo', categoryId: category.id, currency: 'ARS', totalAmount: 100_00, count: 2, firstDueDate: '2026-11-15', purchaseDate: '2026-11-01' },
+      '2026-11-01',
+    )
+
+    const timeline = await getCuotaTimeline('2026-11-02')
+    expect(timeline.freeFrom).toBe('2027-02')
+    expect(timeline.months).toEqual([
+      { month: '2026-11', totals: [money(150_00, 'ARS')], share: 1, ending: [] },
+      { month: '2026-12', totals: [money(150_00, 'ARS')], share: 1, ending: ['Préstamo'] },
+      { month: '2027-01', totals: [money(100_00, 'ARS')], share: 100_00 / 150_00, ending: ['Heladera'] },
+    ])
+  })
+
+  it("only installment plans' gastos; a cuota moved to another statement counts when that one is due; no rate, no bar", async () => {
+    const category = await createCategory({ kind: 'expense', name: 'Hogar' })
+    const visa = await createCreditCard({ name: 'Visa', closingDay: 22, dueDay: 4 })
+    const tele = await createInstallmentPlan(
+      { description: 'Tele', categoryId: category.id, currency: 'ARS', totalAmount: 200_00, count: 2, firstDueDate: '2026-11-10', purchaseDate: '2026-11-01' },
+      '2026-11-01',
+    )
+    await createInstallmentPlan(
+      { description: 'Curso', categoryId: category.id, currency: 'USD', totalAmount: 50_00, count: 1, firstDueDate: '2026-11-20', purchaseDate: '2026-11-01' },
+      '2026-11-01',
+    )
+    // A fixed gasto paid by card, generated: not a cuota.
+    const netflix = await createRecurringPlan({
+      template: { description: 'Netflix', categoryId: category.id, amount: 15_00, currency: 'ARS', cardId: visa.id },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 1, startDate: '2026-11-01' },
+    })
+    await db.expenses.add({
+      id: generateId(), date: '2026-11-01', description: 'Netflix', categoryId: category.id, amount: 15_00, currency: 'ARS',
+      status: 'confirmed', sourcePlanId: netflix.id, occurrenceIndex: 0, cardId: visa.id, statementPeriod: '2026-11',
+      createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z',
+    })
+    // The Tele's first cuota, put by hand on the card's November statement (due Dec 4).
+    const first = (await db.expenses.where('sourcePlanId').equals(tele.id).sortBy('date'))[0]
+    await db.expenses.update(first?.id ?? '', { cardId: visa.id, statementPeriod: '2026-11' })
+
+    const timeline = await getCuotaTimeline('2026-11-02')
+    expect(timeline.months).toEqual([
+      { month: '2026-11', totals: [money(50_00, 'USD')], share: 0, ending: ['Curso'] },
+      { month: '2026-12', totals: [money(200_00, 'ARS')], share: 1, ending: ['Tele'] },
+    ])
+  })
+
+  it('with no cuotas ahead there is nothing to show', async () => {
+    expect(await getCuotaTimeline('2026-11-02')).toEqual({ from: '2026-11', months: [], freeFrom: undefined })
   })
 })
