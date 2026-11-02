@@ -31,6 +31,7 @@ const SECTIONS: GuideSection[] = [
       'En "Tarjetas y cuentas" cargá cada tarjeta con su día de cierre y de vencimiento. Al cargar un gasto, elegila en "Medio de pago": entra sola en el resumen que corresponde según la fecha (o elegí otro, si el comercio lo presentó tarde). Como el banco mueve el cierre de un mes a otro, el resumen en curso te pide las fechas reales, y al pagar un resumen cargás las del próximo. Cuando pagás un resumen cerrado, registralo con "Pagar": elegís de qué cuenta sale cada moneda (si pagás dólares con pesos, cargás cuánto te debitaron) y baja el saldo de la cuenta sin crear un gasto nuevo — las compras ya se contaron.',
       'Si el saldo no coincide con el del banco, usá "Ajustar saldo" en la cuenta: se guarda la diferencia como un ajuste visible en Movimientos, sin tocar nada de lo cargado.',
       'Podés crear una categoría nueva al vuelo mientras estás cargando un movimiento.',
+      'Carga rápida: debajo de "Descripción" aparecen los comercios que más cargaste en los últimos meses. Tocás uno y se completan la categoría, la tarjeta o cuenta y la moneda de la última vez: sólo te queda el monto.',
     ],
     link: { to: '/movimientos', label: 'Ir a Movimientos' },
   },

@@ -29,13 +29,14 @@ import { CategoryField } from './CategoryField'
 import { useAccounts } from '../hooks/useAccounts'
 import { useCards } from '../hooks/useCards'
 import { useStatementChoices } from '../hooks/useStatementChoices'
+import { useQuickPicks } from '../hooks/useQuickPicks'
 import {
   EXPENSE_CURRENCIES,
   movementFormSchema,
   type MovementFormValues,
   type MovementKind,
 } from '../schema'
-import { saveMovement, type EditableTransactionItem } from '../service'
+import { saveMovement, type EditableTransactionItem, type QuickPick } from '../service'
 
 const NO_ACCOUNT = '__none__'
 const AUTO_PERIOD = '__auto__'
@@ -164,6 +165,27 @@ export function MovementForm({
     if (account) form.setValue('currency', account.currency)
   }
 
+  // Quick entry: the merchants loaded most often, filtered as the user types.
+  const quickPicks = useQuickPicks(kind)
+  const description = useWatch({ control: form.control, name: 'description' })
+  const typed = description.trim().toLowerCase()
+  const visiblePicks = item
+    ? []
+    : (quickPicks ?? [])
+        .filter((p) => p.description.toLowerCase() !== typed && p.description.toLowerCase().includes(typed))
+        .slice(0, 5)
+
+  /** Fills everything the merchant had last time — only the amount is left. */
+  function applyQuickPick(pick: QuickPick) {
+    form.setValue('description', pick.description, { shouldValidate: form.formState.isSubmitted })
+    form.setValue('categoryId', pick.categoryId, { shouldValidate: form.formState.isSubmitted })
+    form.setValue('currency', pick.currency)
+    form.setValue('accountId', pick.accountId ?? '')
+    form.setValue('cardId', kind === 'expense' ? (pick.cardId ?? '') : '')
+    form.setValue('statementPeriod', '')
+    form.setFocus('amount')
+  }
+
   async function onSubmit(values: MovementFormValues) {
     try {
       await saveMovement({ ...values, kind }, item?.id)
@@ -194,9 +216,26 @@ export function MovementForm({
               <FormControl>
                 <Input
                   placeholder={kind === 'income' ? 'Ej: Sueldo' : 'Ej: Supermercado'}
+                  autoComplete="off"
                   {...field}
                 />
               </FormControl>
+              {visiblePicks.length > 0 && (
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Cargados seguido">
+                  {visiblePicks.map((pick) => (
+                    <Button
+                      key={pick.description}
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-7 rounded-full px-3 text-xs"
+                      onClick={() => applyQuickPick(pick)}
+                    >
+                      {pick.description}
+                    </Button>
+                  ))}
+                </div>
+              )}
               <FormMessage />
             </FormItem>
           )}
@@ -393,7 +432,9 @@ export function MovementForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Categoría</FormLabel>
-              <CategoryField kind={kind} value={field.value} onChange={field.onChange} />
+              <FormControl>
+                <CategoryField kind={kind} value={field.value} onChange={field.onChange} />
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}

@@ -428,3 +428,36 @@ describe('statement payments in Movimientos (Fase 5)', () => {
     expect(rows[0] && isEditableTransaction(rows[0])).toBe(false)
   })
 })
+
+describe('listQuickPicks', () => {
+  afterEach(async () => {
+    await Promise.all([db.creditCards.clear(), db.accounts.clear(), db.incomes.clear()])
+  })
+
+  it('the merchants typed most in the last 90 days, each as it was loaded last time', async () => {
+    const { listQuickPicks } = await import('./service')
+    const { saveExpense: save } = await import('@/database/repositories/expenses.repo')
+    const { createCreditCard, setCreditCardArchived } = await import('@/database/repositories/creditCards.repo')
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    const transporte = await createCategory({ kind: 'expense', name: 'Transporte' })
+    const visa = await createCreditCard({ name: 'visa', closingDay: 22, dueDay: 4 })
+    const old = await createCreditCard({ name: 'vieja', closingDay: 22, dueDay: 4 })
+    const gasto = (date: string, description: string, categoryId: string, cardId?: string, extra = {}) =>
+      save({ date, description, categoryId, amount: 1_000_00, currency: 'ARS', status: 'confirmed', ...(cardId && { cardId }), ...extra })
+
+    await gasto('2026-10-01', 'Rappi', transporte.id)
+    await gasto('2026-10-20', 'Rappi', comida.id, visa.id) // the latest wins
+    await gasto('2026-10-21', 'rappi ', comida.id, visa.id) // same merchant
+    await gasto('2026-10-25', 'Subte', transporte.id, old.id)
+    await gasto('2026-06-01', 'Hace mucho', comida.id) // outside the window
+    await gasto('2026-10-26', 'Mercado Libre (cuota 2/6)', comida.id, visa.id, { sourcePlanId: 'plan', occurrenceIndex: 1 })
+    await setCreditCardArchived(old.id, true)
+
+    const picks = await listQuickPicks('expense', '2026-11-01')
+    expect(picks).toEqual([
+      { description: 'rappi', categoryId: comida.id, currency: 'ARS', cardId: visa.id },
+      // Its card was archived: no payment method to suggest.
+      { description: 'Subte', categoryId: transporte.id, currency: 'ARS' },
+    ])
+  })
+})

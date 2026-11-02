@@ -262,11 +262,13 @@ finanzas personales" en `docs/DECISIONS.md`. Cada fase se publica por separado.
    Ajustes (Patrimonio sólo lo dice). Vocabulario: "Proyectado" → "Por pagar",
    "recurrente" → "gasto fijo"; los resúmenes se nombran por su vencimiento ("vence el
    05/11", "venció el…").
-2. **Cargar sin esfuerzo** — (2a, hecho) importar el PDF del resumen del banco (BBVA Visa/Master) en
+2. **Cargar sin esfuerzo** (hecho) — (2a) importar el PDF del resumen del banco (BBVA Visa/Master) en
    el dispositivo (`pdfjs-dist`, worker local): consumos, cuotas desde la cuota que
    figura, impuestos, créditos que se cancelan, próximo cierre/vencimiento, detección de
    duplicados y control contra el saldo del resumen. Categoría automática por comercio
-   (aprende de las correcciones). (2b) Carga rápida en el celular.
+   (aprende de las correcciones). (2b, hecho) Carga rápida: al cargar un movimiento, los
+   comercios más usados de los últimos 90 días aparecen como botones y completan
+   categoría, medio de pago y moneda de la última vez — sólo falta el monto.
 3. **Inicio: "¿cuánto me queda?"** — un número (ingresos − fijos − tarjetas que vencen −
    otros gastos) y tres bloques. Ingreso recurrente (sueldo). Las cuotas con tarjeta toman
    la fecha de cierre de su resumen (migración de las ya cargadas).

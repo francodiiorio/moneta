@@ -13,7 +13,7 @@ import {
 import type { Account, Category, CategoryKind, Expense } from '@/domain/entities'
 import { money, negate, parseAmount, type Money } from '@/domain/money'
 import { statementDates, statementPeriodFor, type CardCalendar } from '@/domain/cards'
-import { formatDueDate, monthRange, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
+import { addDays, formatDueDate, monthRange, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import { invariant } from '@/lib/invariant'
 import type { ExpenseFormValues, IncomeFormValues, MovementFormValues, MovementKind, TransferFormValues } from './schema'
 
@@ -405,4 +405,59 @@ export async function listAllCards() {
  *  archived account has to keep showing it. */
 export async function listAllAccounts(): Promise<Account[]> {
   return accountsRepo.listAccounts()
+}
+
+/** A merchant the user loads often, with how they loaded it last time —
+ *  one tap fills the form, leaving only the amount. */
+export interface QuickPick {
+  description: string
+  categoryId: string
+  currency: string
+  accountId?: string
+  cardId?: string
+}
+
+/** How far back "often" looks. */
+const QUICK_PICK_DAYS = 90
+
+/**
+ * The merchants of the last QUICK_PICK_DAYS, most used first (ties: most
+ * recent), each with the category, payment method and currency of its
+ * latest entry. Typed by hand only — generated cuotas and recurring gastos
+ * ("Mercado Libre (cuota 3/6)") aren't something to type — and only a
+ * payment method still in use (not archived).
+ */
+export async function listQuickPicks(kind: MovementKind, today: DateStamp = todayStamp(), limit = 8): Promise<QuickPick[]> {
+  const from = addDays(today, -QUICK_PICK_DAYS)
+  const [entries, accounts, cards] = await Promise.all([
+    kind === 'expense'
+      ? expensesRepo.listExpensesInRange(from, today).then((list) => list.filter((e) => e.sourcePlanId === undefined && e.status === 'confirmed'))
+      : incomesRepo.listIncomesInRange(from, today),
+    accountsRepo.listAccounts(),
+    creditCardsRepo.listCreditCards(),
+  ])
+  const activeAccounts = new Set(accounts.filter((a) => !a.isArchived).map((a) => a.id))
+  const activeCards = new Set(cards.filter((c) => !c.isArchived).map((c) => c.id))
+
+  const byMerchant = new Map<string, { latest: (typeof entries)[number]; count: number }>()
+  for (const entry of entries) {
+    const key = entry.description.trim().toLowerCase()
+    if (!key) continue
+    const current = byMerchant.get(key)
+    const newer = !current || entry.date > current.latest.date || (entry.date === current.latest.date && entry.createdAt > current.latest.createdAt)
+    byMerchant.set(key, { latest: newer ? entry : current.latest, count: (current?.count ?? 0) + 1 })
+  }
+  return [...byMerchant.values()]
+    .sort((a, b) => b.count - a.count || b.latest.date.localeCompare(a.latest.date))
+    .slice(0, limit)
+    .map(({ latest }) => {
+      const cardId = 'cardId' in latest ? latest.cardId : undefined
+      return {
+        description: latest.description.trim(),
+        categoryId: latest.categoryId,
+        currency: latest.currency,
+        ...(latest.accountId !== undefined && activeAccounts.has(latest.accountId) && { accountId: latest.accountId }),
+        ...(cardId !== undefined && activeCards.has(cardId) && { cardId }),
+      }
+    })
 }

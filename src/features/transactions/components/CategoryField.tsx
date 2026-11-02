@@ -15,12 +15,23 @@ interface CategoryFieldProps {
   kind: CategoryKind
   value: string
   onChange: (categoryId: string) => void
+  /** Injected by FormControl, so the field's label points at the select. */
+  id?: string
+  'aria-invalid'?: boolean | 'true' | 'false'
+  'aria-describedby'?: string
 }
 
 /** Category select with an inline "+ Nueva categoría" option — full
  *  category management (edit, archive, jerarquía) vive en /ajustes/categorias;
  *  esto es sólo para no bloquear la carga de una transacción nueva. */
-export function CategoryField({ kind, value, onChange }: CategoryFieldProps) {
+export function CategoryField({
+  kind,
+  value,
+  onChange,
+  id,
+  'aria-invalid': ariaInvalid,
+  'aria-describedby': ariaDescribedBy,
+}: CategoryFieldProps) {
   const categories = useCategories(kind)
   const [isCreating, setIsCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -79,7 +90,7 @@ export function CategoryField({ kind, value, onChange }: CategoryFieldProps) {
         onChange(next)
       }}
     >
-      <SelectTrigger className="w-full">
+      <SelectTrigger id={id} aria-invalid={ariaInvalid} aria-describedby={ariaDescribedBy} className="w-full">
         <SelectValue placeholder="Elegí una categoría" />
       </SelectTrigger>
       <SelectContent>
