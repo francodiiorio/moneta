@@ -40,6 +40,7 @@ import { BudgetsPanel } from '../components/BudgetsPanel'
 import { UpcomingPanel } from '../components/UpcomingPanel'
 import { RecentMovementsPanel } from '../components/RecentMovementsPanel'
 import { MonthLeftHero } from '../components/MonthLeftHero'
+import { ObservationsPanel } from '../components/ObservationsPanel'
 import { useMonthLeft } from '../hooks/useMonthLeft'
 
 const percentFormat = new Intl.NumberFormat('es-AR', { style: 'percent', maximumFractionDigits: 0 })
@@ -170,6 +171,8 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
         <UpcomingPanel />
         <BudgetsPanel month={month} />
       </div>
+
+      <ObservationsPanel month={month} />
 
       {/* The rest of the month — the detail, folded: the home answers
           "¿cuánto me queda?" first. Mounted only open: the charts can't

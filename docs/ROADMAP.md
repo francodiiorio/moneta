@@ -245,7 +245,7 @@ Ingresos y Transferencias — sin partida doble; tarjetas con resúmenes" en
    muestran ingresos, gastos y balance neto (ingresos − gastos) del mes, el ingreso por
    categoría, y una tabla de los últimos 6 meses. Sin cambios de schema.
 
-## Etapa 9 — De app contable a finanzas personales (en curso)
+## Etapa 9 — De app contable a finanzas personales (hecho)
 
 El motor no cambia (centavos exactos, resúmenes que cuadran con el banco, backup
 versionado); cambia lo que la app muestra y lo que pide. Ver ADR "De app contable a
@@ -281,7 +281,10 @@ finanzas personales" en `docs/DECISIONS.md`. Cada fase se publica por separado.
    con aviso el día antes; montos opcionales (apagados por defecto). (4b, hecho) "Libre de
    cuotas": la pestaña Cuotas arranca con el mes en que terminás de pagarlas y una barra
    por mes con lo que se va (las de tarjeta en el mes en que vence su resumen) y qué
-   compra termina. Pendiente: observaciones simples por comercio y categoría.
+   compra termina. (4c, hecho) "Lo que cambió": en el Inicio, hasta tres cambios contra el
+   mes anterior por comercio y por categoría ("En Rappi llevás $ 140.000, 40% más que a esta
+   altura de octubre") — lo comprado (una compra en cuotas, entera en su fecha), sin gastos
+   fijos, desde el día 7 del mes.
 
 Fuera de esta etapa, a decidir aparte: sincronizar celular y compu (requiere revisar la
 restricción de privacidad), gasto ajustado por inflación (necesita el IPC).

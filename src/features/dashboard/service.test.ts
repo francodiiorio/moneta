@@ -4,11 +4,13 @@ import { createAccount } from '@/database/repositories/accounts.repo'
 import { createBudget } from '@/database/repositories/budgets.repo'
 import { createCategory } from '@/database/repositories/categories.repo'
 import { createCreditCard, setCreditCardArchived } from '@/database/repositories/creditCards.repo'
+import { createExchangeRate } from '@/database/repositories/exchangeRates.repo'
+import { createInstallmentPlan } from '@/database/repositories/installmentPlans.repo'
 import { saveExpense } from '@/database/repositories/expenses.repo'
 import { saveIncome } from '@/database/repositories/incomes.repo'
 import { createRecurringPlan, setRecurringPlanPaused } from '@/database/repositories/recurringPlans.repo'
 import { money } from '@/domain/money'
-import { getCalendarEvents, getMonthLeft, getOnboarding, getRecentMovements, getUpcoming, monthChange, savingsRate } from './service'
+import { getCalendarEvents, getMonthLeft, getMonthObservations, getOnboarding, getRecentMovements, getUpcoming, monthChange, savingsRate } from './service'
 
 afterEach(async () => {
   await Promise.all([
@@ -16,8 +18,10 @@ afterEach(async () => {
     db.budgets.clear(),
     db.categories.clear(),
     db.creditCards.clear(),
+    db.exchangeRates.clear(),
     db.expenses.clear(),
     db.incomes.clear(),
+    db.installmentPlans.clear(),
     db.recurringPlans.clear(),
     db.savingsHoldings.clear(),
   ])
@@ -336,5 +340,124 @@ describe('getCalendarEvents', () => {
     await saveExpense({ date: '2026-11-10', description: 'Préstamo (cuota 3/12)', categoryId: otros.id, amount: 80_000_00, currency: 'ARS', status: 'projected' })
     const events = await getCalendarEvents({ cards: false, fixed: true, amounts: false }, TODAY, 1)
     expect(events[0]).toMatchObject({ date: '2026-11-10', title: 'Préstamo (cuota 3/12)', reminder: { daysBefore: 1, hour: 10 } })
+  })
+})
+
+describe('getMonthObservations', () => {
+  const TODAY = '2026-11-12'
+
+  async function gasto(date: string, description: string, categoryId: string, amount: number, extra: { status?: 'projected'; sourcePlanId?: string } = {}) {
+    await saveExpense({ date, description, categoryId, amount, currency: 'ARS', status: extra.status ?? 'confirmed', ...extra })
+  }
+
+  it('this month so far against the same days of the last one, merchants and categories', async () => {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    const ropa = await createCategory({ kind: 'expense', name: 'Ropa' })
+    await gasto('2026-10-05', 'Rappi', comida.id, 100_000_00)
+    // After the 12th of October: not "a esta altura".
+    await gasto('2026-10-20', 'Rappi', comida.id, 500_000_00)
+    await gasto('2026-11-03', 'Rappi', comida.id, 150_000_00)
+    await gasto('2026-10-06', 'Coto', comida.id, 100_000_00)
+    await gasto('2026-11-04', 'Coto', comida.id, 100_000_00)
+    // Written two ways: one merchant, named as it was written last.
+    await gasto('2026-10-01', 'ZARA', ropa.id, 100_000_00)
+    await gasto('2026-11-02', 'Zara ', ropa.id, 40_000_00)
+    // Neither a gasto still to come, a cuota or a gasto fijo, nor one after today.
+    await gasto('2026-11-05', 'Rappi', comida.id, 999_000_00, { status: 'projected' })
+    await gasto('2026-11-06', 'Rappi', comida.id, 999_000_00, { sourcePlanId: 'plan-1' })
+    await gasto('2026-11-20', 'Rappi', comida.id, 999_000_00)
+
+    const { toDate, items } = await getMonthObservations('2026-11', TODAY)
+    expect(toDate).toBe(true)
+    // Ropa is just Zara: said once.
+    expect(items.map((o) => [o.kind, o.label, o.previous.amount, o.current.amount, o.percent])).toEqual([
+      ['merchant', 'Zara', 100_000_00, 40_000_00, -60],
+      ['merchant', 'Rappi', 100_000_00, 150_000_00, 50],
+      ['category', 'Comida', 200_000_00, 250_000_00, 25],
+    ])
+  })
+
+  it('a past month whole, against the whole month before', async () => {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    await gasto('2026-09-01', 'Rappi', comida.id, 100_000_00)
+    await gasto('2026-10-25', 'Rappi', comida.id, 200_000_00)
+    await gasto('2026-11-02', 'Rappi', comida.id, 900_000_00)
+
+    const { toDate, items } = await getMonthObservations('2026-10', TODAY)
+    expect(toDate).toBe(false)
+    expect(items.map((o) => [o.label, o.percent])).toEqual([['Rappi', 100]])
+  })
+
+  it('in the base currency at each gasto\'s rate; a merchant with a gasto without a rate is not compared', async () => {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    const viajes = await createCategory({ kind: 'expense', name: 'Viajes' })
+    const ocio = await createCategory({ kind: 'expense', name: 'Ocio' })
+    const usd = (date: string, description: string, categoryId: string, amount: number) =>
+      saveExpense({ date, description, categoryId, amount, currency: 'USD', status: 'confirmed' })
+    await gasto('2026-10-01', 'Rappi', comida.id, 100_000_00)
+    // US$ 100 at 1.000 in October, US$ 100 at 1.500 in November: +50% in pesos.
+    await usd('2026-10-01', 'Netflix', ocio.id, 100_00)
+    await usd('2026-11-03', 'Netflix', ocio.id, 100_00)
+    // In euros, without a rate: Hotel can't be compared.
+    await saveExpense({ date: '2026-10-02', description: 'Hotel', categoryId: viajes.id, amount: 500_00, currency: 'EUR', status: 'confirmed' })
+    await gasto('2026-11-04', 'Hotel', viajes.id, 900_000_00)
+    await createExchangeRate({ date: '2026-10-01', from: 'USD', to: 'ARS', rate: 1000 })
+    await createExchangeRate({ date: '2026-11-01', from: 'USD', to: 'ARS', rate: 1500 })
+
+    const { items } = await getMonthObservations('2026-11', TODAY)
+    expect(items.map((o) => [o.label, o.previous, o.current, o.percent])).toEqual([['Netflix', money(100_000_00, 'ARS'), money(150_000_00, 'ARS'), 50]])
+  })
+
+  it('a purchase in cuotas counts whole on its purchase date, its cuotas don\'t; gastos fijos neither', async () => {
+    const hogar = await createCategory({ kind: 'expense', name: 'Hogar' })
+    await gasto('2026-10-01', 'Sillón', hogar.id, 300_000_00)
+    await createInstallmentPlan(
+      { description: 'Heladera', categoryId: hogar.id, currency: 'ARS', totalAmount: 900_000_00, count: 3, firstDueDate: '2026-11-03', purchaseDate: '2026-11-03' },
+      TODAY,
+    )
+    // A plan bought earlier: its cuotas this month aren't purchases.
+    await createInstallmentPlan(
+      { description: 'Tele', categoryId: hogar.id, currency: 'ARS', totalAmount: 600_000_00, count: 6, firstDueDate: '2026-06-01', purchaseDate: '2026-06-01' },
+      TODAY,
+    )
+    await gasto('2026-11-05', 'Alquiler', hogar.id, 800_000_00, { sourcePlanId: 'fijo-1' })
+
+    const { items } = await getMonthObservations('2026-11', TODAY)
+    expect(items.map((o) => [o.kind, o.label, o.previous.amount, o.current.amount])).toEqual([['category', 'Hogar', 300_000_00, 900_000_00]])
+  })
+
+  it('nothing while the previous period isn\'t fully loaded — the first month of use', async () => {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    await gasto('2026-10-10', 'Rappi', comida.id, 10_000_00)
+    await gasto('2026-11-03', 'Rappi', comida.id, 100_000_00)
+    expect((await getMonthObservations('2026-11', TODAY)).items).toEqual([])
+    await gasto('2026-10-01', 'Coto', comida.id, 10_000_00)
+    expect((await getMonthObservations('2026-11', TODAY)).items.map((o) => o.label)).toEqual(['Rappi', 'Comida'])
+  })
+
+  it('on the 31st, against the whole of a shorter month; January against December', async () => {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    await gasto('2027-02-01', 'Rappi', comida.id, 100_000_00)
+    await gasto('2027-02-28', 'Rappi', comida.id, 100_000_00)
+    await gasto('2027-03-31', 'Rappi', comida.id, 300_000_00)
+    expect((await getMonthObservations('2027-03', '2027-03-31')).items.map((o) => [o.previous.amount, o.current.amount])).toEqual([
+      [200_000_00, 300_000_00],
+    ])
+    expect((await getMonthObservations('2027-01', '2027-03-31')).items).toEqual([])
+    await gasto('2026-12-01', 'Coto', comida.id, 100_000_00)
+    await gasto('2027-01-10', 'Coto', comida.id, 200_000_00)
+    expect((await getMonthObservations('2027-01', '2027-03-31')).items.map((o) => [o.label, o.percent])).toEqual([['Coto', 100]])
+  })
+
+  it('nothing during the first days of a month: too few to compare', async () => {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    await gasto('2026-10-01', 'Rappi', comida.id, 100_000_00)
+    await gasto('2026-11-02', 'Rappi', comida.id, 25_000_00)
+    expect((await getMonthObservations('2026-11', '2026-11-06')).items).toEqual([])
+    expect((await getMonthObservations('2026-11', '2026-11-07')).items.map((o) => o.label)).toEqual(['Rappi'])
+  })
+
+  it('a month still to come has nothing to say', async () => {
+    expect(await getMonthObservations('2026-12', TODAY)).toEqual({ toDate: false, items: [] })
   })
 })

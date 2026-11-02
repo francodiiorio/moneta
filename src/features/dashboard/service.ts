@@ -7,6 +7,7 @@ import {
   exchangeRatesRepo,
   expensesRepo,
   incomesRepo,
+  installmentPlansRepo,
   investmentsRepo,
   recurringPlansRepo,
   savingsHoldingsRepo,
@@ -14,10 +15,10 @@ import {
 } from '@/database/repositories'
 import { generateOccurrences, pendingOccurrencesInRange } from '@/domain/recurrence'
 import { lastPurchaseDay, statementBalance, statementDates } from '@/domain/cards'
-import { monthLeft } from '@/domain/cashflow'
+import { groupSpending, monthLeft, spendingObservations, type SpendingEntry, type SpendingObservation } from '@/domain/cashflow'
 import { convert, MissingRateError } from '@/domain/currency'
 import { formatMoney, money, percentChange, sumMoney, type Money } from '@/domain/money'
-import { addDays, currentMonthStamp, monthOf, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
+import { addDays, currentMonthStamp, dayOfMonth, monthOf, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
 import type { CalendarEvent } from '@/lib/ics'
 // Another feature's service, never its components — see docs/DECISIONS.md
 // "Un feature puede importar el service.ts/hooks de otro".
@@ -309,6 +310,78 @@ export async function getMonthLeft(month: MonthStamp): Promise<MonthLeft> {
   }
 }
 
+
+/** What changed in how the month is going, by merchant and category. */
+export interface MonthObservations {
+  /** The month is still running: compared up to today against the same
+   *  days of the previous one, not against the whole of it. */
+  toDate: boolean
+  items: SpendingObservation[]
+}
+
+/** Before this day of a running month, a couple of days against a couple
+ *  of days: one delivery more or less reads as "80% menos". */
+export const OBSERVATIONS_FROM_DAY = 7
+
+/**
+ * At most three changes against the previous month worth pointing out
+ * (see domain/cashflow `spendingObservations`), in the base currency at
+ * each purchase's date. What was bought, not what was paid: a purchase in
+ * cuotas counts whole on its purchase date (its cuotas don't), and gastos
+ * fijos don't count — they say nothing new about the month. Nothing while
+ * the previous period isn't fully loaded (the first month of use): against
+ * a few days of it everything reads "+300%".
+ */
+export async function getMonthObservations(month: MonthStamp, today: DateStamp = todayStamp()): Promise<MonthObservations> {
+  const thisMonth = monthOf(today)
+  const toDate = month === thisMonth
+  const day = Number(today.slice(8))
+  if (month > thisMonth || (toDate && day < OBSERVATIONS_FROM_DAY)) return { toDate, items: [] }
+  const previousMonth = shiftMonth(month, -1)
+  const current = { start: monthRange(month).start, end: toDate ? today : monthRange(month).end }
+  const previous = {
+    start: monthRange(previousMonth).start,
+    end: toDate ? dayOfMonth(previousMonth, day) : monthRange(previousMonth).end,
+  }
+  const [firstDate, expenses, installmentPlans, categories, settings, rates] = await Promise.all([
+    expensesRepo.firstExpenseDate(),
+    expensesRepo.listExpensesInRange(previous.start, current.end),
+    installmentPlansRepo.listInstallmentPlans(),
+    categoriesRepo.listCategories(),
+    settingsRepo.getSettings(),
+    exchangeRatesRepo.listExchangeRates(),
+  ])
+  if (firstDate === undefined || firstDate > previous.start) return { toDate, items: [] }
+  const base = settings.baseCurrency
+  const categoryById = new Map(categories.map((c) => [c.id, c]))
+
+  const purchases = [
+    ...expenses.filter((e) => e.status === 'confirmed' && e.sourcePlanId === undefined),
+    ...installmentPlans.map((p) => ({ ...p, date: p.purchaseDate, amount: p.totalAmount })),
+  ]
+  const entries: SpendingEntry[] = []
+  for (const purchase of purchases) {
+    const inCurrent = purchase.date >= current.start && purchase.date <= current.end
+    const inPrevious = purchase.date >= previous.start && purchase.date <= previous.end
+    if (!inCurrent && !inPrevious) continue
+    let amount: Money | undefined
+    try {
+      amount = convert(money(purchase.amount, purchase.currency), base, rates, purchase.date, settings.rateProfile)
+    } catch (error) {
+      if (!(error instanceof MissingRateError)) throw error
+    }
+    const category = categoryById.get(purchase.categoryId)
+    entries.push({
+      period: inCurrent ? 'current' : 'previous',
+      date: purchase.date,
+      description: purchase.description,
+      amount,
+      ...(category && { category: { id: category.id, name: category.name } }),
+    })
+  }
+  const { pairs, previousTotal } = groupSpending(entries, base)
+  return { toDate, items: spendingObservations(pairs, previousTotal) }
+}
 
 export interface CalendarExportOptions {
   /** Each card's closes and due dates. */

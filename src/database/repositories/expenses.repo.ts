@@ -35,6 +35,11 @@ export async function countExpenses(): Promise<number> {
   return db.expenses.count()
 }
 
+/** The date of the earliest gasto, if any — where the history starts. */
+export async function firstExpenseDate(): Promise<DateStamp | undefined> {
+  return (await db.expenses.orderBy('date').first())?.date
+}
+
 export async function listExpensesInRange(startDate: string, endDate: string): Promise<Expense[]> {
   const expenses = await db.expenses.where('date').between(startDate, endDate, true, true).toArray()
   expenses.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))

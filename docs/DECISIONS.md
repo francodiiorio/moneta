@@ -1766,3 +1766,40 @@ mide en la moneda base a la tasa de hoy sólo para dibujarla (sin tasa, esa part
 suma); el monto que se lee es el de cada moneda, sin convertir. Una compra borrada sale
 de la línea de tiempo aunque sus cuotas ya generadas sigan en su resumen (y en el Inicio):
 borrarla es decir que ya no se sigue como compra en cuotas.
+
+## "Lo que cambió": pocas observaciones, comparables (Etapa 9, Fase 4)
+
+**Problema:** los reportes muestran cuánto se gastó por categoría, pero no dicen qué cambió;
+eso había que deducirlo comparando dos pantallas. Una lista de variaciones de todo, en
+cambio, es ruido: un kiosco que pasó de $ 2.000 a $ 4.000 "subió 100%".
+
+**Decisión:** el Inicio dice como mucho tres cosas (`domain/cashflow:spendingObservations`),
+por comercio (la descripción, sin distinguir mayúsculas, tildes ni espacios) y por
+categoría, sólo cuando el cambio es de al menos 25% **y** de al menos el 5% de todo lo
+comprado en el período anterior; primero el cambio más grande en plata. Algo que no se
+compró en uno de los dos períodos no tiene porcentaje y no se menciona. Una categoría que,
+en los dos períodos, es un solo comercio se dice una vez, como el comercio.
+
+- **Qué cuenta: lo que se compró, no lo que se pagó.** Los gastos confirmados cargados uno
+  por uno, y cada compra en cuotas **entera, en su fecha de compra** — sus cuotas no. Si no,
+  pasar de comprar en un pago a comprar en cuotas se leería como "Ropa 87% menos". Los
+  gastos fijos no cuentan: no dicen nada nuevo del mes. Por eso el número no coincide con
+  Presupuestos (que cuenta cada cuota en su mes) y el bloque lo aclara ("lo que compraste,
+  sin contar los gastos fijos").
+- **Contra qué:** el mes elegido en el Inicio. Si está en curso, del 1 a hoy contra los
+  mismos días del anterior ("a esta altura de octubre"), nunca contra el mes entero; y
+  nada antes del día 7, cuando dos días contra dos días hacen que un pedido más o menos se
+  lea como "80% menos". Un mes pasado, entero contra entero. Los meses de distinto largo
+  (31 días contra 28) sesgan hasta ~10%, por debajo del umbral: se acepta.
+- **Historia incompleta:** si el primer gasto cargado es posterior al comienzo del período
+  anterior (el primer mes de uso), no hay observaciones — contra unos pocos días todo da
+  "+300%".
+- **Moneda:** todo en la moneda base, a la tasa de la fecha de cada compra (como Reportes).
+  Un comercio o categoría con alguna compra sin tasa no se compara: le faltaría un lado y
+  podría inventar un "+120%". Las demás sí.
+- Sin nada que decir, el bloque no aparece: es una pista, no una sección que llenar.
+
+**Pendiente, a propósito:** un comercio y su categoría pueden ocupar dos de los tres lugares
+por la misma plata ("Rappi +50%" y "Comida +25%" si todo el aumento es Rappi); descontar lo
+ya explicado complicaría la regla. El bloque se recalcula al cambiar los datos, no a la
+medianoche.
