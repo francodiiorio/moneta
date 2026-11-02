@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowDownLeft, BarChart3, Eye, EyeOff, PieChart, Receipt, Scale, TrendingUp } from 'lucide-react'
+import { ArrowDownLeft, BarChart3, ChevronDown, Eye, EyeOff, PieChart, Receipt, Scale, TrendingUp } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { MoneyText } from '@/components/MoneyText'
 import { Button } from '@/components/ui/button'
@@ -39,6 +39,8 @@ import { AccountsPanel } from '../components/AccountsPanel'
 import { BudgetsPanel } from '../components/BudgetsPanel'
 import { UpcomingPanel } from '../components/UpcomingPanel'
 import { RecentMovementsPanel } from '../components/RecentMovementsPanel'
+import { MonthLeftHero } from '../components/MonthLeftHero'
+import { useMonthLeft } from '../hooks/useMonthLeft'
 
 const percentFormat = new Intl.NumberFormat('es-AR', { style: 'percent', maximumFractionDigits: 0 })
 
@@ -82,10 +84,12 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
   const settings = useSettings()
   const hideAmount = settings?.hideSavingsAndInvestmentsAmount ?? false
   const [onboardingHidden, hideOnboarding] = useOnboardingHidden()
-  // The month drives what happened (ingresos, gastos, categorías,
-  // presupuestos); Patrimonio, cuentas, tarjetas and "se viene" are always
+  // The month drives what happened ("¿cuánto me queda?", ingresos, gastos,
+  // categorías, presupuestos); Patrimonio, cuentas, tarjetas and "se viene" are always
   // today — same convention as /patrimonio (see docs/DECISIONS.md).
   const month = useDashboardUiStore((s) => s.month)
+  const detailOpen = useDashboardUiStore((s) => s.detailOpen)
+  const setDetailOpen = useDashboardUiStore((s) => s.setDetailOpen)
   const summary = useMonthSummary(month)
   const previousSummary = useMonthSummary(shiftMonth(month, -1))
   const netWorth = useNetWorthSummary()
@@ -106,6 +110,7 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
       : undefined
 
   const budgets = useBudgetsWithProgress(month)
+  const left = useMonthLeft(month)
   // A change against a partial month (or this one) would mislead: shown as
   // "Parcial" instead of a percent.
   const isPartial = (summary?.missingRateCount ?? 0) + (previousSummary?.missingRateCount ?? 0) > 0
@@ -125,7 +130,8 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
       : undefined
   const rate = summary ? savingsRate(summary) : undefined
   // The 6-month chart ends at this month, so its misses include summary's;
-  // a budget left out for lack of a rate is a miss of its own.
+  // a budget left out for lack of a rate is a miss of its own. "¿Cuánto me
+  // queda?" says its own: its amounts are mostly these same gastos.
   const missingRateCount =
     (flow?.missingRateCount ?? summary?.missingRateCount ?? 0) +
     (netWorth?.missingRateCount ?? 0) +
@@ -146,7 +152,7 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
     <div className="flex flex-col gap-4">
       <PageHeader
         title={greeting()}
-        description={`Así viene ${formatMonthLabel(month).toLowerCase()}.`}
+        description={`Así viene ${formatMonthLabel(month).toLowerCase()}: lo que entra, lo que sale y lo que queda.`}
         actions={<MonthSelector />}
       />
 
@@ -157,156 +163,175 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
 
       {showOnboarding && <OnboardingChecklist steps={steps} compact onHide={hideOnboarding} />}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
-          label="Ingresos"
-          icon={ArrowDownLeft}
-          tone="positive"
-          value={summary ? <MoneyText value={summary.income} /> : loading}
-          footer={summary && (isPartial ? 'Parcial: faltan tasas de cambio' : <Variation percent={incomeChange} />)}
-        />
-        <KpiCard
-          label="Gastos"
-          icon={Receipt}
-          value={summary ? <MoneyText value={summary.expense} /> : loading}
-          footer={
-            summary &&
-            ((summary.expenseMissingRateCount ?? 0) + (previousSummary?.expenseMissingRateCount ?? 0) > 0 ? (
-              'Parcial: faltan tasas de cambio'
-            ) : (
-              <Variation percent={expenseChange} invert />
-            ))
-          }
-        />
-        <KpiCard
-          label="Balance neto"
-          icon={Scale}
-          tone={summary === undefined ? 'primary' : summary.net.amount < 0 ? 'negative' : 'positive'}
-          value={summary ? <MoneyText value={summary.net} signColor /> : loading}
-          footer={
-            summary &&
-            (summary.missingRateCount > 0
-              ? 'Parcial: faltan tasas de cambio'
-              : rate === undefined
-                ? 'Sin ingresos este mes'
-                : rate >= 0
-                  ? `Ahorraste ${percentFormat.format(rate)} de lo que entró`
-                  : 'Gastaste más de lo que entró')
-          }
-        />
-        <KpiCard
-          label={
-            <>
-              Patrimonio
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => void handleToggleHideAmount()}
-                title={hideAmount ? 'Mostrar patrimonio y saldos' : 'Ocultar patrimonio y saldos'}
-                aria-label={hideAmount ? 'Mostrar patrimonio y saldos' : 'Ocultar patrimonio y saldos'}
-                aria-pressed={hideAmount}
-              >
-                {hideAmount ? <EyeOff /> : <Eye />}
-              </Button>
-            </>
-          }
-          icon={TrendingUp}
-          value={
-            // Both stay mounted and crossfade: a conditional render would
-            // swap nodes and skip the transition.
-            <div className="relative h-8">
-              <span
-                aria-hidden={!hideAmount}
-                className={cn(
-                  'absolute inset-0 font-mono text-muted-foreground tabular-nums transition-opacity duration-150',
-                  hideAmount ? 'opacity-100' : 'pointer-events-none opacity-0',
-                )}
-              >
-                ••••••
-              </span>
-              {/* aria-hidden too: opacity alone still reads it aloud. */}
-              <span
-                aria-hidden={hideAmount}
-                className={cn(
-                  'absolute inset-0 transition-opacity duration-150',
-                  hideAmount ? 'pointer-events-none opacity-0' : 'opacity-100',
-                )}
-              >
-                {netWorth ? <MoneyText value={netWorth.total} /> : loading}
-              </span>
-            </div>
-          }
-          footer={netWorth && <Variation percent={netWorthMonthChange} compareLabel="mes pasado" />}
-        />
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-3">
-        <Panel
-          title="Ingresos y gastos"
-          icon={BarChart3}
-          to="/reportes"
-          linkLabel="Reportes"
-          className="lg:col-span-2"
-          fill
-        >
-          {flow === undefined ? (
-            <div className="h-60 animate-pulse rounded-lg bg-muted" />
-          ) : hasFlow ? (
-            <FlowChart points={flow.points} />
-          ) : (
-            <p className="flex h-60 items-center justify-center text-sm text-muted-foreground">
-              Todavía no hay ingresos ni gastos en estos meses.
-            </p>
-          )}
-        </Panel>
-        <Panel title="En qué se fue" icon={PieChart} to="/reportes" linkLabel="Reportes">
-          {expenseByCategory === undefined ? (
-            <div className="h-60 animate-pulse rounded-lg bg-muted" />
-          ) : (
-            <CategoryBreakdownChart items={expenseByCategory.items} />
-          )}
-        </Panel>
-      </div>
+      <MonthLeftHero month={month} data={left} />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <AccountsPanel hideAmounts={hideAmount} />
         <CardDeadlines />
+        <UpcomingPanel />
         <BudgetsPanel month={month} />
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <UpcomingPanel />
-        <RecentMovementsPanel />
-      </div>
+      {/* The rest of the month — the detail, folded: the home answers
+          "¿cuánto me queda?" first. Mounted only open: the charts can't
+          measure a closed <details>. */}
+      <details
+        className="group [&[open]>summary]:mb-4"
+        open={detailOpen}
+        onToggle={(e) => setDetailOpen(e.currentTarget.open)}
+      >
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+          <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+          Más del mes: ingresos y gastos, en qué se fue, cuentas, patrimonio
+        </summary>
+        {detailOpen && (
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <KpiCard
+                label="Ingresos"
+                icon={ArrowDownLeft}
+                tone="positive"
+                value={summary ? <MoneyText value={summary.income} /> : loading}
+                footer={summary && (isPartial ? 'Parcial: faltan tasas de cambio' : <Variation percent={incomeChange} />)}
+              />
+              <KpiCard
+                label="Gastos"
+                icon={Receipt}
+                value={summary ? <MoneyText value={summary.expense} /> : loading}
+                footer={
+                  summary &&
+                  ((summary.expenseMissingRateCount ?? 0) + (previousSummary?.expenseMissingRateCount ?? 0) > 0 ? (
+                    'Parcial: faltan tasas de cambio'
+                  ) : (
+                    <Variation percent={expenseChange} invert />
+                  ))
+                }
+              />
+              <KpiCard
+                label="Balance neto"
+                icon={Scale}
+                tone={summary === undefined ? 'primary' : summary.net.amount < 0 ? 'negative' : 'positive'}
+                value={summary ? <MoneyText value={summary.net} signColor /> : loading}
+                footer={
+                  summary &&
+                  (summary.missingRateCount > 0
+                    ? 'Parcial: faltan tasas de cambio'
+                    : rate === undefined
+                      ? 'Sin ingresos este mes'
+                      : rate >= 0
+                        ? `Ahorraste ${percentFormat.format(rate)} de lo que entró`
+                        : 'Gastaste más de lo que entró')
+                }
+              />
+              <KpiCard
+                label={
+                  <>
+                    Patrimonio
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => void handleToggleHideAmount()}
+                      title={hideAmount ? 'Mostrar patrimonio y saldos' : 'Ocultar patrimonio y saldos'}
+                      aria-label={hideAmount ? 'Mostrar patrimonio y saldos' : 'Ocultar patrimonio y saldos'}
+                      aria-pressed={hideAmount}
+                    >
+                      {hideAmount ? <EyeOff /> : <Eye />}
+                    </Button>
+                  </>
+                }
+                icon={TrendingUp}
+                value={
+                  // Both stay mounted and crossfade: a conditional render would
+                  // swap nodes and skip the transition.
+                  <div className="relative h-8">
+                    <span
+                      aria-hidden={!hideAmount}
+                      className={cn(
+                        'absolute inset-0 font-mono text-muted-foreground tabular-nums transition-opacity duration-150',
+                        hideAmount ? 'opacity-100' : 'pointer-events-none opacity-0',
+                      )}
+                    >
+                      ••••••
+                    </span>
+                    {/* aria-hidden too: opacity alone still reads it aloud. */}
+                    <span
+                      aria-hidden={hideAmount}
+                      className={cn(
+                        'absolute inset-0 transition-opacity duration-150',
+                        hideAmount ? 'pointer-events-none opacity-0' : 'opacity-100',
+                      )}
+                    >
+                      {netWorth ? <MoneyText value={netWorth.total} /> : loading}
+                    </span>
+                  </div>
+                }
+                footer={netWorth && <Variation percent={netWorthMonthChange} compareLabel="mes pasado" />}
+              />
+            </div>
 
-      {/* Collapses smoothly with the eye (grid-rows 0fr/1fr) instead of
-          unmounting: its tooltip shows the amounts the eye just hid. */}
-      {hasInvestmentProgress && investmentPoints && (
-        <div
-          className={cn(
-            'ease grid transition-[grid-template-rows] duration-200',
-            hideAmount ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
-          )}
-        >
-          {/* inert while collapsed: hidden content mustn't take the focus. */}
-          <div className="overflow-hidden" inert={hideAmount}>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Progreso de tus inversiones</CardTitle>
-                <CardAction>
-                  <PeriodSelect value={investmentMonthsBack} onChange={setInvestmentMonthsBack} />
-                </CardAction>
-              </CardHeader>
-              <CardContent>
-                <MoneyTrendChart points={investmentPoints} height={220} showYAxis />
-                {investmentChange !== undefined && (
-                  <VariationBadge percent={investmentChange} compareLabel={`hace ${investmentMonthsBack - 1} meses`} />
+            <div className="grid gap-3 lg:grid-cols-3">
+              <Panel
+                title="Ingresos y gastos"
+                icon={BarChart3}
+                to="/reportes"
+                linkLabel="Reportes"
+                className="lg:col-span-2"
+                fill
+              >
+                {flow === undefined ? (
+                  <div className="h-60 animate-pulse rounded-lg bg-muted" />
+                ) : hasFlow ? (
+                  <FlowChart points={flow.points} />
+                ) : (
+                  <p className="flex h-60 items-center justify-center text-sm text-muted-foreground">
+                    Todavía no hay ingresos ni gastos en estos meses.
+                  </p>
                 )}
-              </CardContent>
-            </Card>
+              </Panel>
+              <Panel title="En qué se fue" icon={PieChart} to="/reportes" linkLabel="Reportes">
+                {expenseByCategory === undefined ? (
+                  <div className="h-60 animate-pulse rounded-lg bg-muted" />
+                ) : (
+                  <CategoryBreakdownChart items={expenseByCategory.items} />
+                )}
+              </Panel>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <AccountsPanel hideAmounts={hideAmount} />
+              <RecentMovementsPanel />
+            </div>
+
+            {/* Collapses smoothly with the eye (grid-rows 0fr/1fr) instead of
+                unmounting: its tooltip shows the amounts the eye just hid. */}
+            {hasInvestmentProgress && investmentPoints && (
+              <div
+                className={cn(
+                  'ease grid transition-[grid-template-rows] duration-200',
+                  hideAmount ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+                )}
+              >
+                {/* inert while collapsed: hidden content mustn't take the focus. */}
+                <div className="overflow-hidden" inert={hideAmount}>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Progreso de tus inversiones</CardTitle>
+                      <CardAction>
+                        <PeriodSelect value={investmentMonthsBack} onChange={setInvestmentMonthsBack} />
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent>
+                      <MoneyTrendChart points={investmentPoints} height={220} showYAxis />
+                      {investmentChange !== undefined && (
+                        <VariationBadge percent={investmentChange} compareLabel={`hace ${investmentMonthsBack - 1} meses`} />
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </details>
     </div>
   )
 }

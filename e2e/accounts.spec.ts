@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMonthDetail } from './helpers.js'
 
 // Etapa 8, Fase 1: an account's balance is computed from its opening
 // balance, ingresos, debit gastos and adjustments — and it adds up into
@@ -76,6 +77,7 @@ test('un patrimonio negativo (cuenta en descubierto) no rompe el Dashboard', asy
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.goto('/')
+  await openMonthDetail(page)
   await expect(page.getByRole('main').getByText('Patrimonio', { exact: true })).toBeVisible()
   await expect(page.getByText(/-\$\s?5[.,]000,00/).first()).toBeVisible()
 })

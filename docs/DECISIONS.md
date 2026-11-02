@@ -1686,3 +1686,39 @@ del plan también con sus ingresos, para que dos dispositivos con el mismo sueld
 dupliquen. El import rechaza un plan cuya categoría no es de su tipo (fallaría en cada
 arranque, sin aviso).
 
+
+## Inicio: "¿cuánto me queda?" (Etapa 9, Fase 3)
+
+**Problema:** el Inicio mostraba cuatro KPIs (ingresos, gastos, balance, patrimonio) y
+seis paneles del mismo peso. Respondía "qué pasó", no la pregunta con la que se abre una
+app de finanzas personales: ¿cuánto me queda este mes?
+
+**Decisión:** el Inicio arranca con un solo número, `domain/cashflow:monthLeft` =
+ingresos − gastos fijos − tarjetas que vencen − otros gastos, calculado por
+`dashboard/service:getMonthLeft` en la moneda base:
+
+- **Ingresos:** los del mes más los vencimientos pendientes de un ingreso fijo (el sueldo
+  que todavía no se generó cuenta: el mes se planifica con él).
+- **Gastos fijos:** los gastos no-tarjeta generados por un plan recurrente, más sus
+  vencimientos pendientes en el mes.
+- **Tarjetas que vencen:** el saldo de cada resumen cuyo vencimiento cae en el mes
+  (`statementBalance`), no las compras del mes. Una compra con tarjeta se cuenta **una
+  sola vez**, cuando se paga — así lo comprado el 28 que vence en dos meses no resta dos
+  veces ni antes de tiempo, y las cuotas entran por su resumen (Fase 3a). Un resumen
+  también suma los gastos fijos con tarjeta que todavía no se generaron en su ventana de
+  compras (como ya suma las cuotas proyectadas), y las tarjetas archivadas cuentan: sus
+  últimos resumenes igual vencen. Se usa el saldo según Moneta aunque el resumen ya esté
+  pagado (con intereses no conciliados, o en pesos un resumen en dólares, lo que salió de
+  la cuenta pudo ser otro número); usar el débito real del pago queda para más adelante.
+- **Otros gastos:** el resto de los gastos no-tarjeta del mes (débito y efectivo).
+
+Un monto sin tasa de cambio suma 0 y el recuadro lo dice ("Parcial: …"; el resumen sin
+tasa muestra "falta la tasa de cambio" en vez de $0). Un ingreso sin tasa igual cuenta
+como ingreso para no pedir "cargá tu sueldo" a quien cobra en dólares.
+Sin ingresos el número igual se muestra (negativo) junto a un "Cargá tu sueldo". El resto
+del Inicio (KPIs, gráficos, cuentas, últimos movimientos, patrimonio) no se borra: queda
+plegado en "Más del mes".
+
+**Por qué no "ingresos − gastos del mes":** mezcla lo que se compró con tarjeta (que se
+paga después) con lo que ya salió de la cuenta, y no cuenta lo que se sabe que va a
+entrar o salir. La pregunta es de caja, y la caja de una tarjeta es su vencimiento.

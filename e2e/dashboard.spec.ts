@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openMonthDetail } from './helpers.js'
 
 // The Dashboard hides amounts with transitions, never by unmounting: the
 // "••••••" mask and the real amount crossfade on opacity, and "Progreso de
@@ -34,6 +35,7 @@ test('Dashboard "Patrimonio" matches /patrimonio', async ({ page }) => {
   await expect(page.getByText(/500,00/).first()).toBeVisible()
 
   await page.goto('/')
+  await openMonthDetail(page)
   // Scoped to <main>: the nav also has a "Patrimonio" link.
   await expect(page.getByRole('main').getByText('Patrimonio', { exact: true })).toBeVisible()
   await expect(page.getByText(/500,00/).first()).toBeVisible()
@@ -45,7 +47,7 @@ test('Dashboard "Patrimonio" matches /patrimonio', async ({ page }) => {
 // With nothing loaded, the home is a welcome with "Primeros pasos"; the
 // first thing loaded turns it into the month overview.
 test('la home da la bienvenida sin datos y pasa al panorama con el primer movimiento', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/') // welcome: nothing folded yet
   await expect(page.getByText('Bienvenido a Moneta')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Primeros pasos' })).toBeVisible()
   await expect(page.getByText('0 de 5')).toBeVisible()
@@ -61,6 +63,15 @@ test('la home da la bienvenida sin datos y pasa al panorama con el primer movimi
 
   await page.goto('/')
   await expect(page.getByText('Bienvenido a Moneta')).toHaveCount(0)
+  // The home answers "¿cuánto me queda?" first; the rest is folded.
+  await expect(page.getByText(/^Te (quedan|falta) en /)).toBeVisible()
+  // Without income loaded it asks for the salary, the one number it needs.
+  await expect(page.getByRole('link', { name: 'Cargar mi sueldo' })).toBeVisible()
+  // Only the $1.500 gasto in this month (paid by debit/cash): that's what's missing.
+  await expect(page.getByRole('heading', { name: /^Te falta en / })).toBeVisible()
+  await expect(page.getByText('$ 1.500,00').first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Últimos movimientos', exact: true })).toHaveCount(0)
+  await openMonthDetail(page)
   for (const title of ['Ingresos y gastos', 'En qué se fue', 'Cuentas', 'Tarjetas', 'Presupuestos', 'Se viene', 'Últimos movimientos']) {
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   }
@@ -69,6 +80,7 @@ test('la home da la bienvenida sin datos y pasa al panorama con el primer movimi
   await page.getByRole('button', { name: 'Ocultar primeros pasos' }).click()
   await expect(page.getByText(/Primeros pasos · /)).toHaveCount(0)
   await page.reload()
+  await openMonthDetail(page)
   await expect(page.getByRole('heading', { name: 'Últimos movimientos', exact: true })).toBeVisible()
   await expect(page.getByText(/Primeros pasos · /)).toHaveCount(0)
 })
@@ -84,6 +96,7 @@ test('Dashboard shows the expense-by-category chart and the expense trend', asyn
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.goto('/')
+  await openMonthDetail(page)
   await expect(page.getByRole('heading', { name: 'En qué se fue', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Ingresos y gastos', exact: true })).toBeVisible()
   // .getByText('Comida') would also match Recharts' aria-hidden text-
@@ -128,6 +141,7 @@ test('Dashboard shows the expense variation vs. the previous month', async ({ pa
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.goto('/')
+  await openMonthDetail(page)
   // Scoped to the "Gastos" KPI so another card's variation can't satisfy it.
   // /^Gastos/: the KPI card, not the "Ingresos y gastos" chart's legend.
   const expenseCard = page.locator('[data-slot="card"]').filter({ hasText: /^Gastos/ })
@@ -163,6 +177,7 @@ test('Dashboard shows a "Progreso de tus inversiones" card once a position has a
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.goto('/')
+  await openMonthDetail(page)
   await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
 })
 
@@ -205,6 +220,7 @@ test('a large peso-denominated CEDEAR position does not crash the Dashboard', as
   // boundary instead of the app — this assertion alone would fail (the
   // card, and the rest of the page, simply wouldn't be there).
   await page.goto('/')
+  await openMonthDetail(page)
   await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
 })
 
@@ -234,6 +250,7 @@ test('el ícono de ojo oculta el monto de "Patrimonio" y lo recuerda entre recar
   await expect(page.getByRole('dialog')).not.toBeVisible()
 
   await page.goto('/')
+  await openMonthDetail(page)
   await expect(page.getByText('Progreso de tus inversiones')).toBeVisible()
   await expect(amountMask(page)).toHaveCSS('opacity', '0')
   await expect.poll(() => investmentsCardHeight(page)).toBeGreaterThan(0)
@@ -245,6 +262,7 @@ test('el ícono de ojo oculta el monto de "Patrimonio" y lo recuerda entre recar
   // Guardado en Settings, no en un store efímero — sigue oculto tras
   // recargar. Ver docs/DATA_MODEL.md "hideSavingsAndInvestmentsAmount".
   await page.reload()
+  await openMonthDetail(page)
   await expect(amountMask(page)).toHaveCSS('opacity', '1')
   await expect.poll(() => investmentsCardHeight(page)).toBe(0)
 

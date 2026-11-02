@@ -8,3 +8,11 @@ export async function enableAdvancedMode(page: Page) {
   await toggle.click()
   await expect(toggle).toBeChecked()
 }
+
+/** Unfolds the home's "Más del mes" (KPIs, charts, cuentas, patrimonio),
+ *  folded under "¿cuánto me queda?" since Etapa 9. */
+export async function openMonthDetail(page: Page) {
+  const details = page.locator('details', { has: page.getByText(/^Más del mes/) })
+  if ((await details.getAttribute('open')) === null) await page.getByText(/^Más del mes/).click()
+  await expect(details).toHaveAttribute('open', '')
+}

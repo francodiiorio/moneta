@@ -269,9 +269,12 @@ finanzas personales" en `docs/DECISIONS.md`. Cada fase se publica por separado.
    (aprende de las correcciones). (2b, hecho) Carga rápida: al cargar un movimiento, los
    comercios más usados de los últimos 90 días aparecen como botones y completan
    categoría, medio de pago y moneda de la última vez — sólo falta el monto.
-3. **Inicio: "¿cuánto me queda?"** — un número (ingresos − fijos − tarjetas que vencen −
-   otros gastos) y tres bloques. Ingreso recurrente (sueldo). Las cuotas con tarjeta toman
-   la fecha de cierre de su resumen (migración de las ya cargadas).
+3. **Inicio: "¿cuánto me queda?"** (hecho) — (3a) las cuotas con tarjeta toman la fecha
+   de cierre de su resumen (migración de las ya cargadas, Dexie v11 / backup v11). (3b)
+   ingreso fijo: el sueldo como plan recurrente de ingreso. (3c) el Inicio arranca con un
+   número — ingresos − gastos fijos − tarjetas que vencen en el mes − otros gastos —
+   desglosado, y tres bloques (tarjetas, se viene, presupuestos); KPIs, gráficos, cuentas,
+   últimos movimientos y patrimonio quedan plegados en "Más del mes".
 4. **Que vuelvas a abrirla** — vencimientos exportables al calendario del celular (.ics),
    línea de tiempo "libre de cuotas", observaciones simples por comercio y categoría.
 

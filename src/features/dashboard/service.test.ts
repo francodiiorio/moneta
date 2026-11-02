@@ -3,12 +3,12 @@ import { db } from '@/database/db'
 import { createAccount } from '@/database/repositories/accounts.repo'
 import { createBudget } from '@/database/repositories/budgets.repo'
 import { createCategory } from '@/database/repositories/categories.repo'
-import { createCreditCard } from '@/database/repositories/creditCards.repo'
+import { createCreditCard, setCreditCardArchived } from '@/database/repositories/creditCards.repo'
 import { saveExpense } from '@/database/repositories/expenses.repo'
 import { saveIncome } from '@/database/repositories/incomes.repo'
 import { createRecurringPlan, setRecurringPlanPaused } from '@/database/repositories/recurringPlans.repo'
 import { money } from '@/domain/money'
-import { getOnboarding, getRecentMovements, getUpcoming, monthChange, savingsRate } from './service'
+import { getMonthLeft, getOnboarding, getRecentMovements, getUpcoming, monthChange, savingsRate } from './service'
 
 afterEach(async () => {
   await Promise.all([
@@ -157,5 +157,91 @@ describe('savingsRate', () => {
     expect(savingsRate({ income: money(1000, 'ARS'), net: money(250, 'ARS') })).toBe(0.25)
     expect(savingsRate({ income: money(1000, 'ARS'), net: money(-500, 'ARS') })).toBe(-0.5)
     expect(savingsRate({ income: money(0, 'ARS'), net: money(-500, 'ARS') })).toBeUndefined()
+  })
+})
+
+describe('getMonthLeft', () => {
+  it('ingresos minus fixed, the card statements due this month and other gastos — card purchases only through their statement', async () => {
+    const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
+    const salud = await createCategory({ kind: 'expense', name: 'Salud' })
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    const account = await createAccount({ name: 'BBVA', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
+    const visa = await createCreditCard({ name: 'visa', closingDay: 22, dueDay: 4 })
+
+    await saveIncome({ date: '2026-11-01', description: 'Sueldo', categoryId: sueldo.id, accountId: account.id, amount: 1_500_000_00, currency: 'ARS' })
+    // Two fixed gastos: one already generated (Nov 1), one still to come (Nov 20).
+    const galeno = await createRecurringPlan({
+      template: { description: 'Galeno', categoryId: salud.id, amount: 295_000_00, currency: 'ARS' },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 1, startDate: '2026-11-01' },
+    })
+    await saveExpense({ date: '2026-11-01', description: 'Galeno', categoryId: salud.id, amount: 295_000_00, currency: 'ARS', status: 'confirmed', sourcePlanId: galeno.id, occurrenceIndex: 0 })
+    await db.recurringPlans.update(galeno.id, { lastMaterializedDate: '2026-11-01' })
+    await createRecurringPlan({
+      template: { description: 'Gimnasio', categoryId: salud.id, amount: 50_000_00, currency: 'ARS' },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 20, startDate: '2026-11-20' },
+    })
+    // October's statement (closes Oct 22, due Nov 4) and a November card purchase (due in December).
+    await saveExpense({ date: '2026-10-10', description: 'Super', categoryId: comida.id, amount: 400_000_00, currency: 'ARS', status: 'confirmed', cardId: visa.id })
+    await saveExpense({ date: '2026-11-05', description: 'Rappi', categoryId: comida.id, amount: 20_000_00, currency: 'ARS', status: 'confirmed', cardId: visa.id })
+    // A debit gasto.
+    await saveExpense({ date: '2026-11-10', description: 'Verdulería', categoryId: comida.id, amount: 10_000_00, currency: 'ARS', status: 'confirmed', accountId: account.id })
+
+    const result = await getMonthLeft('2026-11')
+    expect(result).toMatchObject({
+      income: money(1_500_000_00, 'ARS'),
+      fixed: money(345_000_00, 'ARS'),
+      cards: money(400_000_00, 'ARS'),
+      other: money(10_000_00, 'ARS'),
+      left: money(745_000_00, 'ARS'),
+      hasIncome: true,
+      missingRateCount: 0,
+    })
+    expect(result.cardItems).toEqual([{ cardId: visa.id, cardName: 'visa', dueDate: '2026-11-04', amount: money(400_000_00, 'ARS'), missingRate: false }])
+  })
+
+  it('a salary still to come counts; without any ingreso it says so', async () => {
+    const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
+    const account = await createAccount({ name: 'BBVA', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
+    expect((await getMonthLeft('2099-03')).hasIncome).toBe(false)
+    await createRecurringPlan({
+      kind: 'income',
+      template: { description: 'Sueldo', categoryId: sueldo.id, amount: 1_000_000_00, currency: 'ARS', accountId: account.id },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 1, startDate: '2099-03-01' },
+    })
+    expect(await getMonthLeft('2099-03')).toMatchObject({ income: money(1_000_000_00, 'ARS'), hasIncome: true })
+  })
+
+  it("an archived card's statements still count — its cuotas are still due", async () => {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    const visa = await createCreditCard({ name: 'visa', closingDay: 22, dueDay: 4 })
+    await saveExpense({ date: '2099-01-22', description: 'Heladera (cuota 3/6)', categoryId: comida.id, amount: 100_000_00, currency: 'ARS', status: 'projected', cardId: visa.id })
+    await setCreditCardArchived(visa.id, true)
+    expect((await getMonthLeft('2099-02')).cards).toEqual(money(100_000_00, 'ARS'))
+  })
+
+  it("a card's fixed gastos still to be generated count in the statement they fall in", async () => {
+    const servicios = await createCategory({ kind: 'expense', name: 'Servicios' })
+    const visa = await createCreditCard({ name: 'visa', closingDay: 22, dueDay: 4 })
+    await createRecurringPlan({
+      template: { description: 'Netflix', categoryId: servicios.id, amount: 15_000_00, currency: 'ARS', cardId: visa.id },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 15, startDate: '2099-01-15' },
+    })
+    // January's statement (Dec 23 – Jan 22, due Feb 4) has the Jan 15 one; it isn't a fixed gasto of its own.
+    expect(await getMonthLeft('2099-02')).toMatchObject({ cards: money(15_000_00, 'ARS'), fixed: money(0, 'ARS') })
+    // Only one per statement: February's (due in March) has Feb 15, not Jan 15 again.
+    expect((await getMonthLeft('2099-03')).cards).toEqual(money(15_000_00, 'ARS'))
+  })
+
+  it('without a rate an amount is left out and flagged, and a salary in another currency is still an ingreso', async () => {
+    const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    const account = await createAccount({ name: 'Dólares', type: 'bank', currency: 'USD', openingBalance: 0, openingDate: '2026-01-01' })
+    const visa = await createCreditCard({ name: 'visa', closingDay: 22, dueDay: 4 })
+    await saveIncome({ date: '2099-02-01', description: 'Sueldo', categoryId: sueldo.id, accountId: account.id, amount: 2_000_00, currency: 'USD' })
+    await saveExpense({ date: '2099-01-10', description: 'Steam', categoryId: comida.id, amount: 30_00, currency: 'USD', status: 'confirmed', cardId: visa.id })
+
+    const result = await getMonthLeft('2099-02')
+    expect(result).toMatchObject({ income: money(0, 'ARS'), cards: money(0, 'ARS'), hasIncome: true, missingRateCount: 2 })
+    expect(result.cardItems).toMatchObject([{ cardId: visa.id, missingRate: true }])
   })
 })

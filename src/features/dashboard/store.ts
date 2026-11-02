@@ -9,9 +9,14 @@ import { currentMonthStamp, type MonthStamp } from '@/lib/dates'
 interface DashboardUiState {
   month: MonthStamp
   setMonth: (month: MonthStamp) => void
+  /** Whether "Más del mes" is unfolded — kept while moving around the app. */
+  detailOpen: boolean
+  setDetailOpen: (open: boolean) => void
 }
 
 export const useDashboardUiStore = create<DashboardUiState>((set) => ({
   month: currentMonthStamp(),
   setMonth: (month) => set({ month }),
+  detailOpen: false,
+  setDetailOpen: (detailOpen) => set({ detailOpen }),
 }))
