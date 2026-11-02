@@ -4,6 +4,7 @@ import { encryptPayload } from './encryption'
 import { BACKUP_FORMAT } from './schemas/v1'
 import type { BackupDataV11, BackupV11 } from './schemas/v11'
 import packageJson from '../../../package.json'
+import { downloadBlob } from '@/lib/download'
 
 export interface ExportedBackup {
   filename: string
@@ -64,12 +65,5 @@ export async function exportBackup(passphrase?: string): Promise<ExportedBackup>
 /** Triggers a browser download. UI-only — never call from tests or
  *  from other services. */
 export function downloadBackup(exported: ExportedBackup): void {
-  const url = URL.createObjectURL(exported.blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = exported.filename
-  document.body.append(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
+  downloadBlob(exported.blob, exported.filename)
 }

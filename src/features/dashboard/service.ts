@@ -16,11 +16,13 @@ import { generateOccurrences, pendingOccurrencesInRange } from '@/domain/recurre
 import { lastPurchaseDay, statementBalance, statementDates } from '@/domain/cards'
 import { monthLeft } from '@/domain/cashflow'
 import { convert, MissingRateError } from '@/domain/currency'
-import { money, percentChange, sumMoney, type Money } from '@/domain/money'
-import { addDays, currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
+import { formatMoney, money, percentChange, sumMoney, type Money } from '@/domain/money'
+import { addDays, currentMonthStamp, monthOf, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
+import type { CalendarEvent } from '@/lib/ics'
 // Another feature's service, never its components — see docs/DECISIONS.md
 // "Un feature puede importar el service.ts/hooks de otro".
 import { listTransactionsForMonth, type TransactionListItem } from '@/features/transactions/service'
+import { listCardSummaries } from '@/features/cards/service'
 import type { MonthSummary } from '@/features/reports/service'
 
 /** Per-browser convenience, not data: whether the user closed "Primeros
@@ -307,3 +309,93 @@ export async function getMonthLeft(month: MonthStamp): Promise<MonthLeft> {
   }
 }
 
+
+export interface CalendarExportOptions {
+  /** Each card's closes and due dates. */
+  cards: boolean
+  /** Fixed gastos and cuotas not paid by card (by card they're in the
+   *  statement). */
+  fixed: boolean
+  /** Amounts in the event titles — off by default: a calendar is often
+   *  synced to someone else's cloud. */
+  amounts: boolean
+}
+
+const DAY_BEFORE = { daysBefore: 1, hour: 10 }
+
+/**
+ * The payments ahead, as calendar events through the next `months`
+ * months: the closed statement still to pay (with what's owed, if any is
+ * loaded), then each card's closes and due dates — without an amount, it
+ * isn't known yet —, and the fixed gastos and cuotas not paid by card.
+ * An archived card only keeps its last statement's due date, if owed;
+ * paused plans are left out. Ids are stable (card + period, plan + date),
+ * and a last event near the horizon asks to download it again.
+ */
+export async function getCalendarEvents(
+  options: CalendarExportOptions,
+  today: DateStamp = todayStamp(),
+  months = 12,
+): Promise<CalendarEvent[]> {
+  const until = monthRange(shiftMonth(monthOf(today), months - 1)).end
+  const titled = (title: string, amounts: readonly Money[]) =>
+    options.amounts && amounts.length > 0 ? `${title} · ${amounts.map(formatMoney).join(' + ')}` : title
+  const events: CalendarEvent[] = []
+
+  if (options.cards) {
+    for (const { card, current, previous } of await listCardSummaries(today)) {
+      // Nothing loaded for it yet still has a due date; a paid one doesn't.
+      const previousOwed = previous.due === 'pending' || (previous.due === 'empty' && !card.isArchived)
+      if (previousOwed && previous.dueDate >= today) {
+        events.push({
+          uid: `card-due-${card.id}-${previous.period}`,
+          date: previous.dueDate,
+          title: titled(`Vence ${card.name}`, previous.owed),
+          reminder: DAY_BEFORE,
+        })
+      }
+      if (card.isArchived) continue
+      const calendar = await creditCardsRepo.getCardCalendar(card.id)
+      const closeNote = calendar.card.closingDayToNext
+        ? 'Lo que compres desde hoy va al resumen siguiente.'
+        : 'Lo que compres después de hoy va al resumen siguiente.'
+      for (let period = current.period; ; period = shiftMonth(period, 1)) {
+        const { closeDate, dueDate } = statementDates(calendar, period)
+        if (closeDate > until) break
+        events.push({ uid: `card-close-${card.id}-${period}`, date: closeDate, title: `Cierra ${card.name}`, description: closeNote })
+        if (dueDate <= until) events.push({ uid: `card-due-${card.id}-${period}`, date: dueDate, title: `Vence ${card.name}`, reminder: DAY_BEFORE })
+      }
+    }
+  }
+
+  if (options.fixed) {
+    const [plans, expenses] = await Promise.all([recurringPlansRepo.listRecurringPlans(), expensesRepo.listExpensesInRange(today, until)])
+    for (const plan of plans.filter((p) => !p.isPaused && (p.kind ?? 'expense') === 'expense' && p.template.cardId === undefined)) {
+      const amount = money(plan.template.amount, plan.template.currency)
+      // From the first one not generated yet — the same as "Se viene".
+      for (const date of pendingOccurrencesInRange(plan.rule, plan.lastMaterializedDate, today, until)) {
+        events.push({ uid: `plan-${plan.id}-${date}`, date, title: titled(plan.template.description, [amount]), reminder: DAY_BEFORE })
+      }
+    }
+    // A cuota not paid by card (a loan) is due on its own date.
+    for (const cuota of expenses.filter((e) => e.status === 'projected' && e.cardId === undefined)) {
+      events.push({
+        uid: `cuota-${cuota.id}`,
+        date: cuota.date,
+        title: titled(cuota.description, [money(cuota.amount, cuota.currency)]),
+        reminder: DAY_BEFORE,
+      })
+    }
+  }
+
+  if (events.length > 0) {
+    events.push({
+      uid: `renew-${until}`,
+      date: addDays(until, -14),
+      title: 'Bajá de nuevo tus vencimientos de Moneta',
+      description: 'Las fechas de este calendario llegan hasta acá: desde Moneta → Inicio → Se viene → Agregar al calendario.',
+      reminder: { daysBefore: 0, hour: 10 },
+    })
+  }
+  return events.sort((a, b) => a.date.localeCompare(b.date) || a.uid.localeCompare(b.uid))
+}

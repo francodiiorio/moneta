@@ -8,7 +8,7 @@ import { saveExpense } from '@/database/repositories/expenses.repo'
 import { saveIncome } from '@/database/repositories/incomes.repo'
 import { createRecurringPlan, setRecurringPlanPaused } from '@/database/repositories/recurringPlans.repo'
 import { money } from '@/domain/money'
-import { getMonthLeft, getOnboarding, getRecentMovements, getUpcoming, monthChange, savingsRate } from './service'
+import { getCalendarEvents, getMonthLeft, getOnboarding, getRecentMovements, getUpcoming, monthChange, savingsRate } from './service'
 
 afterEach(async () => {
   await Promise.all([
@@ -243,5 +243,98 @@ describe('getMonthLeft', () => {
     const result = await getMonthLeft('2099-02')
     expect(result).toMatchObject({ income: money(0, 'ARS'), cards: money(0, 'ARS'), hasIncome: true, missingRateCount: 2 })
     expect(result.cardItems).toMatchObject([{ cardId: visa.id, missingRate: true }])
+  })
+})
+
+describe('getCalendarEvents', () => {
+  const TODAY = '2026-11-02'
+
+  async function seed() {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    const salud = await createCategory({ kind: 'expense', name: 'Salud' })
+    const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
+    const account = await createAccount({ name: 'BBVA', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
+    const visa = await createCreditCard({ name: 'Visa', closingDay: 22, dueDay: 4 })
+    const old = await createCreditCard({ name: 'Vieja', closingDay: 10, dueDay: 20 })
+    await setCreditCardArchived(old.id, true)
+    // October's statement: closed Oct 22, due Nov 4, unpaid.
+    await saveExpense({ date: '2026-10-10', description: 'Super', categoryId: comida.id, amount: 400_000_00, currency: 'ARS', status: 'confirmed', cardId: visa.id })
+    await createRecurringPlan({
+      template: { description: 'Galeno', categoryId: salud.id, amount: 295_000_00, currency: 'ARS', accountId: account.id },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 1, startDate: '2026-10-01' },
+    })
+    await createRecurringPlan({
+      template: { description: 'Netflix', categoryId: comida.id, amount: 15_000_00, currency: 'ARS', cardId: visa.id },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 15, startDate: '2026-10-15' },
+    })
+    const paused = await createRecurringPlan({
+      template: { description: 'Gimnasio', categoryId: salud.id, amount: 50_000_00, currency: 'ARS' },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 20, startDate: '2026-10-20' },
+    })
+    await setRecurringPlanPaused(paused.id, true)
+    await createRecurringPlan({
+      kind: 'income',
+      template: { description: 'Sueldo', categoryId: sueldo.id, amount: 1_000_000_00, currency: 'ARS', accountId: account.id },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 5, startDate: '2026-10-05' },
+    })
+    return { visa }
+  }
+
+  it("card closes and due dates and fixed gastos not paid by card, through the horizon's last month", async () => {
+    const { visa } = await seed()
+    const events = await getCalendarEvents({ cards: true, fixed: true, amounts: false }, TODAY, 2)
+    expect(events.map((e) => [e.date, e.title])).toEqual([
+      ['2026-11-04', 'Vence Visa'],
+      ['2026-11-22', 'Cierra Visa'],
+      ['2026-12-01', 'Galeno'],
+      ['2026-12-04', 'Vence Visa'],
+      // Two weeks before the horizon ends.
+      ['2026-12-17', 'Bajá de nuevo tus vencimientos de Moneta'],
+      ['2026-12-22', 'Cierra Visa'],
+    ])
+    expect(events[0]).toMatchObject({ uid: `card-due-${visa.id}-2026-10`, reminder: { daysBefore: 1, hour: 10 } })
+    expect(events[1]?.reminder).toBeUndefined()
+  })
+
+  it('amounts only when asked: what the closed statement owes and each fixed gasto', async () => {
+    await seed()
+    const titles = (await getCalendarEvents({ cards: true, fixed: true, amounts: true }, TODAY, 2)).map((e) => e.title)
+    expect(titles[0]).toMatch(/^Vence Visa · .*400\.000,00$/)
+    expect(titles).toContain('Cierra Visa')
+    expect(titles.find((t) => t.startsWith('Galeno'))).toMatch(/^Galeno · .*295\.000,00$/)
+    // The open statement's amount isn't known yet.
+    expect(titles.filter((t) => t === 'Vence Visa')).toHaveLength(1)
+  })
+
+  it('each part can be left out', async () => {
+    await seed()
+    expect((await getCalendarEvents({ cards: false, fixed: true, amounts: false }, TODAY, 2)).map((e) => e.title)).toEqual([
+      'Galeno',
+      'Bajá de nuevo tus vencimientos de Moneta',
+    ])
+    expect((await getCalendarEvents({ cards: false, fixed: false, amounts: false }, TODAY, 2))).toEqual([])
+  })
+
+  it("a statement with nothing loaded still has its due date; an archived card only its last one, if owed", async () => {
+    const comida = await createCategory({ kind: 'expense', name: 'Comida' })
+    await createCreditCard({ name: 'Nueva', closingDay: 22, dueDay: 4 })
+    const old = await createCreditCard({ name: 'Vieja', closingDay: 22, dueDay: 4 })
+    await saveExpense({ date: '2026-10-10', description: 'Super', categoryId: comida.id, amount: 1_000_00, currency: 'ARS', status: 'confirmed', cardId: old.id })
+    await setCreditCardArchived(old.id, true)
+    const events = await getCalendarEvents({ cards: true, fixed: false, amounts: false }, TODAY, 1)
+    // Same-day events are ordered by id (random): compare them sorted by title too.
+    expect(events.map((e) => [e.date, e.title]).sort()).toEqual([
+      ['2026-11-04', 'Vence Nueva'],
+      ['2026-11-04', 'Vence Vieja'],
+      ['2026-11-16', 'Bajá de nuevo tus vencimientos de Moneta'],
+      ['2026-11-22', 'Cierra Nueva'],
+    ])
+  })
+
+  it("a cuota not paid by card is due on its own date", async () => {
+    const otros = await createCategory({ kind: 'expense', name: 'Otros' })
+    await saveExpense({ date: '2026-11-10', description: 'Préstamo (cuota 3/12)', categoryId: otros.id, amount: 80_000_00, currency: 'ARS', status: 'projected' })
+    const events = await getCalendarEvents({ cards: false, fixed: true, amounts: false }, TODAY, 1)
+    expect(events[0]).toMatchObject({ date: '2026-11-10', title: 'Préstamo (cuota 3/12)', reminder: { daysBefore: 1, hour: 10 } })
   })
 })

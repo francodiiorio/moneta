@@ -275,8 +275,11 @@ finanzas personales" en `docs/DECISIONS.md`. Cada fase se publica por separado.
    número — ingresos − gastos fijos − tarjetas que vencen en el mes − otros gastos —
    desglosado, y tres bloques (tarjetas, se viene, presupuestos); KPIs, gráficos, cuentas,
    últimos movimientos y patrimonio quedan plegados en "Más del mes".
-4. **Que vuelvas a abrirla** — vencimientos exportables al calendario del celular (.ics),
-   línea de tiempo "libre de cuotas", observaciones simples por comercio y categoría.
+4. **Que vuelvas a abrirla** — (4a, hecho) vencimientos al calendario del celular: desde
+   "Se viene", un `.ics` armado en el dispositivo con los cierres y vencimientos de cada
+   tarjeta y los gastos fijos y cuotas que no van con tarjeta, de los próximos 12 meses,
+   con aviso el día antes; montos opcionales (apagados por defecto). Pendiente: línea de tiempo
+   "libre de cuotas", observaciones simples por comercio y categoría.
 
 Fuera de esta etapa, a decidir aparte: sincronizar celular y compu (requiere revisar la
 restricción de privacidad), gasto ajustado por inflación (necesita el IPC).

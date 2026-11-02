@@ -1,14 +1,18 @@
-import { CalendarClock } from 'lucide-react'
+import { useState } from 'react'
+import { CalendarClock, CalendarPlus } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { CategoryIcon } from '@/components/CategoryIcon'
 import { MoneyText } from '@/components/MoneyText'
 import { daysBetween, formatShortDate, relativeDays, todayStamp } from '@/lib/dates'
 import { useUpcoming } from '../hooks/useUpcoming'
+import { CalendarExportDialog } from './CalendarExportDialog'
 import { Panel, PanelEmpty } from './Panel'
 
 export function UpcomingPanel() {
   const upcoming = useUpcoming()
   const today = todayStamp()
+  const [exportOpen, setExportOpen] = useState(false)
 
   return (
     <Panel title="Se viene" icon={CalendarClock} to="/presupuestos?tab=fijos" linkLabel="Fijos">
@@ -41,6 +45,13 @@ export function UpcomingPanel() {
           ))}
         </div>
       )}
+      {upcoming !== undefined && (
+        <Button variant="ghost" size="sm" className="mt-2 px-0 text-primary hover:bg-transparent" onClick={() => setExportOpen(true)}>
+          <CalendarPlus className="size-4" />
+          Agregar al calendario
+        </Button>
+      )}
+      <CalendarExportDialog open={exportOpen} onOpenChange={setExportOpen} />
     </Panel>
   )
 }

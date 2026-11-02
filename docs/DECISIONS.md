@@ -1722,3 +1722,29 @@ plegado en "Más del mes".
 **Por qué no "ingresos − gastos del mes":** mezcla lo que se compró con tarjeta (que se
 paga después) con lo que ya salió de la cuenta, y no cuenta lo que se sabe que va a
 entrar o salir. La pregunta es de caja, y la caja de una tarjeta es su vencimiento.
+
+## Vencimientos al calendario: un `.ics` que se baja (Etapa 9, Fase 4)
+
+**Problema:** sin backend no hay notificaciones push, y lo que más cuesta recordar es
+cuándo vence cada tarjeta. La app sólo avisa si la abrís.
+
+**Decisión:** desde "Se viene" se baja un archivo `.ics` (RFC 5545, `lib/ics.ts`, puro)
+con los próximos 12 meses: el resumen cerrado que falta pagar (con lo que se debe, aunque
+todavía no tenga gastos cargados; de una tarjeta archivada, sólo ése y si debe algo), y de
+cada tarjeta activa sus cierres y vencimientos; y las fechas de los gastos fijos y las
+cuotas que no van con tarjeta (las de tarjeta ya están en el resumen). Eventos de día
+completo, con aviso el día antes a las 10, y uno final dos semanas antes del horizonte que
+pide bajarlo de nuevo. El celular lo importa a su calendario y ahí viven los avisos
+(iPhone respeta el aviso del archivo; Google Calendar al importar usa los avisos por
+defecto del calendario — el diálogo lo dice). Cada evento tiene un UID estable (tarjeta +
+período, plan + fecha) y un `SEQUENCE` que crece con cada exportación, para que bajarlo
+de nuevo actualice en vez de duplicar donde el calendario lo respeta (no todos). Lo que
+se pausa o se borra no se puede quitar desde un archivo importado: el diálogo pide
+sacarlo a mano.
+
+**Privacidad:** el archivo se arma en el dispositivo y se baja como un backup; no hay
+request. Los montos son opcionales y vienen apagados: un calendario suele sincronizarse
+con una nube ajena, y los nombres de tarjeta y de gastos fijos ya dicen bastante.
+
+**Descartado:** una suscripción `webcal://` (necesita un servidor) y Web Push (también,
+y en iOS sólo con la PWA instalada).
