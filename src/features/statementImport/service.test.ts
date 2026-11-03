@@ -6,7 +6,6 @@ import { saveExpense } from '@/database/repositories/expenses.repo'
 import { createInstallmentPlan } from '@/database/repositories/installmentPlans.repo'
 import { createRecurringPlan } from '@/database/repositories/recurringPlans.repo'
 import { payStatement } from '@/database/repositories/statementPayments.repo'
-import { createAccount } from '@/database/repositories/accounts.repo'
 import { setCategoryArchived } from '@/database/repositories/categories.repo'
 import { statementDates } from '@/domain/cards'
 import type { CreditCard } from '@/domain/entities'
@@ -232,9 +231,8 @@ describe('statement import — edge cases', () => {
   it('a statement already paid in Moneta imports its gastos and keeps its dates', async () => {
     const card = await createCreditCard({ name: 'visa', closingDay: 25, dueDay: 5 })
     const comida = await createCategory({ kind: 'expense', name: 'Comida' })
-    const account = await createAccount({ name: 'Banco', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
     await saveExpense({ date: '2026-10-01', description: 'Super', categoryId: comida.id, amount: 1_00, currency: 'ARS', status: 'confirmed', cardId: card.id })
-    await payStatement({ cardId: card.id, period: '2026-10', date: '2026-10-30', lines: [{ currency: 'ARS', amount: 1_00, accountId: account.id, expectedAccountCurrency: 'ARS' }] })
+    await payStatement({ cardId: card.id, period: '2026-10', date: '2026-10-30', lines: [{ currency: 'ARS', amount: 1_00 }] })
     const preview = await buildImportPreview(only([purchase('2026-10-08', 'DLO*RAPPI', 20_000_00)]), card.id)
     expect(preview.datesLocked).toBe(true)
     expect(await importStatement(preview, initialChoices(preview), '2026-11-01')).toEqual({ expenses: 1, plans: 0, datesSkipped: true })

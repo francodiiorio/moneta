@@ -17,7 +17,7 @@ test('un gasto con tarjeta entra al resumen en curso y se ve en Tarjetas y el Da
   await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
   await page.getByLabel('Descripción').fill('Zapatillas')
   await page.getByLabel('Monto').fill('85.000')
-  await page.getByLabel('Medio de pago').click()
+  await page.getByLabel('Tarjeta', { exact: true }).click()
   await page.getByRole('option', { name: 'Visa Galicia' }).click()
   // The statement field appears, defaulting to the one the date falls into.
   await expect(page.getByLabel('Resumen')).toContainText('Según la fecha')
@@ -50,7 +50,7 @@ test('un gasto con tarjeta se puede fijar en un resumen posterior (presentación
   await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
   await page.getByLabel('Descripción').fill('Hotel')
   await page.getByLabel('Monto').fill('100')
-  await page.getByLabel('Medio de pago').click()
+  await page.getByLabel('Tarjeta', { exact: true }).click()
   await page.getByRole('option', { name: 'Master' }).click()
   await page.getByLabel('Resumen').click()
   // Pinned to the statement after the automatic one (options: "según la
@@ -69,14 +69,9 @@ test('un gasto con tarjeta se puede fijar en un resumen posterior (presentación
   await expect(page.getByText('Próximo')).toBeVisible()
 })
 
-// Regression (code review, Fase 4a): Gasto with a card → Ingreso with an
-// account → back to Gasto left both set, and saving failed.
-test('cambiar de pestaña con una tarjeta elegida no deja dos medios de pago', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Galicia')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
+// Regression (code review, Fase 4a): an ingreso never goes on a card —
+// switching to Ingreso and back drops the card picked before.
+test('cambiar de pestaña a Ingreso y volver saca la tarjeta elegida', async ({ page }) => {
   await page.goto('/tarjetas')
   await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
   await page.getByLabel('Nombre').fill('Visa')
@@ -89,19 +84,18 @@ test('cambiar de pestaña con una tarjeta elegida no deja dos medios de pago', a
   await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
   await page.getByLabel('Descripción').fill('Algo')
   await page.getByLabel('Monto').fill('100')
-  await page.getByLabel('Medio de pago').click()
+  await page.getByLabel('Tarjeta', { exact: true }).click()
   await page.getByRole('option', { name: 'Visa' }).click()
   await page.getByRole('tab', { name: 'Ingreso' }).click()
-  await page.getByLabel('Cuenta', { exact: true }).click()
-  await page.getByRole('option', { name: /Galicia/ }).click()
-  await expect(page.getByLabel('Cuenta', { exact: true })).toContainText('Galicia')
+  await expect(page.getByLabel('Tarjeta', { exact: true })).toHaveCount(0)
   await page.getByRole('tab', { name: 'Gasto' }).click()
-  await expect(page.getByLabel('Medio de pago')).toContainText('Galicia')
+  await expect(page.getByLabel('Tarjeta', { exact: true })).toContainText('Sin tarjeta')
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Otros' }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
-  await expect(page.getByText('Otros · Galicia')).toBeVisible()
+  await expect(page.getByText('Algo')).toBeVisible()
+  await expect(page.getByText(/Otros · Visa/)).toHaveCount(0)
 })
 
 // Etapa 8, Fase 4b: una compra en cuotas con tarjeta reparte una cuota por
@@ -139,16 +133,9 @@ test('una compra en cuotas con tarjeta pone una cuota en cada resumen', async ({
   await expect(page.getByText('Heladera (cuota 3/3)')).toBeVisible()
 })
 
-// Etapa 8, Fase 5: pagar un resumen cerrado desde una cuenta baja su saldo
-// (sin crear un gasto), se ve en Movimientos, y se puede deshacer.
-test('pagar el resumen cerrado desde una cuenta y deshacerlo', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Galicia')
-  await page.getByLabel('Saldo inicial').fill('100.000')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
+// Etapa 8, Fase 5 (sin cuentas desde la Etapa 10): pagar un resumen cerrado
+// lo marca pagado sin crear un gasto, y se puede deshacer.
+test('pagar el resumen cerrado y deshacerlo', async ({ page }) => {
   await page.goto('/tarjetas')
   await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
   await page.getByLabel('Nombre').fill('Visa')
@@ -166,7 +153,7 @@ test('pagar el resumen cerrado desde una cuenta y deshacerlo', async ({ page }) 
   await page.getByLabel('Fecha', { exact: true }).click()
   if (new Date().getDate() <= 28) await page.getByRole('button', { name: 'Ir al mes anterior' }).click()
   await page.locator('.rdp-day:not(.rdp-outside) .rdp-day_button', { hasText: /^15$/ }).click()
-  await page.getByLabel('Medio de pago').click()
+  await page.getByLabel('Tarjeta', { exact: true }).click()
   await page.getByRole('option', { name: 'Visa' }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Ropa' }).click()
@@ -176,29 +163,23 @@ test('pagar el resumen cerrado desde una cuenta y deshacerlo', async ({ page }) 
   await page.goto('/tarjetas')
   await page.getByRole('button', { name: 'Pagar', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: /^Pagar Visa/ })
-  // The account in the statement's currency is picked by default.
-  await expect(dialog.getByLabel('Desde')).toContainText('Galicia')
+  await expect(dialog.getByLabel('Pagaste (ARS)')).toHaveValue('30.000,00')
+  await expect(dialog.getByText('Desde')).toHaveCount(0)
   await dialog.getByRole('button', { name: 'Pagar', exact: true }).click()
   await expect(dialog).not.toBeVisible()
   await expect(page.getByText('Pagado', { exact: true })).toBeVisible()
 
-  await page.goto('/cuentas')
-  await expect(page.getByText(/70[.,]000,00/).first()).toBeVisible()
-
+  // Paying is not a gasto nor a movement: Movimientos keeps the purchase only.
   await page.goto('/movimientos')
-  await expect(page.getByText(/^Pago resumen Visa · venc(e|ió) el /)).toBeVisible()
-  await expect(page.getByText('Pago de tarjeta · Galicia')).toBeVisible()
+  await expect(page.getByText(/^Pago resumen Visa/)).toHaveCount(0)
 
   await page.goto('/tarjetas')
   await page.getByRole('link', { name: 'Ver resúmenes' }).click()
   await page.getByRole('button', { name: 'Resumen anterior' }).click()
-  await expect(page.getByText(/Pagaste .* desde Galicia/)).toBeVisible()
+  await expect(page.getByText(/^Pagaste \$\s?30\.000,00 el \d{2}\/\d{2}$/)).toBeVisible()
   await page.getByRole('button', { name: 'Deshacer pago' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Deshacer pago' }).click()
   await expect(page.getByRole('button', { name: 'Pagar resumen' })).toBeVisible()
-
-  await page.goto('/cuentas')
-  await expect(page.getByText(/100[.,]000,00/).first()).toBeVisible()
 })
 
 // Etapa 8, Fase 6: conciliar un resumen cerrado contra el total del banco
@@ -220,7 +201,7 @@ test('conciliar un resumen con el total del banco registra la diferencia', async
   await page.getByLabel('Fecha', { exact: true }).click()
   if (new Date().getDate() <= 28) await page.getByRole('button', { name: 'Ir al mes anterior' }).click()
   await page.locator('.rdp-day:not(.rdp-outside) .rdp-day_button', { hasText: /^15$/ }).click()
-  await page.getByLabel('Medio de pago').click()
+  await page.getByLabel('Tarjeta', { exact: true }).click()
   await page.getByRole('option', { name: 'Visa' }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Ropa' }).click()
@@ -263,15 +244,8 @@ test('la opción de compras del día de cierre se guarda y se ve en la tarjeta',
 })
 
 // Arrancar con la tarjeta ya usada: el saldo inicial del resumen cerrado se
-// carga como total (no gasto por gasto) y se paga desde una cuenta.
-test('una tarjeta con saldo inicial se paga desde una cuenta sin cargar sus gastos', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Galicia')
-  await page.getByLabel('Saldo inicial').fill('1.000.000')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
+// carga como total (no gasto por gasto) y se paga.
+test('una tarjeta con saldo inicial se paga sin cargar sus gastos', async ({ page }) => {
   await page.goto('/tarjetas')
   await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
   await page.getByLabel('Nombre').fill('visa 2551')
@@ -294,21 +268,14 @@ test('una tarjeta con saldo inicial se paga desde una cuenta sin cargar sus gast
   await page.getByRole('button', { name: 'Resumen anterior' }).click()
   await expect(page.getByText('Saldo inicial', { exact: true })).toBeVisible()
 
-  // 1.000.000 − 480.000, and it never shows up as a gasto.
-  await page.goto('/cuentas')
-  await expect(page.getByText(/520[.,]000,00/).first()).toBeVisible()
+  // It never shows up as a gasto.
+  await page.goto('/movimientos')
+  await expect(page.getByText(/480[.,]000,00/)).toHaveCount(0)
 })
 
 // Pagar por lo que cobró el banco aunque Moneta tenga otro total: queda
 // "pagado con diferencia" y la diferencia se concilia después de pagar.
 test('pagar lo que cobró el banco, ver la diferencia y conciliarla', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Galicia')
-  await page.getByLabel('Saldo inicial').fill('100.000')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   await page.goto('/tarjetas')
   await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
   await page.getByLabel('Nombre').fill('Visa')
@@ -340,23 +307,12 @@ test('pagar lo que cobró el banco, ver la diferencia y conciliarla', async ({ p
   await reconcile.getByRole('button', { name: 'Registrar diferencia' }).click()
   await expect(reconcile).not.toBeVisible()
   await expect(page.getByText('Pagado', { exact: true })).toBeVisible()
-
-  // 100.000 − 31.500: the account dropped by what was really paid.
-  await page.goto('/cuentas')
-  await expect(page.getByText(/68[.,]500,00/).first()).toBeVisible()
 })
 
 // Los bancos corren el cierre de un mes a otro: el resumen en curso avisa
 // que sus fechas son estimadas, y al pagar se cargan las del próximo
 // resumen tal como las imprime el banco.
 test('al pagar se cargan las fechas reales del próximo resumen, y el resumen en curso deja de ser estimado', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Galicia')
-  await page.getByLabel('Saldo inicial').fill('1.000.000')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   await page.goto('/tarjetas')
   await page.getByRole('button', { name: 'Nueva tarjeta' }).first().click()
   await page.getByLabel('Nombre').fill('visa 2551')

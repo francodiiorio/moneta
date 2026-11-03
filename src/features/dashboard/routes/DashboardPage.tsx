@@ -35,7 +35,6 @@ import { FlowChart } from '../components/FlowChart'
 import { WelcomeHero } from '../components/WelcomeHero'
 import { OnboardingChecklist } from '../components/OnboardingChecklist'
 import { FeatureHighlights } from '../components/FeatureHighlights'
-import { AccountsPanel } from '../components/AccountsPanel'
 import { BudgetsPanel } from '../components/BudgetsPanel'
 import { UpcomingPanel } from '../components/UpcomingPanel'
 import { RecentMovementsPanel } from '../components/RecentMovementsPanel'
@@ -86,7 +85,7 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
   const hideAmount = settings?.hideSavingsAndInvestmentsAmount ?? false
   const [onboardingHidden, hideOnboarding] = useOnboardingHidden()
   // The month drives what happened ("¿cuánto me queda?", ingresos, gastos,
-  // categorías, presupuestos); Patrimonio, cuentas, tarjetas and "se viene" are always
+  // categorías, presupuestos); Patrimonio, tarjetas and "se viene" are always
   // today — same convention as /patrimonio (see docs/DECISIONS.md).
   const month = useDashboardUiStore((s) => s.month)
   const detailOpen = useDashboardUiStore((s) => s.detailOpen)
@@ -159,7 +158,7 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
 
       <MissingRateBanner
         count={missingRateCount}
-        itemLabel={['monto, cuenta, ahorro o inversión', 'montos, cuentas, ahorros o inversiones']}
+        itemLabel={['monto, ahorro o inversión', 'montos, ahorros o inversiones']}
       />
 
       {showOnboarding && <OnboardingChecklist steps={steps} compact onHide={hideOnboarding} />}
@@ -184,7 +183,7 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
       >
         <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
           <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-          Más del mes: ingresos y gastos, en qué se fue, cuentas, patrimonio
+          Más del mes: ingresos y gastos, en qué se fue, patrimonio
         </summary>
         {detailOpen && (
           <div className="flex flex-col gap-4">
@@ -299,10 +298,7 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
               </Panel>
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-2">
-              <AccountsPanel hideAmounts={hideAmount} />
-              <RecentMovementsPanel />
-            </div>
+            <RecentMovementsPanel />
 
             {/* Collapses smoothly with the eye (grid-rows 0fr/1fr) instead of
                 unmounting: its tooltip shows the amounts the eye just hid. */}

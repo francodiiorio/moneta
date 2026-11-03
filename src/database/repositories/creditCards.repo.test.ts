@@ -353,17 +353,15 @@ describe('compras del día de cierre al resumen siguiente', () => {
 
   it('never moves a gasto out of a paid statement — rolls the whole edit back', async () => {
     const { payStatement } = await import('./statementPayments.repo')
-    const { createAccount } = await import('./accounts.repo')
     const category = await createCategory({ kind: 'expense', name: 'Comida' })
     const card = await createCreditCard({ name: 'visa 2551', closingDay: 22, dueDay: 4 })
-    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
     await withToday('2026-10-25T12:00:00', async () => {
       await saveExpense(purchase(category.id, card.id, { date: '2026-10-22', description: 'almuerzo' }))
       await payStatement({
         cardId: card.id,
         period: '2026-10',
         date: '2026-10-24',
-        lines: [{ currency: 'ARS', amount: 1_000_00, accountId: account.id, expectedAccountCurrency: 'ARS' }],
+        lines: [{ currency: 'ARS', amount: 1_000_00 }],
       })
       await expect(
         updateCreditCard(card.id, { name: 'visa 2551', closingDay: 22, dueDay: 4, closingDayToNext: true, notes: undefined }),

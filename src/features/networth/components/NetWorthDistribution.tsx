@@ -7,7 +7,6 @@ interface DistributionRow {
 }
 
 interface NetWorthDistributionProps {
-  accounts: Money
   savings: Money
   investments: Money
 }
@@ -28,9 +27,8 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: { paylo
   )
 }
 
-export function NetWorthDistribution({ accounts, savings, investments }: NetWorthDistributionProps) {
+export function NetWorthDistribution({ savings, investments }: NetWorthDistributionProps) {
   const rows: DistributionRow[] = [
-    { label: 'Cuentas', amount: accounts },
     { label: 'Ahorros', amount: savings },
     { label: 'Inversiones', amount: investments },
   ].filter((row) => row.amount.amount !== 0)
@@ -46,7 +44,7 @@ export function NetWorthDistribution({ accounts, savings, investments }: NetWort
   // Read top-to-bottom in the order defined above; Recharts renders
   // vertical-layout categories bottom-to-top, so the data is reversed.
   //
-  // A bucket total can go negative (Cuentas, with an overdraft), so the
+  // A bucket total can go negative (a saving loaded as a debt), so the
   // bar length uses the magnitude — a negative value would pull the
   // XAxis domain below zero, which
   // shifts the zero-crossing away from the plot's left edge and renders

@@ -154,7 +154,7 @@ export function NetWorthPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Patrimonio"
-        description="Tus cuentas, ahorros e inversiones. Las cuentas se administran en Cuentas."
+        description="Tus ahorros e inversiones."
         actions={
           tab === 'savings' ? (
             <Button onClick={openCreateSavingsDialog}>
@@ -209,7 +209,7 @@ export function NetWorthPage() {
           <div className="flex flex-col gap-4">
             <MissingRateBanner
               count={summary.missingRateCount}
-              itemLabel={['cuenta, ahorro o inversión', 'cuentas, ahorros o inversiones']}
+              itemLabel={['ahorro o inversión', 'ahorros o inversiones']}
             />
             <MissingPriceBanner count={summary.missingPriceCount} />
 
@@ -249,7 +249,6 @@ export function NetWorthPage() {
               </CardHeader>
               <CardContent>
                 <NetWorthDistribution
-                  accounts={summary.byBucket.accounts}
                   savings={summary.byBucket.savings}
                   investments={summary.byBucket.investments}
                 />
@@ -354,7 +353,7 @@ export function NetWorthPage() {
               <EmptyState
                 icon={TrendingUp}
                 title="Todavía no cargaste ninguna tasa"
-                description="Sin tasas, las cuentas, ahorros e inversiones en otra moneda no se pueden consolidar."
+                description="Sin tasas, los ahorros e inversiones en otra moneda no se pueden consolidar."
                 action={<Button onClick={openRateDialog}>Nueva tasa</Button>}
               />
             ) : (
@@ -423,7 +422,7 @@ export function NetWorthPage() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete?.kind === 'holding'
-                ? 'Se borran todas sus compras. Si alguna se pagó desde una cuenta, primero vas a tener que quitarle la cuenta de origen o borrarla. Esta acción no se puede deshacer.'
+                ? 'Se borran todas sus compras. Esta acción no se puede deshacer.'
                 : 'Esta acción no se puede deshacer.'}
             </AlertDialogDescription>
           </AlertDialogHeader>

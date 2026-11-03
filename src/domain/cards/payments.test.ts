@@ -69,6 +69,24 @@ describe('statementPaymentProblem', () => {
     expect(statementPaymentProblem({ ...base, date: '2025-12-31' }, galicia)).toMatch(/saldo inicial/)
     expect(statementPaymentProblem({ ...base, amount: 0 }, galicia)).toMatch(/mayores a cero/)
   })
+
+  // Etapa 10: a payment has no account — one from before still has all three fields.
+  it('accepts a payment without an account nor debited amount', () => {
+    expect(statementPaymentProblem({ currency: 'ARS', amount: 1000, date: '2026-11-05' })).toBeUndefined()
+  })
+
+  it('rejects a debited amount or currency without the account it left', () => {
+    expect(statementPaymentProblem({ currency: 'ARS', amount: 1000, debitedAmount: 1000, date: '2026-11-05' })).toMatch(/necesita la cuenta/)
+    expect(statementPaymentProblem({ currency: 'ARS', amount: 1000, debitedCurrency: 'ARS', date: '2026-11-05' })).toMatch(/necesita la cuenta/)
+  })
+
+  it('rejects an account without what was debited from it', () => {
+    expect(statementPaymentProblem({ currency: 'ARS', amount: 1000, date: '2026-11-05' }, galicia)).toMatch(/falta cuánto se debitó/)
+  })
+
+  it('still rejects a non-positive amount without an account', () => {
+    expect(statementPaymentProblem({ currency: 'ARS', amount: 0, date: '2026-11-05' })).toMatch(/mayores a cero/)
+  })
 })
 
 describe('statementPaymentLinesProblem', () => {

@@ -1,5 +1,4 @@
 import {
-  accountsRepo,
   categoriesRepo,
   creditCardsRepo,
   exchangeRatesRepo,
@@ -9,7 +8,7 @@ import {
   recurringPlansRepo,
   settingsRepo,
 } from '@/database/repositories'
-import type { Account, Category, CreditCard, ExpenseTemplate, InstallmentPlan, RecurringPlan } from '@/domain/entities'
+import type { Category, CreditCard, ExpenseTemplate, InstallmentPlan, RecurringPlan } from '@/domain/entities'
 import type { ExpenseInput } from '@/database/repositories/expenses.repo'
 import { describeRule, generateOccurrences, nextOccurrenceAfter } from '@/domain/recurrence'
 import { cardInstallmentProgress, cuotaInOpenStatement, statementDates, statementPeriodFor, type CardCalendar, type CardInstallmentProgress } from '@/domain/cards'
@@ -51,9 +50,9 @@ function buildTemplateEntry(
     status: 'confirmed',
     sourcePlanId,
     occurrenceIndex,
-    // The template's payment method: a debit from an account, or a card
-    // purchase placed in its statement by date (no statementPeriod given).
-    ...(template.accountId !== undefined && { accountId: template.accountId }),
+    // A card purchase, placed in its statement by date (no statementPeriod
+    // given). A plan from before Etapa 10 may still name a debit account:
+    // its gastos no longer go into it.
     ...(template.cardId !== undefined && { cardId: template.cardId }),
   }
 }
@@ -102,15 +101,15 @@ async function materializeDueUnsafe(today: DateStamp = todayStamp()): Promise<Ma
 
       const throughDate = due[due.length - 1]!.date
       if (plan.kind === 'income') {
-        // A salary: an ingreso into its account (the schema guarantees one).
-        const { description, categoryId, amount, currency, accountId } = plan.template
+        // A salary: an ingreso. A plan from before Etapa 10 may still name
+        // an account — like a gasto plan's, its ingresos no longer go in it.
+        const { description, categoryId, amount, currency } = plan.template
         const entries = due.map((occurrence) => ({
           date: occurrence.date,
           description,
           categoryId,
           amount,
           currency,
-          accountId: accountId!,
           sourcePlanId: plan.id,
           occurrenceIndex: occurrence.index,
         }))
@@ -186,7 +185,7 @@ export interface RecurringPlanListItem {
 }
 
 export async function listRecurringPlansWithNext(): Promise<RecurringPlanListItem[]> {
-  const [plans, categories, planExpenses, incomes, { accounts, cards }] = await Promise.all([
+  const [plans, categories, planExpenses, incomes, { cards }] = await Promise.all([
     recurringPlansRepo.listRecurringPlans(),
     categoriesRepo.listCategories(),
     expensesRepo.listPlanExpenses(),
@@ -194,7 +193,6 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
     listPaymentOptions(),
   ])
   const categoryById = new Map(categories.map((c) => [c.id, c] as [string, Category]))
-  const accountName = new Map(accounts.map((a) => [a.id, a.name]))
   const cardName = new Map(cards.map((c) => [c.id, c.name]))
   const today = todayStamp()
 
@@ -216,9 +214,6 @@ export async function listRecurringPlansWithNext(): Promise<RecurringPlanListIte
       ...(category?.color !== undefined && { categoryColor: category.color }),
       ...(category?.icon !== undefined && { categoryIcon: category.icon }),
       kind: plan.kind ?? 'expense',
-      ...(template.accountId !== undefined && {
-        paymentLabel: `${plan.kind === 'income' ? 'Entra a' : 'Débito'} · ${accountName.get(template.accountId) ?? 'cuenta'}`,
-      }),
       ...(template.cardId !== undefined && { paymentLabel: `Tarjeta · ${cardName.get(template.cardId) ?? 'tarjeta'}` }),
       amount: money(template.amount, template.currency),
       ruleDescription: describeRule(plan.rule),
@@ -480,11 +475,10 @@ export async function cuotaInOpenStatementFor(cardId: string, purchaseDate: Date
   return cuotaInOpenStatement(await creditCardsRepo.getCardCalendar(cardId), purchaseDate, today)
 }
 
-/** Accounts and cards for the plans' payment method pickers — archived
- *  ones included, so an existing plan keeps showing its own. */
-export async function listPaymentOptions(): Promise<{ accounts: Account[]; cards: CreditCard[] }> {
-  const [accounts, cards] = await Promise.all([accountsRepo.listAccounts(), creditCardsRepo.listCreditCards()])
-  return { accounts, cards }
+/** Cards for the plans' payment method pickers — archived ones included,
+ *  so an existing plan keeps showing its own. */
+export async function listPaymentOptions(): Promise<{ cards: CreditCard[] }> {
+  return { cards: await creditCardsRepo.listCreditCards() }
 }
 
 /** Narrower than createInstallmentPlanFromForm — see

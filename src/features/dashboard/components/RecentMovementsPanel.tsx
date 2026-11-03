@@ -22,11 +22,11 @@ export function RecentMovementsPanel() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm">{item.description}</span>
                 <span className="block truncate text-xs text-muted-foreground">
-                  {formatShortDate(item.date)} · {[item.categoryLabel, item.accountLabel].filter(Boolean).join(' · ')}
+                  {formatShortDate(item.date)} · {[item.categoryLabel, item.paymentLabel].filter(Boolean).join(' · ')}
                 </span>
               </span>
               <span className="shrink-0 text-sm font-medium">
-                <MoneyText value={item.amount} signColor={item.signed} />
+                <MoneyText value={item.amount} signColor />
               </span>
             </div>
           ))}

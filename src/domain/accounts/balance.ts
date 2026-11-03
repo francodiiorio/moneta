@@ -31,10 +31,12 @@ export interface AccountMovementSources {
  *  account. A transfer is two movements: its `fromAmount` leaves one
  *  account, its `toAmount` enters the other. An investment purchase with a
  *  source account takes its `sourceAmount` out of it, and paying a card
- *  statement its `debitedAmount`. */
+ *  statement its `debitedAmount`. Since Etapa 10 ingresos and payments
+ *  usually have no account: those never touched one either. */
 export function toAccountMovements(sources: AccountMovementSources): AccountMovement[] {
   const movements: AccountMovement[] = []
   for (const income of sources.incomes) {
+    if (income.accountId === undefined) continue
     movements.push({ accountId: income.accountId, date: income.date, amount: money(income.amount, income.currency) })
   }
   for (const expense of sources.expenses) {
@@ -73,6 +75,7 @@ export function toAccountMovements(sources: AccountMovementSources): AccountMove
     })
   }
   for (const payment of sources.statementPayments) {
+    if (payment.accountId === undefined || payment.debitedAmount === undefined || payment.debitedCurrency === undefined) continue
     movements.push({
       accountId: payment.accountId,
       date: payment.date,

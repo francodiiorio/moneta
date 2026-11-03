@@ -25,7 +25,6 @@ export interface CreateRecurringPlanInput {
 async function assertPaymentMethod(input: CreateRecurringPlanInput, lastMaterializedDate?: DateStamp): Promise<void> {
   const { accountId, cardId, currency } = input.template
   if (input.kind === 'income') {
-    invariant(accountId !== undefined, 'Un ingreso fijo necesita la cuenta a la que entra')
     invariant(cardId === undefined, 'Un ingreso fijo no puede entrar a una tarjeta')
     const category = await db.categories.get(input.template.categoryId)
     invariant(category?.kind === 'income', 'Un ingreso fijo necesita una categoría de ingreso')

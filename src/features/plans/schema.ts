@@ -29,11 +29,11 @@ export const recurringPlanFormSchema = z.object({
   startDate: z.string().min(1, 'Elegí una fecha de inicio'),
   endDate: z.string().optional(),
   maxOccurrences: z.string().optional(),
-  /** '' = sin especificar; 'account:<id>' = débito; 'card:<id>' = tarjeta. */
-  paymentMethod: z.string().refine((v) => v === '' || /^(account|card):.+$/.test(v), { message: 'Medio de pago inválido' }),
-}).refine((v) => v.kind !== 'income' || v.paymentMethod.startsWith('account:'), {
+  /** '' = sin tarjeta; 'card:<id>' = tarjeta. */
+  paymentMethod: z.string().refine((v) => v === '' || /^card:.+$/.test(v), { message: 'Medio de pago inválido' }),
+}).refine((v) => v.kind !== 'income' || v.paymentMethod === '', {
   path: ['paymentMethod'],
-  message: 'Elegí la cuenta a la que entra',
+  message: 'Un ingreso fijo no va con tarjeta',
 })
 export type RecurringPlanFormValues = z.infer<typeof recurringPlanFormSchema>
 
@@ -78,19 +78,14 @@ export const installmentPlanEditFormSchema = z.object({
 })
 export type InstallmentPlanEditFormValues = z.infer<typeof installmentPlanEditFormSchema>
 
-/** The recurring form's single payment-method value: '' (none),
- *  'account:<id>' (debit) or 'card:<id>' (credit card). One place to build
- *  and read it, so the two kinds of id can never be confused. */
-export function encodePaymentMethod(method: { accountId?: string | undefined; cardId?: string | undefined }): string {
-  if (method.cardId) return `card:${method.cardId}`
-  if (method.accountId) return `account:${method.accountId}`
-  return ''
+/** The recurring form's single payment-method value: '' (no card) or
+ *  'card:<id>'. A debit account a plan named before Etapa 10 reads as ''
+ *  — saving the plan from the form drops it. */
+export function encodePaymentMethod(method: { cardId?: string | undefined }): string {
+  return method.cardId ? `card:${method.cardId}` : ''
 }
 
-export function parsePaymentMethod(value: string): { accountId?: string; cardId?: string } {
+export function parsePaymentMethod(value: string): { cardId?: string } {
   const [type, id] = value.split(/:(.*)/s)
-  if (!id) return {}
-  if (type === 'account') return { accountId: id }
-  if (type === 'card') return { cardId: id }
-  return {}
+  return type === 'card' && id ? { cardId: id } : {}
 }

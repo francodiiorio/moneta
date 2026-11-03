@@ -19,7 +19,7 @@ function NetWorthColumn({
 }: {
   label: string
   total: Money
-  byBucket: { accounts: Money; savings: Money; investments: Money }
+  byBucket: { savings: Money; investments: Money }
 }) {
   return (
     <div>
@@ -27,13 +27,7 @@ function NetWorthColumn({
       <p className="mt-1 text-lg font-semibold">
         <MoneyText value={total} />
       </p>
-      <dl className="mt-3 grid grid-cols-3 gap-4 text-sm">
-        <div>
-          <dt className="text-xs text-neutral-500">Cuentas</dt>
-          <dd className="mt-0.5">
-            <MoneyText value={byBucket.accounts} />
-          </dd>
-        </div>
+      <dl className="mt-3 grid grid-cols-2 gap-4 text-sm">
         <div>
           <dt className="text-xs text-neutral-500">Ahorros</dt>
           <dd className="mt-0.5">
@@ -251,8 +245,8 @@ export function MonthlyReportDocument({ month }: MonthlyReportDocumentProps) {
               <NetWorthColumn label="En dólares" total={report.netWorth.usd.total} byBucket={report.netWorth.usd.byBucket} />
             </div>
             <p className="mt-3 text-xs text-neutral-500">
-              Cuentas: saldo real a esa fecha. Ahorros e inversiones: cantidad actual, valuada al
-              precio y tipo de cambio de esa fecha.
+              Ahorros e inversiones: cantidad actual, valuada al precio y tipo de cambio de esa
+              fecha.
             </p>
           </section>
         )}

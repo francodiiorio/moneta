@@ -30,7 +30,7 @@ import { removeInstallmentPlan, removeRecurringPlan, setRecurringPlanPaused } fr
 
 interface PlansPageProps {
   /** Each kind is a tab of a hub page (src/app/hubs): installments under
-   *  Tarjetas y cuentas, recurring plans under Presupuesto as "Gastos
+   *  Tarjetas, recurring plans under Presupuesto as "Gastos
    *  fijos". */
   kind: PlanKind
 }

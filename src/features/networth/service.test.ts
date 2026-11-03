@@ -191,7 +191,7 @@ describe('createInvestmentAssetFromForm', () => {
 describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
   it('parses quantity and costPerUnit in the asset currency, and the holding aggregate matches a single lot exactly', async () => {
     const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
-    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '5', costPerUnit: '600', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
+    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '5', costPerUnit: '600', date: '2026-01-01' })
 
     expect(lot.quantity).toBe(500_000_000) // 5.00000000 scaled
     expect(lot.costPerUnit).toBe(60_000) // "600" parsed as major units -> 600.00 USD
@@ -199,7 +199,7 @@ describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
     const [holding] = await listInvestmentHoldings()
     expect(holding).toMatchObject({ assetId: asset.id, quantity: 500_000_000, averageCost: 60_000 })
 
-    await updateInvestmentLotFromForm(lot.id, { quantity: '7', costPerUnit: '', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
+    await updateInvestmentLotFromForm(lot.id, { quantity: '7', costPerUnit: '', date: '2026-01-01' })
     const [updatedHolding] = await listInvestmentHoldings()
     expect(updatedHolding?.quantity).toBe(700_000_000)
     // Clearing "Costo por unidad" must actually clear it, not just leave
@@ -210,13 +210,13 @@ describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
   it('resolves costPerUnit against the lot\'s real asset currency, ignoring a mismatched assetId if one were passed', async () => {
     const usdAsset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
     const eurAsset = await createInvestmentAssetFromForm({ name: 'Bono EUR', type: 'bond', currency: 'EUR', autoPrice: false })
-    const lot = await createInvestmentLotFromForm({ assetId: usdAsset.id, quantity: '1', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
+    const lot = await createInvestmentLotFromForm({ assetId: usdAsset.id, quantity: '1', date: '2026-01-01' })
 
     // A caller passing a different asset's id can't smuggle the wrong
     // currency in — updateInvestmentLotFromForm's signature doesn't even
     // accept assetId, so this can't compile with one; verifying the
     // currency used is still the lot's real (USD) one.
-    await updateInvestmentLotFromForm(lot.id, { quantity: '1', costPerUnit: '600', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
+    await updateInvestmentLotFromForm(lot.id, { quantity: '1', costPerUnit: '600', date: '2026-01-01' })
     const [holding] = await listInvestmentHoldings()
     expect(holding?.averageCost).toBe(60_000) // 600.00 USD, not EUR — resolved from the lot, not eurAsset
     expect(eurAsset.currency).toBe('EUR') // sanity: the mismatched asset really is a different currency
@@ -224,13 +224,13 @@ describe('createInvestmentLotFromForm / updateInvestmentLotFromForm', () => {
 
   it('rejects a lot for a non-existent asset', async () => {
     await expect(
-      createInvestmentLotFromForm({ assetId: 'missing', quantity: '1', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' }),
+      createInvestmentLotFromForm({ assetId: 'missing', quantity: '1', date: '2026-01-01' }),
     ).rejects.toThrow(/no encontrado/)
   })
 
   it('omits costPerUnit when left blank, and the holding aggregate has no averageCost either', async () => {
     const asset = await createInvestmentAssetFromForm({ name: 'Bitcoin', type: 'crypto', currency: 'USD', autoPrice: false })
-    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '1', date: '2026-01-01', sourceAccountId: '', sourceAmount: '' })
+    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '1', date: '2026-01-01' })
     expect('costPerUnit' in lot).toBe(false)
 
     const [holding] = await listInvestmentHoldings()
@@ -516,10 +516,9 @@ describe('createExchangeRateFromForm', () => {
   })
 })
 
-describe('Patrimonio incluye Cuentas (Etapa 8)', () => {
-  it('adds each account balance (opening + ingresos) to the total, in its own bucket', async () => {
+describe('Patrimonio sin Cuentas (Etapa 10)', () => {
+  it('ignores the balance of an account left over from before: only ahorros and inversiones count', async () => {
     await updateSettings({ baseCurrency: 'ARS' })
-    await createExchangeRate({ date: '2026-01-01', from: 'USD', to: 'ARS', rate: 1000 })
     const account = await createAccount({
       name: 'Galicia',
       type: 'bank',
@@ -536,43 +535,26 @@ describe('Patrimonio incluye Cuentas (Etapa 8)', () => {
       amount: 10_000_00,
       currency: 'ARS',
     })
-    await createAccount({ name: 'Caja USD', type: 'bank', currency: 'USD', openingBalance: 100_00, openingDate: '2026-01-01' })
     await createSavingsHoldingFromForm({ name: 'Colchón', currency: 'ARS', amount: '1000' })
 
     const summary = await getNetWorthSummary('ARS')
-    expect(summary.byBucket.accounts).toEqual(money(60_000_00 + 100_000_00, 'ARS'))
-    expect(summary.byBucket.savings).toEqual(money(1_000_00, 'ARS'))
-    expect(summary.total).toEqual(money(161_000_00, 'ARS'))
+    expect(summary.byBucket).toEqual({ savings: money(1_000_00, 'ARS'), investments: money(0, 'ARS') })
+    expect(summary.total).toEqual(money(1_000_00, 'ARS'))
   })
 
-  it('history uses each account real balance at month-end, and leaves it out before it opened', async () => {
+  it('history has no accounts bucket either', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-08-23T12:00:00Z'))
     try {
       await updateSettings({ baseCurrency: 'ARS' })
-      const account = await createAccount({
-        name: 'Galicia',
-        type: 'bank',
-        currency: 'ARS',
-        openingBalance: 1_000,
-        openingDate: '2026-07-10',
-      })
-      const category = await createCategory({ kind: 'income', name: 'Sueldo' })
-      await saveIncome({
-        date: '2026-08-05',
-        description: 'Sueldo',
-        categoryId: category.id,
-        accountId: account.id,
-        amount: 500,
-        currency: 'ARS',
-      })
-
-      const { points } = await getSavingsAndInvestmentsHistory(3) // Jun, Jul, Aug(today)
-      expect(points.map((p) => [p.month, p.byBucket.accounts.amount])).toEqual([
-        ['2026-06', 0], // not open yet — left out, not counted
-        ['2026-07', 1_000],
-        ['2026-08', 1_500],
+      await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 1_000, openingDate: '2026-07-10' })
+      const { points } = await getSavingsAndInvestmentsHistory(3)
+      expect(points.map((p) => [p.month, p.total.amount])).toEqual([
+        ['2026-06', 0],
+        ['2026-07', 0],
+        ['2026-08', 0],
       ])
+      for (const point of points) expect(point.byBucket).not.toHaveProperty('accounts')
     } finally {
       vi.useRealTimers()
     }
@@ -590,90 +572,52 @@ describe('getNetWorthMonthChange', () => {
     }
   }
 
-  it('an account opened this month does not count on either side — no fake jump', async () => {
+  it('an account left over from before does not move the change — only ahorros and inversiones count', async () => {
     const { getNetWorthMonthChange } = await import('./service')
     await withToday('2026-08-23T12:00:00Z', async () => {
       await updateSettings({ baseCurrency: 'ARS' })
       await createSavingsHoldingFromForm({ name: 'Colchón', currency: 'ARS', amount: '1000' })
-      await createAccount({ name: 'Nueva', type: 'bank', currency: 'ARS', openingBalance: 500_000_00, openingDate: '2026-08-10' })
+      const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 1_000, openingDate: '2026-07-01' })
+      const category = await createCategory({ kind: 'income', name: 'Sueldo' })
+      await saveIncome({ date: '2026-08-05', description: 'Sueldo', categoryId: category.id, accountId: account.id, amount: 500, currency: 'ARS' })
       expect(await getNetWorthMonthChange()).toBe(0)
     })
   })
 
-  it('an account open since before last month counts its real change', async () => {
+  it('is undefined when there is nothing to compare against (no total last month)', async () => {
     const { getNetWorthMonthChange } = await import('./service')
     await withToday('2026-08-23T12:00:00Z', async () => {
       await updateSettings({ baseCurrency: 'ARS' })
-      const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 1_000, openingDate: '2026-07-01' })
-      const category = await createCategory({ kind: 'income', name: 'Sueldo' })
-      await saveIncome({ date: '2026-08-05', description: 'Sueldo', categoryId: category.id, accountId: account.id, amount: 500, currency: 'ARS' })
-      expect(await getNetWorthMonthChange()).toBe(50)
-    })
-  })
-
-  it('is undefined when the total is negative (overdraft) instead of throwing', async () => {
-    const { getNetWorthMonthChange } = await import('./service')
-    await withToday('2026-08-23T12:00:00Z', async () => {
-      await updateSettings({ baseCurrency: 'ARS' })
-      await createAccount({ name: 'Descubierto', type: 'bank', currency: 'ARS', openingBalance: -1_000, openingDate: '2026-07-01' })
       expect(await getNetWorthMonthChange()).toBeUndefined()
     })
   })
 })
 
-describe('compra con cuenta de origen (Fase 3)', () => {
-  it('debits the account in ITS currency, and editing without an account removes the debit', async () => {
-    const { createInvestmentLotFromForm, updateInvestmentLotFromForm } = await import('./service')
-    const { getAccountBalancesAt } = await import('@/features/accounts/service')
+describe('compra con cuenta de origen de antes de la Etapa 10', () => {
+  it('editing a purchase that was paid from an account drops its source', async () => {
+    const { createInvestmentLot } = await import('@/database/repositories/investmentLots.repo')
     const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
     const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 5_000_000_00, openingDate: '2026-01-01' })
-
-    const lot = await createInvestmentLotFromForm({
+    const lot = await createInvestmentLot({
       assetId: asset.id,
-      quantity: '5',
-      costPerUnit: '650',
+      quantity: 5 * QUANTITY_SCALE,
+      currency: 'USD',
       date: '2026-01-10',
-      sourceAccountId: account.id,
-      sourceAmount: '4.062.500',
+      source: { accountId: account.id, amount: 4_062_500_00, expectedCurrency: 'ARS' },
     })
-    expect(lot).toMatchObject({ sourceAmount: 4_062_500_00, sourceCurrency: 'ARS', currency: 'USD' })
-    expect((await getAccountBalancesAt(['2026-01-31'])).get('2026-01-31')).toEqual([money(937_500_00, 'ARS')])
+    expect(lot.sourceAccountId).toBe(account.id)
 
-    await updateInvestmentLotFromForm(lot.id, { quantity: '5', costPerUnit: '650', date: '2026-01-10', sourceAccountId: '', sourceAmount: '' })
-    expect((await getAccountBalancesAt(['2026-01-31'])).get('2026-01-31')).toEqual([money(5_000_000_00, 'ARS')])
+    await updateInvestmentLotFromForm(lot.id, { quantity: '5', costPerUnit: '650', date: '2026-01-10' })
+    const edited = await db.investmentLots.get(lot.id)
+    expect(edited?.quantity).toBe(5 * QUANTITY_SCALE)
+    expect(edited).not.toHaveProperty('sourceAccountId')
+    expect(edited).not.toHaveProperty('sourceAmount')
+    expect(edited).not.toHaveProperty('sourceCurrency')
   })
-})
 
-describe('historia del patrimonio con compras pagadas desde una cuenta (revisión Fase 3)', () => {
-  it('a purchase paid from an account is not counted twice before its date (cash + position)', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
-    try {
-      const { createInvestmentLot } = await import('@/database/repositories/investmentLots.repo')
-      await updateSettings({ baseCurrency: 'ARS' })
-      const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'ARS', priceMode: 'manual' })
-      await createAssetPrice({ assetId: asset.id, price: 650_00, currency: 'ARS', date: '2026-01-01', source: 'manual' })
-      const account = await createAccount({ name: 'Caja', type: 'bank', currency: 'ARS', openingBalance: 10_000_00, openingDate: '2026-01-01' })
-      await createInvestmentLot({ assetId: asset.id, quantity: 10 * QUANTITY_SCALE, currency: 'ARS', date: '2026-02-01' })
-      await createInvestmentLot({
-        assetId: asset.id,
-        quantity: 5 * QUANTITY_SCALE,
-        currency: 'ARS',
-        date: '2026-10-09',
-        source: { accountId: account.id, amount: 3_260_00, expectedCurrency: 'ARS' },
-      })
-
-      const { points } = await getSavingsAndInvestmentsHistory(2) // Sep, Oct(today)
-      expect(points.map((p) => [p.month, p.total.amount])).toEqual([
-        ['2026-09', 10_000_00 + 10 * 650_00], // the 5 SPY bought in October aren't counted yet: their money is still in Caja
-        ['2026-10', 6_740_00 + 15 * 650_00],
-      ])
-
-      const { getNetWorthMonthChange } = await import('./service')
-      const change = await getNetWorthMonthChange()
-      expect(change).toBeCloseTo(-0.06, 1) // −10 ARS of 16.500: basically flat, not a fake −16%
-    } finally {
-      vi.useRealTimers()
-    }
+  it('a new purchase never has a source', async () => {
+    const asset = await createInvestmentAssetFromForm({ name: 'SPY', type: 'etf', currency: 'USD', autoPrice: false })
+    const lot = await createInvestmentLotFromForm({ assetId: asset.id, quantity: '5', costPerUnit: '650', date: '2026-01-10' })
+    expect(lot).not.toHaveProperty('sourceAccountId')
   })
 })

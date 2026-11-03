@@ -50,7 +50,7 @@ test('la home da la bienvenida sin datos y pasa al panorama con el primer movimi
   await page.goto('/') // welcome: nothing folded yet
   await expect(page.getByText('Bienvenido a Moneta')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Primeros pasos' })).toBeVisible()
-  await expect(page.getByText('0 de 5')).toBeVisible()
+  await expect(page.getByText('0 de 4')).toBeVisible()
 
   await page.goto('/movimientos')
   await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
@@ -72,11 +72,11 @@ test('la home da la bienvenida sin datos y pasa al panorama con el primer movimi
   await expect(page.getByText('$ 1.500,00').first()).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Últimos movimientos', exact: true })).toHaveCount(0)
   await openMonthDetail(page)
-  for (const title of ['Ingresos y gastos', 'En qué se fue', 'Cuentas', 'Tarjetas', 'Presupuestos', 'Se viene', 'Últimos movimientos']) {
+  for (const title of ['Ingresos y gastos', 'En qué se fue', 'Tarjetas', 'Presupuestos', 'Se viene', 'Últimos movimientos']) {
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   }
-  // The compact checklist: 1 of 5 done, pointing at the next step; it can be closed.
-  await expect(page.getByText(/Primeros pasos · 1 de 5/)).toBeVisible()
+  // The compact checklist: 1 of 4 done, pointing at the next step; it can be closed.
+  await expect(page.getByText(/Primeros pasos · 1 de 4/)).toBeVisible()
   await page.getByRole('button', { name: 'Ocultar primeros pasos' }).click()
   await expect(page.getByText(/Primeros pasos · /)).toHaveCount(0)
   await page.reload()

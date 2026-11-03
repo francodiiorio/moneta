@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
-import type { Account, Category, CreditCard } from '@/domain/entities'
+import type { Category, CreditCard } from '@/domain/entities'
 import { formatMonthLabel, formatShortDate } from '@/lib/dates'
 import { CURRENCIES } from '@/domain/money'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,7 @@ interface UploadStepProps {
   setMapping: React.Dispatch<React.SetStateAction<CsvMapping>>
   columns: ColumnOption[]
   expenseCategories: Category[] | undefined
-  targets: { accounts: Account[]; cards: CreditCard[]; incomeCategories: Category[] } | undefined
+  targets: { cards: CreditCard[] } | undefined
   statementChoices: StatementChoice[] | undefined
   hasFile: boolean
   rowCount: number
@@ -36,7 +36,6 @@ interface UploadStepProps {
 
 const NO_DESTINATION = 'none'
 const AUTO_PERIOD = '__auto__'
-const NO_INCOME = '__none__'
 
 function ColumnSelect({
   label,
@@ -86,28 +85,14 @@ export function UploadStep({
   const [fileName, setFileName] = useState<string | null>(null)
 
   const { destination } = mapping
-  const importsCredits = destination.kind === 'account' && destination.incomeCategoryId !== ''
-  const creditNote = importsCredits ? 'se importan como ingresos' : 'no se importan'
-  const destinationValue =
-    destination.kind === 'account'
-      ? `account:${destination.accountId}`
-      : destination.kind === 'card'
-        ? `card:${destination.cardId}`
-        : NO_DESTINATION
+  const creditNote = 'no se importan'
+  const destinationValue = destination.kind === 'card' ? `card:${destination.cardId}` : NO_DESTINATION
 
   function handleDestinationChange(value: string) {
     // Radix fires '' when the select remounts.
     if (value === '') return
     const [kind, id = ''] = value.split(':')
-    if (kind === 'account') {
-      const account = targets?.accounts.find((a) => a.id === id)
-      // A debit is in the account's currency: the statement too.
-      setMapping((m) => ({
-        ...m,
-        destination: { kind: 'account', accountId: id, incomeCategoryId: '' },
-        ...(account && { currency: account.currency }),
-      }))
-    } else if (kind === 'card') {
+    if (kind === 'card') {
       setMapping((m) => ({ ...m, destination: { kind: 'card', cardId: id, statementPeriod: '' } }))
     } else {
       setMapping((m) => ({ ...m, destination: { kind: 'none' } }))
@@ -198,12 +183,7 @@ export function UploadStep({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NO_DESTINATION}>Sin cuenta ni tarjeta (sólo gastos)</SelectItem>
-                    {targets?.accounts.map((a) => (
-                      <SelectItem key={a.id} value={`account:${a.id}`}>
-                        Cuenta {a.name} · {a.currency}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value={NO_DESTINATION}>Sin tarjeta (sólo gastos)</SelectItem>
                     {targets?.cards.map((c) => (
                       <SelectItem key={c.id} value={`card:${c.id}`}>
                         Tarjeta {c.name}
@@ -212,46 +192,11 @@ export function UploadStep({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {destination.kind === 'account'
-                    ? 'Los gastos salen de la cuenta (débito).'
-                    : destination.kind === 'card'
-                      ? 'Los gastos entran a los resúmenes de la tarjeta.'
-                      : 'Los gastos no tocan ninguna cuenta.'}
+                  {destination.kind === 'card'
+                    ? 'Los gastos entran a los resúmenes de la tarjeta.'
+                    : 'Los gastos se cargan sin tarjeta.'}
                 </p>
               </div>
-              {destination.kind === 'account' && (
-                <div className="flex flex-col gap-1.5">
-                  <Label>Créditos (plata que entró)</Label>
-                  <Select
-                    value={destination.incomeCategoryId || NO_INCOME}
-                    onValueChange={(v) => {
-                      if (v === '') return
-                      setMapping((m) =>
-                        m.destination.kind === 'account'
-                          ? { ...m, destination: { ...m.destination, incomeCategoryId: v === NO_INCOME ? '' : v } }
-                          : m,
-                      )
-                    }}
-                  >
-                    <SelectTrigger className="w-full" aria-label="Categoría de ingreso">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NO_INCOME}>No importarlos</SelectItem>
-                      {targets?.incomeCategories.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          Como ingresos · {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {targets?.incomeCategories.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      Para importarlos, creá una categoría de ingreso en Ajustes → Categorías.
-                    </p>
-                  )}
-                </div>
-              )}
               {destination.kind === 'card' && (
                 <div className="flex flex-col gap-1.5">
                   <Label>Resumen</Label>
@@ -305,7 +250,6 @@ export function UploadStep({
                 <Label>Moneda</Label>
                 <Select
                   value={mapping.currency}
-                  disabled={destination.kind === 'account'}
                   onValueChange={(v) => setMapping((m) => ({ ...m, currency: v }))}
                 >
                   <SelectTrigger className="w-full">
@@ -319,9 +263,6 @@ export function UploadStep({
                     ))}
                   </SelectContent>
                 </Select>
-                {destination.kind === 'account' && (
-                  <p className="text-xs text-muted-foreground">Es la moneda de la cuenta.</p>
-                )}
                 {destination.kind === 'card' && (
                   <p className="text-xs text-muted-foreground">
                     Un resumen en pesos y dólares se importa en dos archivos, uno por moneda.

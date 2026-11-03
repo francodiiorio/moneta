@@ -125,7 +125,7 @@ export function ImportStatementPage() {
     <div className="flex flex-col gap-4">
       <Link to="/tarjetas" className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ChevronLeft className="size-4" />
-        Tarjetas y cuentas
+        Tarjetas
       </Link>
       <PageHeader
         title="Importar resumen"

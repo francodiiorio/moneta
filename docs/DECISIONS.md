@@ -1803,3 +1803,39 @@ en los dos períodos, es un solo comercio se dice una vez, como el comercio.
 por la misma plata ("Rappi +50%" y "Comida +25%" si todo el aumento es Rappi); descontar lo
 ya explicado complicaría la regla. El bloque se recalcula al cambiar los datos, no a la
 medianoche.
+
+## Sin cuentas: ingresos contra gastos, no saldos (Etapa 10)
+
+**Problema:** desde la Etapa 8, cada gasto podía salir de una cuenta y cada ingreso tenía
+que entrar a una, para que Moneta calculara saldos. En la práctica, anotar con qué se pagó
+una Coca-Cola (Mercado Pago, el banco, efectivo) es tedioso, y basta con olvidarse de
+cargar algo una vez para que el saldo deje de coincidir y no valga la pena volver a
+cuadrarlo. Lo que sí sirve: cuánto se gasta en el mes, las cuotas, cuánto hay que pagar de
+cada tarjeta, y el sueldo contra los gastos.
+
+**Decisión:** la app deja de llevar cuentas. Un gasto se carga con descripción, monto y
+categoría, y opcionalmente una **tarjeta** (lo único que todavía importa de "con qué se
+pagó"). Un ingreso (el sueldo, a mano o como ingreso fijo) no va a ninguna cuenta: sirve
+para ingresos − gastos en el Inicio y en Reportes. Pagar un resumen es marcarlo pagado con
+lo que se pagó de cada moneda y la fecha. Se van la pantalla de Cuentas, las
+transferencias, los ajustes de saldo, la cuenta de origen de una compra de inversión, el
+CSV importado a una cuenta (con su conciliación de saldo) y el bucket "Cuentas" del
+patrimonio, que ahora es ahorros + inversiones. "Tarjetas y cuentas" pasa a "Tarjetas"; un
+plazo fijo o una cuenta de ahorro se cargan en Ahorros, como siempre.
+
+- **Los datos de antes no se borran.** Las tablas `accounts`, `transfers` y
+  `accountAdjustments` siguen en Dexie y en el backup, y los `accountId` de gastos,
+  ingresos, pagos y compras de inversión cargados entre la Etapa 8 y esta se quedan como
+  estaban: la app simplemente no los mira. Es la segunda vez que las cuentas van y vienen
+  (Etapa 7 las sacó, la 8 las trajo); borrar sería irreversible y no gana nada.
+- **Editar algo viejo le saca la cuenta**: el formulario ya no la tiene, así que guardar un
+  gasto, un ingreso, un ingreso fijo o una compra de inversión de antes la descarta, en
+  vez de seguir validándola contra una cuenta que no se ve.
+- **Modelo:** `Income.accountId`, `StatementPayment.accountId/debitedAmount/debitedCurrency`
+  (los tres o ninguno) y la cuenta de un ingreso fijo pasan a opcionales. Sin cambio de
+  índices Dexie. Backup **v12**: la forma de la v11 relajada; un archivo v11 ya es una v12
+  válida (`migrations/v11_to_v12.ts` no cambia nada), y el salto de versión sólo sirve para
+  que una app vieja diga "creado por una versión más nueva" en vez de rechazar un ingreso
+  sin cuenta con un error críptico.
+- **Se evaluó y se descartó** pasar cada cuenta con saldo a un ahorro con el saldo de hoy:
+  el usuario prefirió que simplemente dejen de existir.

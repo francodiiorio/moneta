@@ -9,7 +9,7 @@ test('mobile shows the five sections at the bottom and Reportes/Ajustes at the t
 
   const bottomNav = page.locator('nav.fixed.bottom-0')
   await expect(bottomNav.getByRole('link')).toHaveCount(5)
-  for (const label of ['Inicio', 'Movimientos', 'Tarjetas y cuentas', 'Presupuesto', 'Patrimonio']) {
+  for (const label of ['Inicio', 'Movimientos', 'Tarjetas', 'Presupuesto', 'Patrimonio']) {
     await expect(bottomNav.getByRole('link', { name: label })).toBeVisible()
   }
 
@@ -19,15 +19,16 @@ test('mobile shows the five sections at the bottom and Reportes/Ajustes at the t
   await topNav.getByRole('link', { name: 'Reportes' }).click()
   await expect(page).toHaveURL(/\/reportes/)
 
-  await bottomNav.getByRole('link', { name: 'Tarjetas y cuentas' }).click()
-  await page.getByRole('tab', { name: 'Cuentas' }).click()
-  await expect(page).toHaveURL(/\/tarjetas\?tab=cuentas/)
+  await bottomNav.getByRole('link', { name: 'Tarjetas' }).click()
+  await page.getByRole('tab', { name: 'Cuotas' }).click()
+  await expect(page).toHaveURL(/\/tarjetas\?tab=cuotas/)
+  await expect(page.getByRole('tab', { name: 'Cuentas' })).toHaveCount(0)
 })
 
 test('old URLs land on their new place', async ({ page }) => {
   await page.goto('/cuentas')
-  await expect(page).toHaveURL(/\/tarjetas\?tab=cuentas/)
-  await expect(page.getByRole('tab', { name: 'Cuentas', selected: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/tarjetas$/)
+  await expect(page.getByRole('tab', { name: 'Tarjetas', selected: true })).toBeVisible()
 
   await page.goto('/planes')
   await expect(page).toHaveURL(/\/presupuestos\?tab=fijos/)

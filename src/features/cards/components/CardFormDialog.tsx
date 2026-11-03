@@ -175,8 +175,8 @@ export function CardFormDialog({ open, card, onOpenChange }: CardFormDialogProps
               <legend className="px-1 text-sm font-medium">Lo que ya debías al empezar (opcional)</legend>
               <p className="-mt-1 text-xs text-muted-foreground">
                 Si arrancás con la tarjeta ya usada, cargá los totales que te muestra el banco en vez de cada gasto. No
-                cuentan como gastos tuyos en Moneta (son de antes), pero suman al resumen para que lo puedas pagar desde
-                tus cuentas.
+                cuentan como gastos tuyos en Moneta (son de antes), pero suman al resumen para que lo puedas marcar
+                pagado.
               </p>
               {[
                 { inputs: OPENING_INPUTS, title: 'Resumen cerrado sin pagar', month: openingLabels?.closed },

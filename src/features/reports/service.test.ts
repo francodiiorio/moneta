@@ -299,7 +299,7 @@ describe('getMonthlyReport', () => {
   })
 })
 
-describe('Reportes con cuentas (Etapa 8)', () => {
+describe('Reportes sin cuentas (Etapa 10)', () => {
   afterEach(async () => {
     await Promise.all([db.accounts.clear(), db.incomes.clear()])
   })
@@ -314,8 +314,7 @@ describe('Reportes con cuentas (Etapa 8)', () => {
     }
   }
 
-  async function seedAccount() {
-    const { createAccount } = await import('@/database/repositories/accounts.repo')
+  async function seedLegacyAccount() {
     const { saveIncome } = await import('@/database/repositories/incomes.repo')
     const account = await createAccount({
       name: 'Galicia',
@@ -335,27 +334,35 @@ describe('Reportes con cuentas (Etapa 8)', () => {
     })
   }
 
-  it('getNetWorthHistory uses the real account balance per month, and nothing before it opened', async () => {
+  it('getNetWorthHistory ignores the balance of an account left over from before', async () => {
     await withToday('2026-08-23T12:00:00Z', async () => {
       await updateSettings({ baseCurrency: 'ARS' })
-      await seedAccount()
+      await seedLegacyAccount()
       const { points } = await getNetWorthHistory(3)
       expect(points.map((p) => [p.month, p.netWorth.amount])).toEqual([
         ['2026-06', 0],
-        ['2026-07', 1_000],
-        ['2026-08', 1_500],
+        ['2026-07', 0],
+        ['2026-08', 0],
       ])
     })
   })
 
-  it('getMonthlyReport has a patrimonio section with only accounts, in both currencies', async () => {
+  it('getMonthlyReport has no patrimonio section when only a legacy account exists — the ingreso still counts as income', async () => {
     await withToday('2026-08-23T12:00:00Z', async () => {
       await updateSettings({ baseCurrency: 'ARS' })
-      await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1000 })
-      await seedAccount()
+      await seedLegacyAccount()
       const report = await getMonthlyReport('2026-08')
-      expect(report.netWorth?.ars.byBucket.accounts).toEqual(money(1_500, 'ARS'))
-      expect(report.netWorth?.usd.byBucket.accounts).toEqual(money(2, 'USD')) // 15,00 ARS / 1000 = 0,015 USD → 0,02
+      expect(report.netWorth).toBeUndefined()
+      expect(report.summary.income).toEqual(money(500, 'ARS'))
+    })
+  })
+
+  it('the patrimonio sums ahorros alone, with no accounts bucket', async () => {
+    await withToday('2026-08-23T12:00:00Z', async () => {
+      await updateSettings({ baseCurrency: 'ARS' })
+      await createSavingsHolding({ name: 'Plazo fijo', amount: 1_500, currency: 'ARS' })
+      const report = await getMonthlyReport('2026-08')
+      expect(report.netWorth?.ars.byBucket).toEqual({ savings: money(1_500, 'ARS'), investments: money(0, 'ARS') })
       expect(report.netWorth?.ars.total).toEqual(money(1_500, 'ARS'))
     })
   })
@@ -367,16 +374,13 @@ describe('ingresos y balance neto (Etapa 8)', () => {
     const comida = await createCategory({ kind: 'expense', name: 'Comida' })
     const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
     const freelance = await createCategory({ kind: 'income', name: 'Freelance' })
-    const base = { type: 'bank' as const, openingBalance: 0, openingDate: '2026-01-01' }
-    const pesos = await createAccount({ ...base, name: 'Galicia', currency: 'ARS' })
-    const dolares = await createAccount({ ...base, name: 'Caja USD', currency: 'USD' })
     await createExchangeRate({ date: '2026-08-01', from: 'USD', to: 'ARS', rate: 1000 })
-    await saveIncome({ date: '2026-08-01', description: 'Sueldo', categoryId: sueldo.id, accountId: pesos.id, amount: 500_000_00, currency: 'ARS' })
-    await saveIncome({ date: '2026-08-15', description: 'Cliente', categoryId: freelance.id, accountId: dolares.id, amount: 100_00, currency: 'USD' })
+    await saveIncome({ date: '2026-08-01', description: 'Sueldo', categoryId: sueldo.id, amount: 500_000_00, currency: 'ARS' })
+    await saveIncome({ date: '2026-08-15', description: 'Cliente', categoryId: freelance.id, amount: 100_00, currency: 'USD' })
     await saveExpense({ date: '2026-08-05', description: 'Super', categoryId: comida.id, amount: 200_000_00, currency: 'ARS', status: 'confirmed' })
     // Projected gastos never count, same as before.
     await saveExpense({ date: '2026-08-20', description: 'Cuota', categoryId: comida.id, amount: 50_000_00, currency: 'ARS', status: 'projected' })
-    return { comida, sueldo, pesos }
+    return { comida, sueldo }
   }
 
   it('the month summary has ingresos (converted) and the balance neto', async () => {
@@ -408,9 +412,9 @@ describe('ingresos y balance neto (Etapa 8)', () => {
   })
 
   it('ingresos count by their own month: the last day is in, the next month’s first day is not', async () => {
-    const { sueldo, pesos } = await seed()
-    await saveIncome({ date: '2026-08-31', description: 'Bono', categoryId: sueldo.id, accountId: pesos.id, amount: 1_00, currency: 'ARS' })
-    await saveIncome({ date: '2026-09-01', description: 'Sueldo sept', categoryId: sueldo.id, accountId: pesos.id, amount: 7_00, currency: 'ARS' })
+    const { sueldo } = await seed()
+    await saveIncome({ date: '2026-08-31', description: 'Bono', categoryId: sueldo.id, amount: 1_00, currency: 'ARS' })
+    await saveIncome({ date: '2026-09-01', description: 'Sueldo sept', categoryId: sueldo.id, amount: 7_00, currency: 'ARS' })
     expect((await getMonthSummary('2026-08')).income).toEqual(money(600_001_00, 'ARS'))
     expect((await getMonthSummary('2026-09')).income).toEqual(money(7_00, 'ARS'))
   })
@@ -446,13 +450,11 @@ describe('ingresos y balance neto (Etapa 8)', () => {
     ])
   })
 
-  it('in the monthly report, a USD ingreso without a rate is one miss in the summary and one valuing its account', async () => {
+  it('in the monthly report, a USD ingreso without a rate is one miss in the summary — and nothing else to value', async () => {
     await seed()
     await db.exchangeRates.clear()
     const report = await getMonthlyReport('2026-08')
-    // Summary: the ingreso. ARS valuation: the USD account's balance. (The
-    // USD valuation of the peso account is a third, independent miss.)
     expect(report.summary.missingRateCount).toBe(1)
-    expect(report.missingRateCount).toBe(3)
+    expect(report.missingRateCount).toBe(1)
   })
 })

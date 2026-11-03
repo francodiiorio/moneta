@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -13,7 +13,6 @@ import { formatQuantity, quantity } from '@/domain/decimal'
 import { formatAmountInput, money } from '@/domain/money'
 import type { InvestmentAsset, InvestmentLot } from '@/domain/entities'
 import { todayStamp } from '@/lib/dates'
-import { useLotAccounts } from '../hooks/useLotAccounts'
 import { investmentLotFormSchema, type InvestmentLotFormValues } from '../schema'
 import { createInvestmentLotFromForm, updateInvestmentLotFromForm } from '../service'
 
@@ -38,16 +37,12 @@ interface InvestmentLotFormDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const NO_ACCOUNT = '__none__'
-
 function defaultValues(initialAssetId?: string): InvestmentLotFormValues {
   return {
     assetId: initialAssetId ?? '',
     quantity: '',
     costPerUnit: '',
     date: todayStamp(),
-    sourceAccountId: '',
-    sourceAmount: '',
   }
 }
 
@@ -74,12 +69,6 @@ export function InvestmentLotFormDialog({
   })
   const selectedAssetId = form.watch('assetId')
   const selectedAsset = assets?.find((a) => a.id === selectedAssetId)
-  const accounts = useLotAccounts()
-  const sourceAccountId = useWatch({ control: form.control, name: 'sourceAccountId' })
-  const sourceAccount = accounts?.find((a) => a.id === sourceAccountId)
-  // Archived accounts can't fund a new purchase, but the one an edited
-  // purchase was already paid from stays selectable.
-  const accountOptions = accounts?.filter((a) => !a.isArchived || a.id === lot?.sourceAccountId) ?? []
 
   useEffect(() => {
     if (!open) return
@@ -94,11 +83,6 @@ export function InvestmentLotFormDialog({
                 ? formatAmountInput(money(lot.costPerUnit, asset.currency))
                 : '',
             date: lot.date,
-            sourceAccountId: lot.sourceAccountId ?? '',
-            sourceAmount:
-              lot.sourceAmount !== undefined && lot.sourceCurrency !== undefined
-                ? formatAmountInput(money(lot.sourceAmount, lot.sourceCurrency))
-                : '',
           }
         : defaultValues(initialAssetId),
     )
@@ -107,10 +91,10 @@ export function InvestmentLotFormDialog({
   async function onSubmit(values: InvestmentLotFormValues) {
     try {
       if (isEditing) {
-        await updateInvestmentLotFromForm(lot.id, values, sourceAccount?.currency)
+        await updateInvestmentLotFromForm(lot.id, values)
         toast.success('Compra actualizada')
       } else {
-        await createInvestmentLotFromForm(values, sourceAccount?.currency)
+        await createInvestmentLotFromForm(values)
         toast.success('Compra registrada')
       }
       onOpenChange(false)
@@ -125,7 +109,7 @@ export function InvestmentLotFormDialog({
         <DialogHeader>
           <DialogTitle>{isEditing ? 'Editar compra' : 'Nueva compra'}</DialogTitle>
           <DialogDescription>
-            Cuánto compraste, a qué costo, cuándo y, si querés, de qué cuenta salió la plata.
+            Cuánto compraste, a qué costo y cuándo.
           </DialogDescription>
         </DialogHeader>
 
@@ -200,67 +184,6 @@ export function InvestmentLotFormDialog({
                 </FormItem>
               )}
             />
-
-            <div className={sourceAccount ? 'grid grid-cols-2 gap-4' : 'grid gap-4'}>
-              <FormField
-                control={form.control}
-                name="sourceAccountId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cuenta de origen (opcional)</FormLabel>
-                    <Select
-                      value={field.value || NO_ACCOUNT}
-                      onValueChange={(next) => {
-                        const nextId = next === NO_ACCOUNT ? '' : next
-                        // The amount was typed in the previous account's
-                        // currency — keeping it under another currency's
-                        // label would silently mean a different amount.
-                        const nextCurrency = accounts?.find((a) => a.id === nextId)?.currency
-                        if (nextCurrency !== sourceAccount?.currency) form.setValue('sourceAmount', '')
-                        field.onChange(nextId)
-                      }}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value={NO_ACCOUNT}>Sin cuenta</SelectItem>
-                        {accountOptions.map((account) => (
-                          <SelectItem key={account.id} value={account.id}>
-                            {account.name} · {account.currency}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {sourceAccount && (
-                <FormField
-                  control={form.control}
-                  name="sourceAmount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Se debitó ({sourceAccount.currency})</FormLabel>
-                      <FormControl>
-                        <Input inputMode="decimal" placeholder="0,00" {...field} />
-                      </FormControl>
-                      <ParsedAmountHint value={field.value} currency={sourceAccount.currency} />
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-            </div>
-            {sourceAccount && (
-              <p className="-mt-2 text-sm text-muted-foreground">
-                Lo que realmente salió de la cuenta, comisiones incluidas. Baja su saldo, pero no cuenta como gasto.
-              </p>
-            )}
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>

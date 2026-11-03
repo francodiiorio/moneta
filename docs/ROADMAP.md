@@ -289,6 +289,16 @@ finanzas personales" en `docs/DECISIONS.md`. Cada fase se publica por separado.
 Fuera de esta etapa, a decidir aparte: sincronizar celular y compu (requiere revisar la
 restricción de privacidad), gasto ajustado por inflación (necesita el IPC).
 
+## Etapa 10 — Sin cuentas (hecho)
+
+Pedido directo del usuario: llevar saldos de cuentas (con qué se pagó cada gasto, a qué
+cuenta entró cada ingreso) es tedioso y no le sirve. Se sacan las cuentas, las
+transferencias y los ajustes de saldo; un gasto lleva, a lo sumo, una tarjeta; un ingreso
+(el sueldo) no va a ninguna cuenta y sirve para ingresos − gastos; pagar un resumen es
+marcarlo pagado. Patrimonio = ahorros + inversiones. Los datos de cuentas cargados antes
+quedan guardados, sin usarse. Backup v12. Ver ADR "Sin cuentas: ingresos contra gastos, no
+saldos" en `docs/DECISIONS.md`.
+
 ## Backlog / no priorizado
 
 - ~~Code-splitting por ruta~~ (hecho) — `src/app/router.tsx` usa `lazy` de React Router

@@ -43,16 +43,26 @@ export function statementPaymentState(
 }
 
 /**
- * Why `payment` can't be recorded from `account`, or `undefined` if it
- * can — shared by the repository and backup validation. The debit is a
- * movement of the account (its currency, not before its opening date);
- * paying in the account's own currency debits exactly the amount paid.
+ * Why `payment` can't be recorded, or `undefined` if it can — shared by
+ * backup validation and merge. Since Etapa 10 a payment has no account;
+ * one from before, paid from `account`, is that account's movement (its
+ * currency, not before its opening date), and paying in the account's own
+ * currency debits exactly the amount paid.
  */
 export function statementPaymentProblem(
   payment: Pick<StatementPayment, 'currency' | 'amount' | 'debitedAmount' | 'debitedCurrency' | 'date'>,
-  account: Pick<Account, 'name' | 'currency' | 'openingDate'>,
+  account?: Pick<Account, 'name' | 'currency' | 'openingDate'>,
 ): string | undefined {
-  if (payment.amount <= 0 || payment.debitedAmount <= 0) return 'Los montos tienen que ser mayores a cero'
+  if (payment.amount <= 0) return 'Los montos tienen que ser mayores a cero'
+  if (account === undefined) {
+    return payment.debitedAmount === undefined && payment.debitedCurrency === undefined
+      ? undefined
+      : 'Un monto debitado necesita la cuenta de la que salió'
+  }
+  if (payment.debitedAmount === undefined || payment.debitedCurrency === undefined) {
+    return 'Pagando desde una cuenta, falta cuánto se debitó'
+  }
+  if (payment.debitedAmount <= 0) return 'Los montos tienen que ser mayores a cero'
   const problem = movementAccountProblem(account, { date: payment.date, currency: payment.debitedCurrency })
   if (problem) return problem
   if (payment.currency === payment.debitedCurrency && payment.amount !== payment.debitedAmount) {

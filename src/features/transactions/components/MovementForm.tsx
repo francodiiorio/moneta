@@ -14,19 +14,10 @@ import { Input } from '@/components/ui/input'
 import { DateField } from '@/components/DateField'
 import { Button } from '@/components/ui/button'
 import { DialogFooter } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CURRENCIES, formatAmountInput, magnitude } from '@/domain/money'
 import { formatMonthLabel, formatShortDate, todayStamp } from '@/lib/dates'
 import { CategoryField } from './CategoryField'
-import { useAccounts } from '../hooks/useAccounts'
 import { useCards } from '../hooks/useCards'
 import { useStatementChoices } from '../hooks/useStatementChoices'
 import { useQuickPicks } from '../hooks/useQuickPicks'
@@ -36,18 +27,10 @@ import {
   type MovementFormValues,
   type MovementKind,
 } from '../schema'
-import { saveMovement, type EditableTransactionItem, type QuickPick } from '../service'
+import { saveMovement, type QuickPick, type TransactionListItem } from '../service'
 
-const NO_ACCOUNT = '__none__'
+const NO_CARD = '__none__'
 const AUTO_PERIOD = '__auto__'
-
-/** One Select for the gasto's payment method: nothing, a debit account or
- *  a credit card — encoded so the two kinds of id can't collide. */
-function paymentValue(accountId: string, cardId: string): string {
-  if (cardId) return `card:${cardId}`
-  if (accountId) return `account:${accountId}`
-  return NO_ACCOUNT
-}
 
 interface MovementFormProps {
   /** Gasto or ingreso — chosen by the dialog's tabs. Switching between the
@@ -56,7 +39,7 @@ interface MovementFormProps {
   kind: MovementKind
   /** The base currency, already loaded — see TransactionFormDialog. */
   defaultCurrency: string
-  item: (EditableTransactionItem & { kind: MovementKind }) | undefined
+  item: TransactionListItem | undefined
   onSaved: () => void
   onCancel: () => void
 }
@@ -69,7 +52,6 @@ function emptyValues(kind: MovementKind, defaultCurrency: string): MovementFormV
     categoryId: '',
     currency: defaultCurrency,
     amount: '',
-    accountId: '',
     cardId: '',
     statementPeriod: '',
   }
@@ -82,8 +64,6 @@ export function MovementForm({
   onSaved,
   onCancel,
 }: MovementFormProps) {
-  const accounts = useAccounts()
-
   const form = useForm<MovementFormValues>({
     resolver: zodResolver(movementFormSchema),
     defaultValues: emptyValues(kind, defaultCurrency),
@@ -98,7 +78,6 @@ export function MovementForm({
         categoryId: item.categoryId,
         currency: item.amount.currency,
         amount: formatAmountInput(magnitude(item.amount)),
-        accountId: item.cardId ? '' : (item.accountId ?? ''),
         cardId: item.cardId ?? '',
         // "Según la fecha" unless the user had pinned it elsewhere — so
         // correcting the date re-places it (the repository does the same
@@ -120,9 +99,7 @@ export function MovementForm({
     // Gasto and ingreso categories are disjoint — a category picked for one
     // is never valid for the other.
     form.setValue('categoryId', '')
-    // An ingreso can't go on a credit card: drop it, or coming back to
-    // gasto would show the card while the account picked meanwhile is
-    // still set — two payment methods at once.
+    // An ingreso never goes on a credit card.
     if (kind === 'income') {
       form.setValue('cardId', '')
       form.setValue('statementPeriod', '')
@@ -130,39 +107,20 @@ export function MovementForm({
     form.clearErrors()
   }, [kind, form])
 
-  const accountId = useWatch({ control: form.control, name: 'accountId' })
-  const selectedAccount = accounts?.find((a) => a.id === accountId)
   const cards = useCards()
   const [cardId, date] = useWatch({ control: form.control, name: ['cardId', 'date'] })
   const statementChoices = useStatementChoices(cardId, date) ?? []
+  // Archived cards can't take new gastos, but the one an edited gasto is
+  // already on stays selectable so the form can show it.
   const cardOptions = cards?.filter((c) => !c.isArchived || c.id === item?.cardId) ?? []
-  // Archived accounts can't take new movements, but the one an edited
-  // movement already points at stays selectable so the form can show it.
-  const accountOptions = accounts?.filter((a) => !a.isArchived || a.id === item?.accountId) ?? []
 
-  function handlePaymentChange(next: string) {
+  function handleCardChange(next: string) {
     // Radix Select inside a <form> can fire onValueChange('') when it
     // (re)mounts before its items — e.g. coming back from the Ingreso tab.
     // Every real option has a value, so '' is never a user's choice.
     if (next === '') return
-    const [type, id = ''] = next.split(/:(.*)/s)
-    form.setValue('accountId', type === 'account' ? id : '')
-    form.setValue('cardId', type === 'card' ? id : '')
+    form.setValue('cardId', next === NO_CARD ? '' : next)
     form.setValue('statementPeriod', '')
-    const account = type === 'account' ? accounts?.find((a) => a.id === id) : undefined
-    if (account) form.setValue('currency', account.currency)
-  }
-
-  function handleAccountChange(next: string) {
-    if (next === '') return // same spurious Radix value as handlePaymentChange
-    const nextId = next === NO_ACCOUNT ? '' : next
-    form.setValue('accountId', nextId, { shouldValidate: form.formState.isSubmitted })
-    form.setValue('cardId', '')
-    form.setValue('statementPeriod', '')
-    // An account has one fixed currency: every movement against it is in
-    // that currency (enforced again in the repository).
-    const account = accounts?.find((a) => a.id === nextId)
-    if (account) form.setValue('currency', account.currency)
   }
 
   // Quick entry: the merchants loaded most often, filtered as the user types.
@@ -180,7 +138,6 @@ export function MovementForm({
     form.setValue('description', pick.description, { shouldValidate: form.formState.isSubmitted })
     form.setValue('categoryId', pick.categoryId, { shouldValidate: form.formState.isSubmitted })
     form.setValue('currency', pick.currency)
-    form.setValue('accountId', pick.accountId ?? '')
     form.setValue('cardId', kind === 'expense' ? (pick.cardId ?? '') : '')
     form.setValue('statementPeriod', '')
     form.setFocus('amount')
@@ -276,67 +233,24 @@ export function MovementForm({
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          {kind === 'expense' ? (
+          {kind === 'expense' && (
             <FormField
               control={form.control}
               name="cardId"
-              render={() => (
+              render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Medio de pago</FormLabel>
-                  <Select
-                    value={paymentValue(accountId, cardId)}
-                    onValueChange={handlePaymentChange}
-                  >
+                  <FormLabel>Tarjeta</FormLabel>
+                  <Select value={field.value || NO_CARD} onValueChange={handleCardChange}>
                     <FormControl>
                       <SelectTrigger className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value={NO_ACCOUNT}>Sin especificar</SelectItem>
-                      {accountOptions.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>Débito</SelectLabel>
-                          {accountOptions.map((account) => (
-                            <SelectItem key={account.id} value={`account:${account.id}`}>
-                              {account.name} · {account.currency}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                      {cardOptions.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>Tarjeta de crédito</SelectLabel>
-                          {cardOptions.map((card) => (
-                            <SelectItem key={card.id} value={`card:${card.id}`}>
-                              {card.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          ) : (
-            <FormField
-              control={form.control}
-              name="accountId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Cuenta</FormLabel>
-                  <Select value={field.value} onValueChange={handleAccountChange}>
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Elegí una cuenta" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {accountOptions.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.name} · {account.currency}
+                      <SelectItem value={NO_CARD}>Sin tarjeta</SelectItem>
+                      {cardOptions.map((card) => (
+                        <SelectItem key={card.id} value={card.id}>
+                          {card.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -353,11 +267,7 @@ export function MovementForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Moneda</FormLabel>
-                <Select
-                  value={field.value}
-                  onValueChange={field.onChange}
-                  disabled={!!selectedAccount}
-                >
+                <Select value={field.value} onValueChange={field.onChange}>
                   <FormControl>
                     <SelectTrigger className="w-full">
                       <SelectValue />
@@ -441,12 +351,6 @@ export function MovementForm({
             </FormItem>
           )}
         />
-
-        {kind === 'income' && accountOptions.length === 0 && accounts !== undefined && (
-          <p className="text-sm text-muted-foreground">
-            Para cargar un ingreso primero creá una cuenta en Cuentas.
-          </p>
-        )}
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onCancel}>

@@ -2,7 +2,6 @@ import type { EntityTable } from 'dexie'
 import { db } from '../db'
 import { movementAccountProblem, transferProblem } from '@/domain/accounts'
 import { statementPaymentProblem } from '@/domain/cards'
-import { firstPendingOccurrence } from '@/domain/recurrence'
 import { shiftMonth } from '@/lib/dates'
 import { reassignCardExpenses, getCardCalendar } from './creditCards.repo'
 import type { CardCalendar } from '@/domain/cards'
@@ -262,7 +261,7 @@ async function assertMergedMovementsFit(added: {
     if (categoryKindById.get(income.categoryId) !== 'income') {
       throw new Error(`${label}: la categoría no existe o no es de ingreso en tu base local`)
     }
-    check(label, income.accountId, income)
+    if (income.accountId !== undefined) check(label, income.accountId, income)
   }
   for (const expense of added.expenses) {
     const label = `Gasto "${expense.description}" (${expense.id})`
@@ -281,19 +280,14 @@ async function assertMergedMovementsFit(added: {
     }
   }
   for (const plan of added.recurringPlans) {
-    const { accountId, cardId, description } = plan.template
+    // Its `template.accountId` (Etapa 8–9) isn't checked: nothing it
+    // generates goes into that account anymore.
+    const { cardId, description } = plan.template
     if ((plan.kind === 'income') !== (categoryKindById.get(plan.template.categoryId) === 'income')) {
       throw new Error(`Recurrente "${description}" (${plan.id}): su categoría no es del tipo del plan (en tu base local)`)
     }
     if (cardId !== undefined && !cardIds.has(cardId)) {
       throw new Error(`Recurrente "${description}" (${plan.id}): la tarjeta ${cardId} no existe`)
-    }
-    if (accountId !== undefined) {
-      const account = accountById.get(accountId)
-      if (!account) throw new Error(`Recurrente "${description}" (${plan.id}): la cuenta ${accountId} no existe`)
-      const next = firstPendingOccurrence(plan.rule, plan.lastMaterializedDate)
-      const problem = movementAccountProblem(account, { date: next ?? account.openingDate, currency: plan.template.currency })
-      if (problem) throw new Error(`Recurrente "${description}" (${plan.id}): ${problem} (en tu base local)`)
     }
   }
   for (const expense of added.expenses) {
@@ -450,9 +444,12 @@ export async function mergeAllTables(data: AllTablesData): Promise<MergeSummary>
       (p) => !localPaymentIds.has(p.id) && !paidStatements.has(`${p.cardId}:${p.period}`),
     )
     for (const payment of newPayments) {
-      const account = await db.accounts.get(payment.accountId)
-      if (!account) throw new Error(`Pago de resumen (${payment.id}): la cuenta ${payment.accountId} no existe`)
-      const problem = statementPaymentProblem(payment, account)
+      const problem = await (async () => {
+        if (payment.accountId === undefined) return statementPaymentProblem(payment)
+        const account = await db.accounts.get(payment.accountId)
+        if (!account) return `la cuenta ${payment.accountId} no existe`
+        return statementPaymentProblem(payment, account)
+      })()
       if (problem) throw new Error(`Pago de resumen (${payment.id}): ${problem} (en tu base local)`)
       if (!(await db.creditCards.get(payment.cardId))) {
         throw new Error(`Pago de resumen (${payment.id}): la tarjeta ${payment.cardId} no existe`)

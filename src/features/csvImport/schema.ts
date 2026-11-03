@@ -16,8 +16,8 @@ const encodingSchema = z.enum(['utf-8', 'windows-1252'])
  *  meaning varies by bank), others export separate debit/credit columns
  *  — both are common enough to support without guessing. The credit side
  *  (positive when `signConvention` is 'positive-is-income', or the credit
- *  column) only imports into an account with an income category; anywhere
- *  else it's excluded from the preview — see service.ts. */
+ *  column) is excluded from the preview — only gastos are imported, see
+ *  service.ts. */
 export const amountMappingSchema = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('single'),
@@ -32,18 +32,11 @@ export const amountMappingSchema = z.discriminatedUnion('mode', [
 ])
 export type AmountMapping = z.infer<typeof amountMappingSchema>
 
-/** Where the imported movements go. None: plain gastos, as before
- *  Etapa 8. An account: debit gastos, and — only with an income category —
- *  its credits as ingresos. A card: gastos placed by date in its
- *  statements, or all pinned to one (importing the bank's statement). */
+/** Where the imported gastos go. None: plain gastos. A card: gastos placed
+ *  by date in its statements, or all pinned to one (importing the bank's
+ *  statement). */
 export const csvDestinationSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }),
-  z.object({
-    kind: z.literal('account'),
-    accountId: z.string().min(1, 'Elegí una cuenta'),
-    /** '' = credits aren't imported. */
-    incomeCategoryId: z.string(),
-  }),
   z.object({
     kind: z.literal('card'),
     cardId: z.string().min(1, 'Elegí una tarjeta'),

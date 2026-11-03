@@ -45,20 +45,7 @@ export const investmentLotFormSchema = z
     .refine((v) => !v || !v.trim().startsWith('-'), { message: 'El costo no puede ser negativo' })
     .refine((v) => !v || /\d/.test(v), { message: 'Ingresá un costo válido' }),
   date: z.string().min(1, 'Ingresá una fecha'),
-  /** '' = no source account (the purchase doesn't touch any balance). */
-  sourceAccountId: z.string(),
-  /** What was debited, in the source account's currency — only asked for
-   *  when there's a source account. */
-  sourceAmount: z.string(),
 })
-  .superRefine((values, ctx) => {
-    if (!values.sourceAccountId) return
-    const amount = values.sourceAmount.trim()
-    // Any "-" (leading or trailing — parseAmount reads both as negative).
-    if (!/[1-9]/.test(amount) || amount.includes('-')) {
-      ctx.addIssue({ code: 'custom', path: ['sourceAmount'], message: 'Ingresá cuánto se debitó de la cuenta' })
-    }
-  })
 
 export type InvestmentLotFormValues = z.infer<typeof investmentLotFormSchema>
 

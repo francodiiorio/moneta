@@ -39,6 +39,14 @@ describe('saveIncome', () => {
     expect(await db.incomes.get(id)).toMatchObject({ amount: 900_000_00, accountId: account.id })
   })
 
+  it('saves an ingreso without an account — no account is looked up or stored', async () => {
+    const category = await createCategory({ kind: 'income', name: 'Sueldo' })
+    const id = await saveIncome({ date: '2026-10-05', description: 'Sueldo octubre', categoryId: category.id, amount: 900_000_00, currency: 'USD' })
+    const stored = await db.incomes.get(id)
+    expect(stored).toMatchObject({ amount: 900_000_00, currency: 'USD' })
+    expect(stored).not.toHaveProperty('accountId')
+  })
+
   it('rejects a non-positive amount', async () => {
     const { account, category } = await setup()
     await expect(saveIncome(input(account.id, category.id, { amount: 0 }))).rejects.toThrow(/mayor a cero/)

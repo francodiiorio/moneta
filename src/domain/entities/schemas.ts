@@ -95,14 +95,15 @@ export const accountSchema = z.object({
 })
 export type Account = z.infer<typeof accountSchema>
 
-// Imagen espejo de Expense, con `accountId` obligatorio: un ingreso siempre
-// entra a alguna cuenta (el efectivo es una cuenta más).
+// Imagen espejo de Expense. `accountId`: la cuenta a la que entró — sólo en
+// los cargados entre la Etapa 8 y la 10, cuando la app llevaba saldos (ver
+// ADR "Sin cuentas: ingresos contra gastos, no saldos").
 export const incomeSchema = z.object({
   id,
   date: dateStamp,
   amount: minorAmount.positive(),
   currency: currencyCode,
-  accountId: id,
+  accountId: id.optional(),
   categoryId: id,
   description: z.string().min(1),
   notes: z.string().optional(),
@@ -207,20 +208,28 @@ export type CardStatement = z.infer<typeof cardStatementSchema>
 // del resumen); `debitedAmount` en `debitedCurrency` (la de la cuenta) — los
 // DOS montos reales, nunca una tasa (mismo criterio que Transfer). Pagar un
 // resumen nunca crea un gasto: cada compra ya se contó en su fecha; sólo
-// baja el saldo de la cuenta. Sólo pago total (ver ADR).
-export const statementPaymentSchema = z.object({
-  id,
-  cardId: id,
-  period: monthStamp,
-  currency: currencyCode,
-  amount: minorAmount.positive(),
-  accountId: id,
-  debitedAmount: minorAmount.positive(),
-  debitedCurrency: currencyCode,
-  date: dateStamp,
-  createdAt: isoInstant,
-  updatedAt: isoInstant,
-})
+// baja el saldo de la cuenta. Sólo pago total (ver ADR). Desde la Etapa 10
+// se paga sin cuenta: los tres campos de la cuenta, todos o ninguno.
+export const statementPaymentSchema = z
+  .object({
+    id,
+    cardId: id,
+    period: monthStamp,
+    currency: currencyCode,
+    amount: minorAmount.positive(),
+    accountId: id.optional(),
+    debitedAmount: minorAmount.positive().optional(),
+    debitedCurrency: currencyCode.optional(),
+    date: dateStamp,
+    createdAt: isoInstant,
+    updatedAt: isoInstant,
+  })
+  .refine(
+    (p) =>
+      (p.accountId === undefined) === (p.debitedAmount === undefined) &&
+      (p.debitedAmount === undefined) === (p.debitedCurrency === undefined),
+    { message: 'Cuenta, monto debitado y su moneda van juntos', path: ['accountId'] },
+  )
 export type StatementPayment = z.infer<typeof statementPaymentSchema>
 
 export const recurrenceFrequencySchema = z.enum(['daily', 'weekly', 'monthly', 'yearly'])
@@ -258,8 +267,8 @@ export const recurringPlanSchema = z
   .object({
     id,
     // Etapa 9: what it generates — absent means a gasto (every plan before).
-    // An ingreso (a salary) goes into an account, never on a card; its
-    // template's category is an income category.
+    // An ingreso (a salary) never goes on a card; its template's category
+    // is an income category.
     kind: z.enum(['expense', 'income']).optional(),
     template: expenseTemplateSchema,
     rule: recurrenceRuleSchema,
@@ -268,9 +277,9 @@ export const recurringPlanSchema = z
     createdAt: isoInstant,
     updatedAt: isoInstant,
   })
-  .refine((p) => p.kind !== 'income' || (p.template.accountId !== undefined && p.template.cardId === undefined), {
-    message: 'Un ingreso fijo entra a una cuenta, nunca a una tarjeta',
-    path: ['template', 'accountId'],
+  .refine((p) => p.kind !== 'income' || p.template.cardId === undefined, {
+    message: 'Un ingreso fijo nunca entra a una tarjeta',
+    path: ['template', 'cardId'],
   })
 export type RecurringPlan = z.infer<typeof recurringPlanSchema>
 

@@ -25,43 +25,23 @@ function todayDdMmYyyy(): string {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
-// Etapa 8, Fase 6: un extracto importado a una cuenta crea débitos e
-// ingresos, y después se concilia el saldo contra el del banco.
-test('importar un extracto a una cuenta y conciliar su saldo', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Galicia')
-  await page.getByLabel('Saldo inicial').fill('100.000')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
+// Sólo se importan gastos: los créditos (plata que entró) se muestran en la
+// vista previa pero quedan sin importar.
+test('importar un extracto crea los gastos y deja afuera los créditos', async ({ page }) => {
   await page.goto('/movimientos/importar')
   const today = todayDdMmYyyy()
   await page.locator('input[type="file"]').setInputFiles({
     name: 'galicia.csv',
     mimeType: 'text/csv',
-    buffer: Buffer.from(`Fecha,Descripcion,Monto\n${today},Supermercado,-4500\n${today},Sueldo,237000\n`),
+    buffer: Buffer.from(`Fecha,Descripcion,Monto\n${today},Supermercado,4500\n${today},Sueldo,-237000\n`),
   })
-  await page.getByLabel('Destino').click()
-  await page.getByRole('option', { name: /Cuenta Galicia/ }).click()
-  await page.getByLabel('Categoría de ingreso').click()
-  await page.getByRole('option', { name: 'Como ingresos · Sueldo' }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Comida' }).click()
-  await page.getByRole('combobox').filter({ hasText: 'Positivo = gasto' }).click()
-  await page.getByRole('option', { name: /Positivo = ingreso/ }).click()
   await page.getByRole('button', { name: 'Ver vista previa' }).click()
-  await expect(page.getByText('Ingreso', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Importar 2 movimientos' }).click()
+  await expect(page.getByText('1 crédito sin importar')).toBeVisible()
+  await page.getByRole('button', { name: 'Importar 1 movimiento' }).click()
 
-  await expect(page.getByText('Se importaron 1 gasto y 1 ingreso.')).toBeVisible()
-  // 100.000 − 4.500 + 237.000
-  await expect(page.getByText(/332[.,]500,00/)).toBeVisible()
-  await page.getByLabel(/Saldo según el banco/).fill('332.000')
-  await expect(page.getByText(/Diferencia:/)).toBeVisible()
-  await page.getByRole('button', { name: 'Registrar ajuste por la diferencia' }).click()
-  await expect(page.getByText(/Ajuste registrado/)).toBeVisible()
-
-  await page.goto('/cuentas')
-  await expect(page.getByText(/332[.,]000,00/).first()).toBeVisible()
+  await expect(page).toHaveURL(/\/movimientos$/)
+  await expect(page.getByText('Supermercado')).toBeVisible()
+  await expect(page.getByText('Sueldo')).toHaveCount(0)
 })

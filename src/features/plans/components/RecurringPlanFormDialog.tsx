@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 import { ChevronRight } from 'lucide-react'
@@ -17,9 +17,7 @@ import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -34,7 +32,6 @@ import { usePaymentOptions } from '../hooks/usePaymentOptions'
 import { createRecurringPlanFromForm, MaterializationFailedError, updateRecurringPlanFromForm } from '../service'
 import {
   encodePaymentMethod,
-  parsePaymentMethod,
   PLAN_CURRENCIES,
   recurringPlanFormSchema,
   type RecurringPlanFormValues,
@@ -128,14 +125,7 @@ export function RecurringPlanFormDialog({ open, plan, newKind = 'expense', onOpe
 
   const freq = form.watch('freq')
   const paymentOptions = usePaymentOptions()
-  const paymentMethod = useWatch({ control: form.control, name: 'paymentMethod' })
-  // A debit account fixes the currency: every gasto it generates is
-  // checked against it (same rule as a one-off debit gasto).
-  const { accountId: debitAccountId } = parsePaymentMethod(paymentMethod)
-  const lockedAccount = debitAccountId ? paymentOptions?.accounts.find((a) => a.id === debitAccountId) : undefined
-  const keep = new Set([plan?.template.accountId, plan?.template.cardId])
-  const accountOptions = paymentOptions?.accounts.filter((a) => !a.isArchived || keep.has(a.id)) ?? []
-  const cardOptions = paymentOptions?.cards.filter((c) => !c.isArchived || keep.has(c.id)) ?? []
+  const cardOptions = paymentOptions?.cards.filter((c) => !c.isArchived || c.id === plan?.template.cardId) ?? []
 
   async function onSubmit(values: RecurringPlanFormValues) {
     try {
@@ -193,7 +183,7 @@ export function RecurringPlanFormDialog({ open, plan, newKind = 'expense', onOpe
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Moneda</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange} disabled={!!lockedAccount}>
+                    <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger className="w-full">
                           <SelectValue />
@@ -226,56 +216,39 @@ export function RecurringPlanFormDialog({ open, plan, newKind = 'expense', onOpe
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="paymentMethod"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{isIncome ? 'Entra a' : 'Medio de pago (opcional)'}</FormLabel>
-                  <Select
-                    value={field.value || (isIncome ? '' : NO_METHOD)}
-                    onValueChange={(next) => {
-                      if (next === '') return // spurious Radix value on remount
-                      const value = next === NO_METHOD ? '' : next
-                      field.onChange(value)
-                      const { accountId } = parsePaymentMethod(value)
-                      const account = accountId ? paymentOptions?.accounts.find((a) => a.id === accountId) : undefined
-                      if (account) form.setValue('currency', account.currency)
-                    }}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Elegí la cuenta" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {!isIncome && <SelectItem value={NO_METHOD}>Sin especificar</SelectItem>}
-                      {accountOptions.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>{isIncome ? 'Cuenta' : 'Débito'}</SelectLabel>
-                          {accountOptions.map((account) => (
-                            <SelectItem key={account.id} value={encodePaymentMethod({ accountId: account.id })}>
-                              {account.name} · {account.currency}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                      {!isIncome && cardOptions.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>Tarjeta de crédito</SelectLabel>
-                          {cardOptions.map((card) => (
-                            <SelectItem key={card.id} value={encodePaymentMethod({ cardId: card.id })}>
-                              {card.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {!isIncome && (
+              <FormField
+                control={form.control}
+                name="paymentMethod"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tarjeta (opcional)</FormLabel>
+                    <Select
+                      value={field.value || NO_METHOD}
+                      onValueChange={(next) => {
+                        if (next === '') return // spurious Radix value on remount
+                        field.onChange(next === NO_METHOD ? '' : next)
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value={NO_METHOD}>Sin tarjeta</SelectItem>
+                        {cardOptions.map((card) => (
+                          <SelectItem key={card.id} value={encodePaymentMethod({ cardId: card.id })}>
+                            {card.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             <FormField
               control={form.control}

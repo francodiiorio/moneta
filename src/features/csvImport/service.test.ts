@@ -1,17 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '@/database/db'
-import { money } from '@/domain/money'
 import { createCategory } from '@/database/repositories/categories.repo'
 import { saveExpense } from '@/database/repositories/expenses.repo'
 import type { CsvMapping } from './schema'
-import { createAccount } from '@/database/repositories/accounts.repo'
 import { createCreditCard } from '@/database/repositories/creditCards.repo'
 import {
   CSV_IMPORT_TAG,
   buildPreview,
   cardStatementChoices,
   importSelectedRows,
-  lastStatementDate,
   loadExistingDuplicateKeys,
   prepareImport,
 } from './service'
@@ -19,11 +16,8 @@ import {
 afterEach(async () => {
   await Promise.all([
     db.statementPayments.clear(),
-    db.transfers.clear(),
     db.categories.clear(),
     db.expenses.clear(),
-    db.incomes.clear(),
-    db.accounts.clear(),
     db.creditCards.clear(),
     db.cardStatements.clear(),
   ])
@@ -360,57 +354,12 @@ describe('loadExistingDuplicateKeys / prepareImport / importSelectedRows (integr
   })
 })
 
-describe('import to an account or a card (Etapa 8, Fase 6)', () => {
+describe('import to a card', () => {
   async function setup() {
     const gastos = await createCategory({ kind: 'expense', name: 'Varios' })
-    const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
-    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-08-01' })
     const card = await createCreditCard({ name: 'Visa', closingDay: 25, dueDay: 5 })
-    return { gastos, sueldo, account, card }
+    return { gastos, card }
   }
-
-  const rows = [
-    ['fecha', 'descripcion', 'monto'],
-    ['23/08/2026', 'Super', '1500'],
-    ['24/08/2026', 'Sueldo', '-50000'],
-    ['31/07/2026', 'Viejo', '100'],
-  ]
-
-  it('to an account: debit gastos, credits as ingresos with an income category, nothing before its opening', async () => {
-    const { gastos, sueldo, account } = await setup()
-    const mapping: CsvMapping = {
-      ...singleAmountMapping,
-      categoryId: gastos.id,
-      destination: { kind: 'account', accountId: account.id, incomeCategoryId: sueldo.id },
-    }
-    const preview = await prepareImport(rows, mapping)
-    expect(preview.map((r) => [r.status, r.kind])).toEqual([
-      ['new', 'expense'],
-      ['new', 'income'],
-      ['invalid', 'expense'],
-    ])
-    expect(preview[2]?.invalidReason).toMatch(/saldo inicial/)
-
-    const result = await importSelectedRows(preview.filter((r) => r.defaultSelected), mapping)
-    expect(result).toEqual({ imported: 2, expenses: 1, incomes: 1 })
-    expect((await db.expenses.toArray())[0]).toMatchObject({ accountId: account.id, amount: 150_000 })
-    expect((await db.incomes.toArray())[0]).toMatchObject({ accountId: account.id, categoryId: sueldo.id, amount: 5_000_000 })
-
-    // Importing the same file again: both are flagged as duplicates.
-    const again = await prepareImport(rows, mapping)
-    expect(again.slice(0, 2).map((r) => r.status)).toEqual(['duplicate', 'duplicate'])
-  })
-
-  it('to an account without an income category: credits stay excluded, and the currency must be the account’s', async () => {
-    const { gastos, account } = await setup()
-    const mapping: CsvMapping = {
-      ...singleAmountMapping,
-      categoryId: gastos.id,
-      destination: { kind: 'account', accountId: account.id, incomeCategoryId: '' },
-    }
-    expect((await prepareImport(rows, mapping))[1]).toMatchObject({ status: 'excluded', invalidReason: /categoría de ingreso/ })
-    await expect(prepareImport(rows, { ...mapping, currency: 'USD' })).rejects.toThrow(/es en ARS/)
-  })
 
   it('to a card: placed by date, or all pinned to a statement (none after its close)', async () => {
     const { gastos, card } = await setup()
@@ -442,81 +391,12 @@ describe('import to an account or a card (Etapa 8, Fase 6)', () => {
   })
 })
 
-describe('revisión de la Fase 6 — duplicados y destinos', () => {
+describe('import to a card — duplicados y resúmenes pagos', () => {
   async function setup() {
     const gastos = await createCategory({ kind: 'expense', name: 'Varios' })
-    const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
-    const base = { type: 'bank' as const, currency: 'ARS', openingBalance: 0, openingDate: '2026-08-01' }
-    const galicia = await createAccount({ ...base, name: 'Galicia' })
-    const brubank = await createAccount({ ...base, name: 'Brubank' })
     const card = await createCreditCard({ name: 'Visa', closingDay: 25, dueDay: 5 })
-    const toAccount: CsvMapping = {
-      ...singleAmountMapping,
-      categoryId: gastos.id,
-      amount: { mode: 'single', amountColumn: 2, signConvention: 'positive-is-income' },
-      destination: { kind: 'account', accountId: galicia.id, incomeCategoryId: sueldo.id },
-    }
-    return { gastos, sueldo, galicia, brubank, card, toAccount }
+    return { gastos, card }
   }
-
-  it('a card payment or transfer already in Moneta matches its bank row by amount, whatever the text', async () => {
-    const { galicia, brubank, card, gastos, toAccount } = await setup()
-    await saveExpense({ date: '2026-08-10', description: 'Zapas', categoryId: gastos.id, amount: 80_000_00, currency: 'ARS', status: 'confirmed', cardId: card.id })
-    const { payStatement } = await import('@/database/repositories/statementPayments.repo')
-    await payStatement({
-      cardId: card.id,
-      period: '2026-08',
-      date: '2026-09-05',
-      lines: [{ currency: 'ARS', amount: 80_000_00, accountId: galicia.id, expectedAccountCurrency: 'ARS' }],
-    })
-    const { saveTransfer } = await import('@/database/repositories/transfers.repo')
-    await saveTransfer({
-      date: '2026-09-02',
-      fromAccountId: brubank.id,
-      toAccountId: galicia.id,
-      fromAmount: 20_000_00,
-      toAmount: 20_000_00,
-      description: 'Transferencia',
-      expectedFromCurrency: 'ARS',
-      expectedToCurrency: 'ARS',
-    })
-    const preview = await prepareImport(
-      [
-        ['fecha', 'descripcion', 'monto'],
-        ['06/09/2026', 'DEBITO AUTOMATICO TC', '-80.000'],
-        ['02/09/2026', 'CREDITO TRANSF CBU 0000', '20.000'],
-        ['07/09/2026', 'PAGO VISA', '-1.000'],
-        ['08/09/2026', 'COTO', '-1.000'],
-      ],
-      toAccount,
-    )
-    expect(preview.map((r) => [r.status, r.duplicateOf ?? r.ownMovement, r.defaultSelected])).toEqual([
-      ['duplicate', 'Pago de resumen', false],
-      ['duplicate', 'Transferencia', false],
-      // Not recorded yet, but it names the card: unchecked, flagged.
-      ['new', 'Visa', false],
-      ['new', undefined, true],
-    ])
-  })
-
-  it('an account’s rows: its opening date is accepted, the day before isn’t; debit/credit columns import credits too', async () => {
-    const { toAccount } = await setup()
-    const mapping: CsvMapping = { ...toAccount, amount: { mode: 'debit-credit', debitColumn: 2, creditColumn: 3 } }
-    const preview = await prepareImport(
-      [
-        ['fecha', 'descripcion', 'debito', 'credito'],
-        ['01/08/2026', 'Super', '100', ''],
-        ['31/07/2026', 'Viejo', '100', ''],
-        ['02/08/2026', 'Sueldo', '', '5000'],
-      ],
-      mapping,
-    )
-    expect(preview.map((r) => [r.status, r.kind])).toEqual([
-      ['new', 'expense'],
-      ['invalid', 'expense'],
-      ['new', 'income'],
-    ])
-  })
 
   it('to a card: an installment already in the statement matches the bank’s row (other date, other text)', async () => {
     const { gastos, card } = await setup()
@@ -546,14 +426,14 @@ describe('revisión de la Fase 6 — duplicados y destinos', () => {
   })
 
   it('never into a paid statement — pinned or by date — and the choice says it’s paid', async () => {
-    const { galicia, gastos, card } = await setup()
+    const { gastos, card } = await setup()
     await saveExpense({ date: '2026-08-10', description: 'x', categoryId: gastos.id, amount: 100, currency: 'ARS', status: 'confirmed', cardId: card.id })
     const { payStatement } = await import('@/database/repositories/statementPayments.repo')
     await payStatement({
       cardId: card.id,
       period: '2026-08',
       date: '2026-09-05',
-      lines: [{ currency: 'ARS', amount: 100, accountId: galicia.id, expectedAccountCurrency: 'ARS' }],
+      lines: [{ currency: 'ARS', amount: 100 }],
     })
     const byDate: CsvMapping = { ...singleAmountMapping, categoryId: gastos.id, destination: { kind: 'card', cardId: card.id, statementPeriod: '' } }
     const rows = [['fecha', 'descripcion', 'monto'], ['12/08/2026', 'Tarde', '50'], ['27/08/2026', 'Septiembre', '50']]
@@ -564,34 +444,5 @@ describe('revisión de la Fase 6 — duplicados y destinos', () => {
     const choices = await cardStatementChoices(card.id, '2026-10-24')
     expect(choices.find((c) => c.period === '2026-08')?.paid).toBe(true)
     expect(choices.find((c) => c.period === '2026-09')?.paid).toBe(false)
-  })
-
-  it('a credit row can only import into an account with an income category', async () => {
-    const { card, gastos } = await setup()
-    const mapping: CsvMapping = { ...singleAmountMapping, categoryId: gastos.id, destination: { kind: 'card', cardId: card.id, statementPeriod: '' } }
-    const forged = { index: 1, raw: [], date: '2026-09-01', description: 'x', amount: money(100, 'ARS'), status: 'new' as const, kind: 'income' as const, defaultSelected: true }
-    await expect(importSelectedRows([forged], mapping)).rejects.toThrow(/Un crédito sólo se importa/)
-  })
-
-  it('the statement’s last date counts every readable row, imported or skipped', () => {
-    expect(
-      lastStatementDate([
-        { index: 1, raw: [], date: '2026-09-25', status: 'new', defaultSelected: true },
-        { index: 2, raw: [], date: '2026-09-30', status: 'duplicate', defaultSelected: false },
-        { index: 3, raw: [], date: '2026-12-01', status: 'invalid', defaultSelected: false },
-      ]),
-    ).toBe('2026-09-30')
-  })
-})
-
-describe('reconcileAccount', () => {
-  it('stores the difference with the bank as an adjustment; nothing when it already matched', async () => {
-    const { getAccountBalanceAt, reconcileAccount } = await import('./service')
-    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 100_000_00, openingDate: '2026-08-01' })
-    expect(await getAccountBalanceAt(account.id, '2026-07-31')).toBeUndefined()
-    expect(await reconcileAccount(account.id, '2026-08-31', '99.500')).toEqual({ amount: -500_00, currency: 'ARS' })
-    expect(await reconcileAccount(account.id, '2026-08-31', '99.500')).toBeUndefined()
-    await expect(reconcileAccount(account.id, '2026-08-31', '(1.000)')).rejects.toThrow(/signo menos/)
-    await db.accountAdjustments.clear()
   })
 })

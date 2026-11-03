@@ -69,6 +69,13 @@ partida doble no tenía sentido, así que se reemplazó por esta entidad única.
 Vuelven como **registros planos, sin partida doble** — ver ADR "Se reintroducen Cuentas,
 Ingresos y Transferencias" en `docs/DECISIONS.md`.
 
+> **Etapa 10:** la app deja de usar cuentas (ver ADR "Sin cuentas: ingresos contra gastos,
+> no saldos"). `Account`, `AccountAdjustment` y `Transfer` siguen en Dexie y en el backup
+> con lo cargado antes, pero nada los lee ni los crea. `Income.accountId` es **opcional**
+> (los nuevos no lo tienen), igual que la cuenta de un `StatementPayment` y de un ingreso
+> fijo; un `accountId` de antes se sigue validando (moneda, fecha de apertura) al importar
+> un backup. Lo que sigue en esta sección describe el modelo de la Etapa 8–9.
+
 ```ts
 Account {
   id, name, type: 'bank' | 'cash' | 'wallet' | 'broker' | 'other',
@@ -78,7 +85,7 @@ Account {
   isArchived, order, notes?, createdAt, updatedAt,
 }
 Income {
-  id, date, amount /* > 0 */, currency, accountId /* obligatorio */, categoryId /* kind income */,
+  id, date, amount /* > 0 */, currency, accountId? /* sólo Etapa 8–9 */, categoryId /* kind income */,
   description, notes?, createdAt, updatedAt,
 }
 AccountAdjustment {
@@ -599,7 +606,14 @@ Reglas (ver `src/features/backups/`):
   saltea todos los del archivo; uno nuevo se valida contra la cuenta local, y un período
   corregido que movería el cierre de un resumen pagado acá se saltea. La v11 (Etapa 9) tiene
   la forma de la v10; `migrations/v10_to_v11.ts` re-fecha las cuotas con tarjeta de un
-  archivo v10 (ver "Cuotas con tarjeta").
+  archivo v10 (ver "Cuotas con tarjeta"). La v12 (Etapa 10) es la v11 con la cuenta opcional en
+  `Income`, `StatementPayment` y el ingreso fijo; un archivo v11 ya es una v12 válida y
+  `migrations/v11_to_v12.ts` no cambia nada. Las tablas de cuentas siguen viajando. Las
+  v5–v11 validan con los schemas de dominio en vivo, así que también aceptan ahora un
+  ingreso o un pago sin cuenta: es una relajación aceptada — todo archivo que validaba
+  sigue validando igual, y lo nuevo que aceptan ya es una v12 válida. Cualquier cambio
+  futuro a `Income`, `StatementPayment` o `RecurringPlan` que no sea aflojar tiene que
+  congelar primero sus formas viejas en `schemas/legacy.ts`.
 - Como una migración vieja (`schemas/v1.ts`, `v2.ts`, `v3.ts`) tiene que seguir validando
   un archivo `.finance` exactamente como lo hacía cuando esa versión era la última, esos
   schemas **no** pueden depender de los tipos de dominio actuales una vez que el dominio

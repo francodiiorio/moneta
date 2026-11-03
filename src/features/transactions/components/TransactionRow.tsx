@@ -1,5 +1,4 @@
-import { Link } from 'react-router'
-import { ArrowDownLeft, ArrowLeftRight, CreditCard, Landmark, MoreVertical, Receipt, Scale } from 'lucide-react'
+import { ArrowDownLeft, MoreVertical, Receipt } from 'lucide-react'
 import { MoneyText } from '@/components/MoneyText'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,22 +25,6 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
     <div className="flex items-center gap-3 border-b border-border py-3 last:border-b-0">
       {hasCategoryIdentity ? (
         <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} />
-      ) : item.kind === 'investment' ? (
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Landmark className="size-4.5" />
-        </div>
-      ) : item.kind === 'cardPayment' ? (
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <CreditCard className="size-4.5" />
-        </div>
-      ) : item.kind === 'transfer' ? (
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <ArrowLeftRight className="size-4.5" />
-        </div>
-      ) : item.kind === 'adjustment' ? (
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <Scale className="size-4.5" />
-        </div>
       ) : item.kind === 'income' ? (
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-positive/10 text-positive">
           <ArrowDownLeft className="size-4.5" />
@@ -55,19 +38,14 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{item.description}</p>
         <p className="truncate text-xs text-muted-foreground">
-          {[item.categoryLabel ?? '—', item.accountLabel].filter(Boolean).join(' · ')}
+          {[item.categoryLabel ?? '—', item.paymentLabel].filter(Boolean).join(' · ')}
         </p>
       </div>
 
       <div className="shrink-0 text-right">
         <p className="text-sm font-semibold">
-          <MoneyText value={item.amount} signColor={item.signed} />
+          <MoneyText value={item.amount} signColor />
         </p>
-        {item.counterpart && (
-          <p className="text-xs text-muted-foreground">
-            ⇄ <MoneyText value={item.counterpart} />
-          </p>
-        )}
         {/* Next to the date, not the name: on a phone the name needs the
             whole width. */}
         <div className="flex items-center justify-end gap-1.5">
@@ -87,28 +65,10 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {item.kind === 'investment' ? (
-            // Created and edited in Patrimonio (it changes a position too) —
-            // listed here only so the account's balance change is visible.
-            <DropdownMenuItem asChild>
-              <Link to="/patrimonio?tab=inversiones">Ver en Patrimonio</Link>
-            </DropdownMenuItem>
-          ) : item.kind === 'cardPayment' ? (
-            // Paid and undone from the statement itself.
-            item.cardId !== undefined &&
-            item.statementPeriod !== undefined && (
-              <DropdownMenuItem asChild>
-                <Link to={`/tarjetas/${item.cardId}?resumen=${item.statementPeriod}`}>Ver resumen</Link>
-              </DropdownMenuItem>
-            )
-          ) : (
-            <>
-              {item.kind !== 'adjustment' && <DropdownMenuItem onSelect={onEdit}>Editar</DropdownMenuItem>}
-              <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-                Eliminar
-              </DropdownMenuItem>
-            </>
-          )}
+          <DropdownMenuItem onSelect={onEdit}>Editar</DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+            Eliminar
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

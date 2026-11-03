@@ -820,10 +820,10 @@ describe('migration — v4 to v5 (Etapa 8: cuentas e ingresos)', () => {
     expect(await db.expenses.count()).toBe(1)
   })
 
-  it('exports as version 11', async () => {
+  it('exports as version 12', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
-    expect(payload.version).toBe(11)
+    expect(payload.version).toBe(12)
     expect(payload.data.accounts).toHaveLength(2)
     expect(payload.data.incomes).toHaveLength(1)
     expect(payload.data.accountAdjustments).toHaveLength(1)
@@ -1193,13 +1193,15 @@ describe('tarjeta con compras del día de cierre al resumen siguiente', () => {
 })
 
 describe('planes con medio de pago en el backup (Fase 4b)', () => {
-  it('rejects a recurring plan paid from an account that is not in the file', async () => {
+  // Etapa 10: what a plan generates never goes into its (Etapa 8–9)
+  // account, so the account isn't checked — it can't block an import.
+  it('accepts a recurring plan naming an account that is not in the file', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
     await clearAllTables()
     payload.data.recurringPlans[0]!.template.accountId = 'ghost'
     const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
-    await expect(importBackup(file)).rejects.toThrow(/cuenta ghost no existe/)
+    await expect(importBackup(file)).resolves.toBeDefined()
   })
 })
 
@@ -1236,13 +1238,13 @@ describe('planes de antes de la Etapa 7 en el backup (Fase 4b)', () => {
 })
 
 describe('revisión de la Fase 4b — backups', () => {
-  it('rejects a debit recurring plan whose next gasto falls before its account’s opening date', async () => {
+  it('accepts a debit recurring plan whose next gasto falls before its account’s opening date (Etapa 10)', async () => {
     await seedFullDatabase()
     const payload = await buildBackupPayload()
     await clearAllTables()
     payload.data.recurringPlans[0]!.rule.startDate = '2026-01-01'
     const file = new File([JSON.stringify(payload)], 'tampered.finance', { type: 'application/json' })
-    await expect(importBackup(file)).rejects.toThrow(/saldo inicial/)
+    await expect(importBackup(file)).resolves.toBeDefined()
   })
 
   it('rejects a card installment plan whose first cuota is not the purchase date', async () => {
@@ -1309,7 +1311,7 @@ describe('pagos de resúmenes en el backup (Fase 5)', () => {
     const payload = await buildBackupPayload()
     const [local] = await db.statementPayments.toArray()
     await db.statementPayments.clear()
-    await db.accounts.update(local!.accountId, { currency: 'USD' })
+    await db.accounts.update(local!.accountId!, { currency: 'USD' })
     const file = new File([JSON.stringify(payload)], 'other.finance', { type: 'application/json' })
     await expect(importBackup(file, { mode: 'merge' })).rejects.toThrow(/en tu base local/)
   })
@@ -1465,5 +1467,68 @@ describe('ingreso fijo (sueldo) en el backup', () => {
     payload.data.incomes = []
     const file = new File([JSON.stringify(payload)], 'mal.finance', { type: 'application/json' })
     await expect(importBackup(file)).rejects.toThrow(/categoría no es del tipo del plan/)
+  })
+})
+
+describe('migration — v11 to v12 (Etapa 10: sin cuentas)', () => {
+  it('a v11 file goes through the v11→v12 migration, data untouched, and validates', async () => {
+    const { migrateV11ToV12 } = await import('./migrations/v11_to_v12')
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    expect(migrateV11ToV12(payload.data)).toEqual(payload.data)
+
+    const v11 = { ...payload, version: 11 }
+    const migrated = migrateToLatest(v11)
+    expect(migrated).toEqual(payload.data)
+    expect(migrated.incomes[0]?.accountId).toBeDefined()
+    expect(migrated.statementPayments[0]?.accountId).toBeDefined()
+  })
+
+  it('importing a v11 .finance file lands its accounts, ingreso and payment as they were', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    const before = await snapshotAllTables()
+    await clearAllTables()
+    const file = new File([JSON.stringify({ ...payload, version: 11 })], 'old-v11.finance', { type: 'application/json' })
+    await importBackup(file)
+    // Settings get their defaults stamped on import; everything else must match.
+    const { settings: _before, ...beforeRest } = before
+    const { settings: _after, ...afterRest } = await snapshotAllTables()
+    expect(afterRest).toEqual(beforeRest)
+  })
+
+  it('a v12 file with an ingreso and a payment that name no account imports', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    const { accountId: _income, ...income } = payload.data.incomes[0]!
+    const { accountId: _payment, debitedAmount: _amount, debitedCurrency: _currency, ...payment } = payload.data.statementPayments[0]!
+    payload.data.incomes = [income]
+    payload.data.statementPayments = [payment]
+    const file = new File([JSON.stringify(payload)], 'sin-cuentas.finance', { type: 'application/json' })
+    await importBackup(file)
+    expect(await db.incomes.get(income.id)).not.toHaveProperty('accountId')
+    expect(await db.statementPayments.get(payment.id)).not.toHaveProperty('accountId')
+  })
+
+  it('a payment with only some of its account fields is rejected', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    const { debitedAmount: _amount, debitedCurrency: _currency, ...partial } = payload.data.statementPayments[0]!
+    payload.data.statementPayments = [partial]
+    const file = new File([JSON.stringify(payload)], 'a-medias.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow()
+  })
+
+  it('a payment with a debited amount but no account is rejected', async () => {
+    await seedFullDatabase()
+    const payload = await buildBackupPayload()
+    await clearAllTables()
+    const { accountId: _account, ...partial } = payload.data.statementPayments[0]!
+    expect(partial.debitedAmount).toBeDefined()
+    payload.data.statementPayments = [partial]
+    const file = new File([JSON.stringify(payload)], 'sin-cuenta.finance', { type: 'application/json' })
+    await expect(importBackup(file)).rejects.toThrow()
   })
 })

@@ -1,4 +1,3 @@
-import Dexie from 'dexie'
 import { db } from '../db'
 import type { InvestmentHolding, InvestmentLot } from '@/domain/entities'
 import { aggregateLots } from '@/domain/investments'
@@ -79,22 +78,6 @@ function currentSource(lot: InvestmentLot): LotSourceInput | null {
 
 export async function listInvestmentLots(assetId: string): Promise<InvestmentLot[]> {
   return db.investmentLots.where('assetId').equals(assetId).sortBy('date')
-}
-
-/** Every purchase paid from an account — the net worth history needs
- *  them to avoid valuing money twice (see domain/investments:holdingsAsOf). */
-export async function listLotsWithSource(): Promise<InvestmentLot[]> {
-  return db.investmentLots.where('sourceAccountId').above(Dexie.minKey).toArray()
-}
-
-/** Purchases in `[startDate, endDate]` that were paid from an account —
- *  the ones that move a balance, listed in Movimientos. */
-export async function listLotsWithSourceInRange(startDate: string, endDate: string): Promise<InvestmentLot[]> {
-  return db.investmentLots
-    .where('date')
-    .between(startDate, endDate, true, true)
-    .filter((lot) => lot.sourceAccountId !== undefined)
-    .toArray()
 }
 
 export async function getInvestmentLot(id: string): Promise<InvestmentLot | undefined> {

@@ -15,10 +15,6 @@ export interface ValuationPosition {
 }
 
 export interface ValuationInput {
-  /** Each account's balance at `date`, in its own currency — computed by
-   *  domain/accounts:accountBalanceAt. Accounts not open yet at `date`
-   *  are left out by the caller, not passed as zero. */
-  accounts: readonly Money[]
   savings: readonly SavingsHolding[]
   positions: readonly ValuationPosition[]
   rates: readonly ExchangeRate[]
@@ -29,7 +25,7 @@ export interface ValuationInput {
 
 export interface ValuationResult {
   total: Money
-  byBucket: { accounts: Money; savings: Money; investments: Money }
+  byBucket: { savings: Money; investments: Money }
   /** Items excluded from the total for lack of a usable exchange rate —
    *  same fail-safe pattern as features/reports/service.ts: never assume
    *  1:1, never let one missing rate blank the whole total. */
@@ -69,15 +65,15 @@ function tryConvertAll(
 }
 
 /**
- * Values Cuentas + Ahorros + Inversiones in `displayCurrency`, without
- * ever touching a stored amount. The order for a position is always
- * quantity -> valuePosition (native currency) -> convert (display
- * currency), never a precomputed shortcut — see CLAUDE.md "Reglas
- * financieras" and docs/DECISIONS.md. The Cuentas bucket came back in
- * Etapa 8 — ver ADR "Se reintroducen Cuentas, Ingresos y Transferencias".
+ * Values Ahorros + Inversiones in `displayCurrency`, without ever touching
+ * a stored amount. The order for a position is always quantity ->
+ * valuePosition (native currency) -> convert (display currency), never a
+ * precomputed shortcut — see CLAUDE.md "Reglas financieras" and
+ * docs/DECISIONS.md. Account balances counted here in Etapa 8–9 — ver ADR
+ * "Sin cuentas: ingresos contra gastos, no saldos".
  */
 export function valuateNetWorth(input: ValuationInput): ValuationResult {
-  const { accounts, savings, positions, rates, displayCurrency, date, profile } = input
+  const { savings, positions, rates, displayCurrency, date, profile } = input
 
   const savingsAmounts = savings.map((s) => money(s.amount, s.currency))
 
@@ -91,20 +87,18 @@ export function valuateNetWorth(input: ValuationInput): ValuationResult {
     investmentAmounts.push(valuePosition(position.quantity, position.price))
   }
 
-  const accountsResult = tryConvertAll(accounts, displayCurrency, rates, date, profile)
   const savingsResult = tryConvertAll(savingsAmounts, displayCurrency, rates, date, profile)
   const investmentsResult = tryConvertAll(investmentAmounts, displayCurrency, rates, date, profile)
 
   const byBucket = {
-    accounts: sumMoney(displayCurrency, accountsResult.converted),
     savings: sumMoney(displayCurrency, savingsResult.converted),
     investments: sumMoney(displayCurrency, investmentsResult.converted),
   }
 
   return {
-    total: sumMoney(displayCurrency, [byBucket.accounts, byBucket.savings, byBucket.investments]),
+    total: sumMoney(displayCurrency, [byBucket.savings, byBucket.investments]),
     byBucket,
-    missingRateCount: accountsResult.missing + savingsResult.missing + investmentsResult.missing,
+    missingRateCount: savingsResult.missing + investmentsResult.missing,
     missingPriceCount,
   }
 }

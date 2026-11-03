@@ -62,7 +62,7 @@ function StatementBrowser({ cardId }: { cardId: string }) {
     if (!period) return
     try {
       const removed = await undoStatementPayment(cardId, period)
-      toast.success(removed > 0 ? 'Pago deshecho · el débito volvió a la cuenta' : 'Ese pago ya se había deshecho')
+      toast.success(removed > 0 ? 'Pago deshecho' : 'Ese pago ya se había deshecho')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo deshacer el pago')
     } finally {
@@ -174,14 +174,8 @@ function StatementBrowser({ cardId }: { cardId: string }) {
                 <div className="flex flex-col gap-1 text-sm">
                   {detail.payments.map((payment) => (
                     <p key={payment.id}>
-                      Pagaste <MoneyText value={payment.amount} className="font-medium" />
-                      {payment.debited.currency !== payment.amount.currency && (
-                        <>
-                          {' '}
-                          (<MoneyText value={payment.debited} />)
-                        </>
-                      )}{' '}
-                      desde {payment.accountName} el {formatShortDate(payment.date)}
+                      Pagaste <MoneyText value={payment.amount} className="font-medium" /> el{' '}
+                      {formatShortDate(payment.date)}
                     </p>
                   ))}
                   {/* differences = Moneta's total − what was paid, per currency. */}
@@ -297,7 +291,7 @@ function StatementBrowser({ cardId }: { cardId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Deshacer el pago de este resumen?</AlertDialogTitle>
             <AlertDialogDescription>
-              El débito vuelve al saldo de la cuenta y el resumen queda sin pagar. Los gastos no cambian.
+              El resumen queda sin pagar. Los gastos no cambian.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

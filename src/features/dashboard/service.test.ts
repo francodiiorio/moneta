@@ -37,21 +37,26 @@ describe('getOnboarding', () => {
   it('ticks each step off from what is really stored', async () => {
     const comida = await createCategory({ kind: 'expense', name: 'Comida' })
     const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
-    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
     await createCreditCard({ name: 'Visa', closingDay: 25, dueDay: 5 })
     await saveExpense({ date: '2026-10-01', description: 'Super', categoryId: comida.id, amount: 100, currency: 'ARS', status: 'confirmed' })
-    await saveIncome({ date: '2026-10-01', description: 'Sueldo', categoryId: sueldo.id, accountId: account.id, amount: 100, currency: 'ARS' })
+    await saveIncome({ date: '2026-10-01', description: 'Sueldo', categoryId: sueldo.id, amount: 100, currency: 'ARS' })
     await createBudget({ categoryId: comida.id, amount: 100_00, currency: 'ARS', period: 'monthly', startsOn: '2026-10' })
 
     const onboarding = await getOnboarding()
     expect(onboarding.hasData).toBe(true)
     expect(Object.fromEntries(onboarding.steps.map((s) => [s.id, s.done]))).toEqual({
-      account: true,
-      card: true,
       expense: true,
+      card: true,
       income: true,
       budget: true,
     })
+  })
+
+  it('an account left over from before does not count as data', async () => {
+    await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
+    const onboarding = await getOnboarding()
+    expect(onboarding.hasData).toBe(false)
+    expect(onboarding.steps.map((s) => s.id)).toEqual(['expense', 'card', 'income', 'budget'])
   })
 
   it('anything loaded leaves the welcome — savings alone too, not just movements', async () => {

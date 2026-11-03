@@ -4,7 +4,6 @@ import {
   exchangeRatesRepo,
   expensesRepo,
   incomesRepo,
-  investmentLotsRepo,
   investmentsRepo,
   recurringPlansRepo,
   savingsHoldingsRepo,
@@ -13,24 +12,17 @@ import {
 import { quantity } from '@/domain/decimal'
 import { pendingOccurrencesInRange } from '@/domain/recurrence'
 import { convert, MissingRateError } from '@/domain/currency'
-import type { ExchangeRate, InvestmentAsset, InvestmentLot, SavingsHolding } from '@/domain/entities'
-import { holdingsAsOf } from '@/domain/investments'
+import type { ExchangeRate, InvestmentAsset, SavingsHolding } from '@/domain/entities'
 import { valuateNetWorth, type ValuationPosition, type ValuationResult } from '@/domain/networth'
 import { add, money, sub, type CurrencyCode, type Money, zero } from '@/domain/money'
 import { currentMonthStamp, monthRange, shiftMonth, todayStamp, type DateStamp, type MonthStamp } from '@/lib/dates'
-// Cuentas (Etapa 8) suman al patrimonio — re-using another feature's
-// service is the established exception, see docs/DECISIONS.md "Un feature
-// puede importar el service.ts/hooks de otro, nunca sus componentes".
-import { getAccountBalancesAt } from '@/features/accounts/service'
 
 export interface MonthSummary {
   /** Confirmed gastos of the month, by purchase date. */
   expense: Money
   /** Ingresos of the month. */
   income: Money
-  /** Ingresos − gastos: what the month left (or cost) — not how the
-   *  accounts' balances moved (transfers, card payments, investment
-   *  purchases and adjustments are neither). */
+  /** Ingresos − gastos: what the month left (or cost). */
   net: Money
   /** Gastos and ingresos left out for lack of an exchange rate. With any,
    *  `net` is partial — a missing ingreso can even flip its sign. */
@@ -213,13 +205,11 @@ function totalsByCategory(
 }
 
 /**
- * Values Cuentas + Ahorros + Inversiones. Ahorros/Inversiones use their
- * current amount/quantity (neither has any historical record of its own,
- * see docs/DECISIONS.md "Evolución del patrimonio: cantidades de hoy,
- * precios de cada mes") revalued at `asOfDate`'s own exchange rates and
- * asset prices, which DO have real history. Cuentas do have history:
- * `accounts` is each open account's real balance at `asOfDate` (see
- * features/accounts/service.ts:getAccountBalancesAt).
+ * Values Ahorros + Inversiones. Both use their current amount/quantity
+ * (neither has any historical record of its own, see docs/DECISIONS.md
+ * "Evolución del patrimonio: cantidades de hoy, precios de cada mes")
+ * revalued at `asOfDate`'s own exchange rates and asset prices, which DO
+ * have real history.
  * `savings`/`holdings`/`assetById`/`rates` are fetched once by the caller
  * (they don't vary per point) — only the asset price lookup is genuinely
  * date-dependent.
@@ -229,11 +219,9 @@ async function netWorthAsOf(
   baseCurrency: CurrencyCode,
   rates: readonly ExchangeRate[],
   profile: string | undefined,
-  accounts: readonly Money[],
   savings: readonly SavingsHolding[],
   holdings: readonly { assetId: string; quantity: number }[],
   assetById: Map<string, InvestmentAsset>,
-  sourcedLots: readonly InvestmentLot[],
 ): Promise<{
   netWorth: Money
   byBucket: ValuationResult['byBucket']
@@ -245,7 +233,7 @@ async function netWorthAsOf(
     asOfDate,
   )
 
-  const positions: ValuationPosition[] = holdingsAsOf(holdings, sourcedLots, asOfDate).map((holding) => {
+  const positions: ValuationPosition[] = holdings.map((holding) => {
     const asset = assetById.get(holding.assetId)
     const priceRow = asset ? latestPrices.get(asset.id) : undefined
     return {
@@ -255,7 +243,6 @@ async function netWorthAsOf(
   })
 
   const result = valuateNetWorth({
-    accounts,
     savings,
     positions,
     rates,
@@ -290,12 +277,11 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
   const settings = await settingsRepo.getSettings()
   const currentMonth = currentMonthStamp()
 
-  const [rates, savings, holdings, assets, sourcedLots] = await Promise.all([
+  const [rates, savings, holdings, assets] = await Promise.all([
     exchangeRatesRepo.listExchangeRates(),
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
-    investmentLotsRepo.listLotsWithSource(),
   ])
   const assetById = new Map(assets.map((a) => [a.id, a]))
 
@@ -305,7 +291,6 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
 
   const months = Array.from({ length: monthsBack }, (_, index) => shiftMonth(currentMonth, index - monthsBack + 1))
   const asOfDates = months.map((month) => (month === currentMonth ? todayStamp() : monthRange(month).end))
-  const accountBalances = await getAccountBalancesAt(asOfDates)
 
   for (const [index, month] of months.entries()) {
     const asOfDate = asOfDates[index]!
@@ -314,11 +299,9 @@ export async function getNetWorthHistory(monthsBack = 6): Promise<NetWorthHistor
       settings.baseCurrency,
       rates,
       settings.rateProfile,
-      accountBalances.get(asOfDate) ?? [],
       savings,
       holdings,
       assetById,
-      sourcedLots,
     )
     missingRateCount += result.missingRateCount
     missingPriceCount += result.missingPriceCount
@@ -388,7 +371,7 @@ export interface ReportCategoryRow {
 export interface ReportNetWorth {
   asOfDate: DateStamp
   /** Same holdings, valued in each currency — the informe always shows
-   *  the patrimonio (cuentas, ahorros, inversiones) in both pesos and dólares, regardless of
+   *  the patrimonio (ahorros, inversiones) in both pesos and dólares, regardless of
    *  Settings.baseCurrency (that setting only governs the Gastos side of
    *  the report). */
   ars: { total: Money; byBucket: ValuationResult['byBucket'] }
@@ -429,7 +412,7 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
   // DateStamps compare lexicographically — never value into the future.
   const coverageEnd = monthEnd > today ? today : monthEnd
 
-  const [settings, summary, expenses, incomes, rates, savings, holdings, assets, accountBalances, sourcedLots] = await Promise.all([
+  const [settings, summary, expenses, incomes, rates, savings, holdings, assets] = await Promise.all([
     settingsRepo.getSettings(),
     getMonthSummary(month),
     getExpenseByCategory(month),
@@ -438,20 +421,17 @@ export async function getMonthlyReport(month: MonthStamp): Promise<MonthlyReport
     savingsHoldingsRepo.listSavingsHoldings(),
     investmentsRepo.listInvestmentHoldings(),
     investmentsRepo.listInvestmentAssets(),
-    getAccountBalancesAt([coverageEnd]),
-    investmentLotsRepo.listLotsWithSource(),
   ])
-  const accounts = accountBalances.get(coverageEnd) ?? []
   const assetById = new Map(assets.map((a) => [a.id, a]))
   const { baseCurrency, rateProfile } = settings
 
   // The patrimonio always reports in both ARS and USD (see
   // ReportNetWorth) — same holdings/prices, just valued twice.
   const [valuationArs, valuationUsd] = await Promise.all([
-    netWorthAsOf(coverageEnd, 'ARS', rates, rateProfile, accounts, savings, holdings, assetById, sourcedLots),
-    netWorthAsOf(coverageEnd, 'USD', rates, rateProfile, accounts, savings, holdings, assetById, sourcedLots),
+    netWorthAsOf(coverageEnd, 'ARS', rates, rateProfile, savings, holdings, assetById),
+    netWorthAsOf(coverageEnd, 'USD', rates, rateProfile, savings, holdings, assetById),
   ])
-  const tracksNetWorth = accounts.length > 0 || savings.length > 0 || holdings.length > 0
+  const tracksNetWorth = savings.length > 0 || holdings.length > 0
 
   const withShare = (items: readonly CategoryTotal[], total: Money): ReportCategoryRow[] =>
     items.map((item) => ({ ...item, share: total.amount > 0 ? item.amount.amount / total.amount : 0 }))

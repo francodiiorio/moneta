@@ -34,9 +34,9 @@ export const router = createBrowserRouter([
         },
       },
       {
-        // Cuentas is a tab of Tarjetas y cuentas (Etapa 9) — old links still land on it.
+        // Cuentas is gone (Etapa 10) — old links land on Tarjetas.
         path: 'cuentas',
-        Component: () => <Navigate to="/tarjetas?tab=cuentas" replace />,
+        Component: () => <Navigate to="/tarjetas" replace />,
       },
       {
         path: 'tarjetas',
@@ -68,7 +68,7 @@ export const router = createBrowserRouter([
       },
       {
         // Planes was split (Etapa 9): recurring plans are Presupuesto →
-        // Gastos fijos, installments Tarjetas y cuentas → Cuotas.
+        // Gastos fijos, installments Tarjetas → Cuotas.
         path: 'planes',
         Component: () => <Navigate to="/presupuestos?tab=fijos" replace />,
       },

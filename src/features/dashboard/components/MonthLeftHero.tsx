@@ -70,7 +70,7 @@ export function MonthLeftHero({ month, data }: MonthLeftHeroProps) {
             </span>
           ))}
         />
-        <Line label="Otros gastos (débito y efectivo)" value={data.other} sign="−" />
+        <Line label="Otros gastos (sin tarjeta)" value={data.other} sign="−" />
       </dl>
     </Card>
   )

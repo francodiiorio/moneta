@@ -223,12 +223,12 @@ describe('borrar una posición con compras pagadas desde una cuenta', () => {
     await db.accounts.clear()
   })
 
-  it('is blocked until each sourced purchase loses its account or is deleted', async () => {
+  it('is no longer blocked: since Etapa 10 a purchase moves no balance', async () => {
     const { createAccount } = await import('./accounts.repo')
     const { deleteInvestmentHolding } = await import('./investments.repo')
     const asset = await createInvestmentAsset({ name: 'SPY', type: 'etf', currency: 'USD', priceMode: 'manual' })
     const usd = await createAccount({ name: 'Caja USD', type: 'bank', currency: 'USD', openingBalance: 0, openingDate: '2026-10-01' })
-    const lot = await createInvestmentLot({
+    await createInvestmentLot({
       assetId: asset.id,
       quantity: 100_000_000,
       currency: 'USD',
@@ -237,12 +237,9 @@ describe('borrar una posición con compras pagadas desde una cuenta', () => {
     })
     const holding = await db.investmentHoldings.where('assetId').equals(asset.id).first()
 
-    await expect(deleteInvestmentHolding(holding!.id)).rejects.toThrow(/cuenta de origen/)
-    expect(await db.investmentLots.count()).toBe(1)
-
-    await updateInvestmentLot(lot.id, { source: null })
     await deleteInvestmentHolding(holding!.id)
     expect(await db.investmentHoldings.count()).toBe(0)
+    expect(await db.investmentLots.count()).toBe(0)
   })
 })
 

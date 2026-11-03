@@ -19,7 +19,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Inicio', icon: LayoutDashboard },
   { to: '/movimientos', label: 'Movimientos', icon: ArrowLeftRight },
-  { to: '/tarjetas', label: 'Tarjetas y cuentas', icon: CreditCard },
+  { to: '/tarjetas', label: 'Tarjetas', icon: CreditCard },
   { to: '/presupuestos', label: 'Presupuesto', icon: PiggyBank },
   { to: '/patrimonio', label: 'Patrimonio', icon: Landmark },
 ]

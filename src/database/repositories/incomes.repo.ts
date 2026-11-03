@@ -10,7 +10,9 @@ export interface IncomeInput {
   date: DateStamp
   description: string
   categoryId: string
-  accountId: string
+  /** Only data seeded as before Etapa 10 names one (see Income.accountId):
+   *  the app never passes it. */
+  accountId?: string
   amount: number
   currency: CurrencyCode
   notes?: string
@@ -31,9 +33,8 @@ export async function listIncomesInRange(startDate: string, endDate: string): Pr
 
 /**
  * Validates and persists an ingreso — a full `put` on edit, same as
- * `saveExpense`. Beyond a positive amount, an ingreso must go into an
- * account that accepts it (same currency, not before its opening date)
- * and use an income category: a gasto category here would make it show
+ * `saveExpense`. Beyond a positive amount, an ingreso must use an income
+ * category: a gasto category here would make it show
  * up in expense reports/budgets under the wrong sign.
  */
 export async function saveIncome(input: IncomeInput, existingId?: string): Promise<string> {
@@ -41,7 +42,7 @@ export async function saveIncome(input: IncomeInput, existingId?: string): Promi
   invariant(Number.isInteger(input.amount), `El monto debe ser un entero en unidades menores: ${input.amount}`)
 
   return db.transaction('rw', [db.incomes, db.accounts, db.categories], async () => {
-    await assertAccountAccepts(input.accountId, input)
+    if (input.accountId !== undefined) await assertAccountAccepts(input.accountId, input)
     const category = await db.categories.get(input.categoryId)
     invariant(category, `Categoría no encontrada: ${input.categoryId}`)
     invariant(category.kind === 'income', `"${category.name}" no es una categoría de ingreso`)
@@ -60,7 +61,7 @@ export async function saveIncome(input: IncomeInput, existingId?: string): Promi
       date: input.date,
       amount: input.amount,
       currency: input.currency,
-      accountId: input.accountId,
+      ...(input.accountId !== undefined && { accountId: input.accountId }),
       categoryId: input.categoryId,
       description: input.description,
       createdAt,

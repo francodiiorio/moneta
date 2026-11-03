@@ -16,8 +16,6 @@ interface PreviewTableProps {
   duplicateCount: number
   invalidCount: number
   excludedCount: number
-  /** Shown above the table (e.g. how to treat card payments). */
-  notice?: string
   onBack: () => void
   onImport: () => void
   isBusy: boolean
@@ -31,7 +29,6 @@ export function PreviewTable({
   duplicateCount,
   invalidCount,
   excludedCount,
-  notice,
   onBack,
   onImport,
   isBusy,
@@ -44,8 +41,6 @@ export function PreviewTable({
         {invalidCount > 0 && ` · ${invalidCount} fila${invalidCount === 1 ? '' : 's'} inválida${invalidCount === 1 ? '' : 's'}`}
         {excludedCount > 0 && ` · ${excludedCount} crédito${excludedCount === 1 ? '' : 's'} sin importar`}
       </p>
-
-      {notice && <p className="rounded-lg bg-muted/50 p-3 text-sm">{notice}</p>}
 
       <div className="rounded-xl border border-border">
         <Table>
@@ -76,24 +71,17 @@ export function PreviewTable({
                     {row.description ?? row.raw.join(' ')}
                   </TableCell>
                   <TableCell className="text-right">
+                    {/* A gasto left; an excluded row is a credit — money that came in. */}
                     {row.amount ? (
-                      <MoneyText value={row.kind === 'income' ? row.amount : negate(row.amount)} signColor />
+                      <MoneyText value={row.status === 'excluded' ? row.amount : negate(row.amount)} signColor />
                     ) : (
                       '—'
                     )}
                   </TableCell>
                   <TableCell>
-                    {row.kind === 'income' && row.status !== 'excluded' && row.status !== 'invalid' && (
-                      <Badge variant="outline">Ingreso</Badge>
-                    )}
                     {row.status === 'duplicate' && (
                       <Badge variant="secondary">
                         Posible duplicado{row.duplicateOf ? ` · ${row.duplicateOf.toLowerCase()}` : ''}
-                      </Badge>
-                    )}
-                    {row.ownMovement && (
-                      <Badge variant="secondary" title={`Menciona "${row.ownMovement}"`}>
-                        ¿Entre tus cuentas?
                       </Badge>
                     )}
                     {(row.status === 'invalid' || row.status === 'excluded') && (

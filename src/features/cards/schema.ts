@@ -49,21 +49,16 @@ export const paymentFormSchema = z.object({
     z
       .object({
         currency: z.string(),
-        accountId: z.string(),
         /** What was paid in the statement's currency — what the bank
          *  charged. Blank = nothing paid in this currency. */
         paidAmount: z.string(),
-        /** Only asked for when the account is in another currency. */
-        debitedAmount: z.string(),
       })
-      // Checked per line: the amount reads in that line's currency, and an
-      // account is only needed where something was paid.
+      // Checked per line: the amount reads in that line's currency.
       .superRefine((line, ctx) => {
         if (line.paidAmount.trim() === '') return
         if (tryParsePositiveAmount(line.paidAmount, line.currency) === undefined) {
           ctx.addIssue({ code: 'custom', path: ['paidAmount'], message: 'Ingresá un monto mayor a cero, o dejalo vacío' })
         }
-        if (line.accountId === '') ctx.addIssue({ code: 'custom', path: ['accountId'], message: 'Elegí una cuenta' })
       }),
   ),
 })

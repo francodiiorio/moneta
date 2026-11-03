@@ -7,7 +7,6 @@ import {
   type CardCalendar,
 } from '@/domain/cards'
 import { isValidMonthStamp } from '@/lib/dates'
-import { firstPendingOccurrence } from '@/domain/recurrence'
 import type { LatestBackupData } from './migrations'
 
 /** Sin partida doble no hay nada que balancear — lo que queda son las
@@ -105,7 +104,9 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
     }
   }
   for (const plan of data.recurringPlans) {
-    const { accountId, cardId, description } = plan.template
+    // A plan's `template.accountId` (Etapa 8–9) isn't checked: since Etapa
+    // 10 nothing it generates goes into that account.
+    const { cardId, description } = plan.template
     // A salary uses an income category; a gasto plan never does — or the
     // plan would fail to generate on every app open, silently.
     if ((plan.kind === 'income') !== (categoryKindById.get(plan.template.categoryId) === 'income')) {
@@ -113,15 +114,6 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
     }
     if (cardId !== undefined && !calendarByCard.has(cardId)) {
       throw new Error(`Recurrente "${description}" (${plan.id}): la tarjeta ${cardId} no existe en el backup`)
-    }
-    if (accountId !== undefined) {
-      const account = accountById.get(accountId)
-      if (!account) throw new Error(`Recurrente "${description}" (${plan.id}): la cuenta ${accountId} no existe en el backup`)
-      // Same check as saving the plan: the account must accept the next
-      // gasto it will generate, or the plan fails on every app open.
-      const next = firstPendingOccurrence(plan.rule, plan.lastMaterializedDate)
-      const problem = movementAccountProblem(account, { date: next ?? account.openingDate, currency: plan.template.currency })
-      if (problem) throw new Error(`Recurrente "${description}" (${plan.id}): ${problem}`)
     }
   }
 
@@ -134,8 +126,10 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
     const key = `${payment.cardId}:${payment.period}:${payment.currency}`
     if (paymentKeys.has(key)) throw new Error(`${label}: el resumen ya tiene un pago en ${payment.currency}`)
     paymentKeys.add(key)
-    const account = accountById.get(payment.accountId)
-    if (!account) throw new Error(`${label}: la cuenta ${payment.accountId} no existe en el backup`)
+    const account = payment.accountId === undefined ? undefined : accountById.get(payment.accountId)
+    if (payment.accountId !== undefined && !account) {
+      throw new Error(`${label}: la cuenta ${payment.accountId} no existe en el backup`)
+    }
     const problem = statementPaymentProblem(payment, account)
     if (problem) throw new Error(`${label}: ${problem}`)
   }
@@ -148,7 +142,7 @@ export function validateLedgerIntegrity(data: LatestBackupData): void {
     if (categoryKindById.get(income.categoryId) !== 'income') {
       throw new Error(`${label}: la categoría no existe o no es de ingreso`)
     }
-    assertAccount(label, income.accountId, income)
+    if (income.accountId !== undefined) assertAccount(label, income.accountId, income)
   }
 
   for (const adjustment of data.accountAdjustments) {

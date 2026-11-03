@@ -1,10 +1,5 @@
 import { db } from '../db'
-import {
-  statementDates,
-  statementPaymentDateProblem,
-  statementPaymentLinesProblem,
-  statementPaymentProblem,
-} from '@/domain/cards'
+import { statementDates, statementPaymentDateProblem, statementPaymentLinesProblem } from '@/domain/cards'
 import type { StatementPayment } from '@/domain/entities'
 import { generateId } from '@/lib/ids'
 import { invariant } from '@/lib/invariant'
@@ -26,14 +21,6 @@ export interface PaymentLineInput {
   /** What was paid of the statement in that currency — what the bank
    *  charged, which may differ from Moneta's total (see ADR). */
   amount: number
-  accountId: string
-  /** What left the account, in the account's currency. Omitted when the
-   *  account is in the statement's currency: then it's `amount`. */
-  debitedAmount?: number
-  /** The account currency the caller parsed `debitedAmount` in — checked
-   *  against the account inside the transaction (same reason as
-   *  transfers.repo.ts). */
-  expectedAccountCurrency: string
 }
 
 export interface PayStatementInput {
@@ -51,7 +38,7 @@ export interface PayStatementInput {
  * reconciled. Never creates a gasto: the purchases were already counted.
  */
 export async function payStatement(input: PayStatementInput): Promise<StatementPayment[]> {
-  const tables = [db.statementPayments, db.accounts, db.creditCards, db.cardStatements]
+  const tables = [db.statementPayments, db.creditCards, db.cardStatements]
   return db.transaction('rw', tables, async () => {
     const calendar = await getCardCalendar(input.cardId)
     const dateProblem = statementPaymentDateProblem(input.date, statementDates(calendar, input.period).closeDate)
@@ -71,31 +58,16 @@ export async function payStatement(input: PayStatementInput): Promise<StatementP
     const now = new Date().toISOString()
     const payments: StatementPayment[] = []
     for (const line of input.lines) {
-      const account = await db.accounts.get(line.accountId)
-      invariant(account, `Cuenta no encontrada: ${line.accountId}`)
-      invariant(
-        account.currency === line.expectedAccountCurrency,
-        'La moneda de una cuenta cambió mientras cargabas el pago — volvé a intentarlo',
-      )
-      const debitedAmount = line.debitedAmount ?? (account.currency === line.currency ? line.amount : undefined)
-      invariant(debitedAmount !== undefined, `Ingresá cuánto se debitó de "${account.name}" en ${account.currency}`)
-      invariant(Number.isInteger(debitedAmount), `Monto debitado inválido: ${debitedAmount}`)
-      const payment: StatementPayment = {
+      payments.push({
         id: generateId(),
         cardId: input.cardId,
         period: input.period,
         currency: line.currency,
         amount: line.amount,
-        accountId: account.id,
-        debitedAmount,
-        debitedCurrency: account.currency,
         date: input.date,
         createdAt: now,
         updatedAt: now,
-      }
-      const problem = statementPaymentProblem(payment, account)
-      invariant(problem === undefined, problem ?? '')
-      payments.push(payment)
+      })
     }
     await db.statementPayments.bulkAdd(payments)
     return payments
@@ -118,8 +90,7 @@ export async function assertCloseCanMove(cardId: string, period: MonthStamp): Pr
   }
 }
 
-/** Undoes a statement's payment (every currency) — the debit goes back
- *  to each account. */
+/** Undoes a statement's payment (every currency). */
 export async function undoStatementPayment(cardId: string, period: MonthStamp): Promise<number> {
   return db.statementPayments.where('cardId').equals(cardId).filter((p) => p.period === period).delete()
 }

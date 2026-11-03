@@ -5,7 +5,7 @@ const FEATURES: { icon: LucideIcon; title: string; text: string; to: string }[] 
   {
     icon: CreditCard,
     title: 'Tarjetas sin sorpresas',
-    text: 'Cuándo cierra cada resumen, cuánto vas a pagar y desde qué cuenta.',
+    text: 'Cuándo cierra cada resumen, cuánto vas a pagar y en qué cuotas estás.',
     to: '/tarjetas',
   },
   {

@@ -1,5 +1,4 @@
 import {
-  accountsRepo,
   cardStatementsRepo,
   categoriesRepo,
   creditCardsRepo,
@@ -24,7 +23,6 @@ import { invariant } from '@/lib/invariant'
 import type { CardFormValues, PaymentFormValues, ReconcileFormValues, StatementDatesFormValues } from './schema'
 
 export { setCreditCardArchived, deleteCreditCard, listCreditCards } from '@/database/repositories/creditCards.repo'
-export { listAccounts } from '@/database/repositories/accounts.repo'
 
 export type StatementStatus = 'open' | 'closed' | 'upcoming'
 
@@ -168,11 +166,8 @@ export interface StatementExpenseRow {
 export interface StatementPaymentRow {
   id: string
   date: DateStamp
-  accountName: string
   /** What it paid of the statement, in the statement's currency. */
   amount: Money
-  /** What left the account — differs from `amount` only across currencies. */
-  debited: Money
 }
 
 export interface StatementDetail extends StatementView {
@@ -191,28 +186,20 @@ export async function getStatementDetail(
 ): Promise<StatementDetail | undefined> {
   const card = await creditCardsRepo.getCreditCard(cardId)
   if (!card) return undefined
-  const [calendar, expenses, payments, categories, accounts] = await Promise.all([
+  const [calendar, expenses, payments, categories] = await Promise.all([
     creditCardsRepo.getCardCalendar(cardId),
     cardStatementsRepo.listCardExpenses(cardId, period),
     statementPaymentsRepo.listStatementPayments(cardId, period),
     categoriesRepo.listCategories(),
-    accountsRepo.listAccounts(),
   ])
   const categoryName = new Map(categories.map((c) => [c.id, c.name]))
-  const accountName = new Map(accounts.map((a) => [a.id, a.name]))
   const view = buildView(calendar, period, expenses, payments, today)
   return {
     ...view,
     card,
     openingBalance: openingBalanceOf(calendar, period),
     payments: payments
-      .map((p) => ({
-        id: p.id,
-        date: p.date,
-        accountName: accountName.get(p.accountId) ?? '—',
-        amount: money(p.amount, p.currency),
-        debited: money(p.debitedAmount, p.debitedCurrency),
-      }))
+      .map((p) => ({ id: p.id, date: p.date, amount: money(p.amount, p.currency) }))
       .sort((a, b) => a.amount.currency.localeCompare(b.amount.currency)),
     expenses: expenses.map((e) => ({
       id: e.id,
@@ -372,39 +359,25 @@ export async function resetStatementDates(cardId: string, period: MonthStamp): P
 /**
  * Pays the statement from the form: one line per currency with something
  * paid (a blank amount skips it), by what the bank charged — Moneta's
- * total may differ, and the statement then shows the difference. Each
- * debited amount is parsed in the currency the form showed for its
- * account; in the statement's own currency the debit is the amount paid.
+ * total may differ, and the statement then shows the difference.
  */
 export async function payStatementFromForm(
   cardId: string,
   period: MonthStamp,
   values: PaymentFormValues,
   shown: {
-    accountCurrency: ReadonlyMap<string, string>
     /** The next statement's dates the form started from — only a change
      *  is saved, as that statement's real dates. */
     nextDates?: StatementDates
-  },
+  } = {},
 ): Promise<{ nextDatesSaved: boolean; moved: number }> {
   const filled = values.lines.filter((line) => line.paidAmount.trim() !== '')
   invariant(filled.length > 0, 'Cargá lo que pagaste en al menos una moneda')
-  const lines = await Promise.all(
-    filled.map(async (line) => {
-      const amount = parseAmount(line.paidAmount, line.currency).amount
-      invariant(amount > 0, 'Lo pagado tiene que ser mayor a cero')
-      const account = await accountsRepo.getAccount(line.accountId)
-      invariant(account, `Cuenta no encontrada: ${line.accountId}`)
-      const accountCurrency = shown.accountCurrency.get(account.id) ?? account.currency
-      if (accountCurrency === line.currency) {
-        return { currency: line.currency, amount, accountId: account.id, expectedAccountCurrency: accountCurrency }
-      }
-      invariant(line.debitedAmount.trim() !== '', `Ingresá cuánto se debitó en ${accountCurrency}`)
-      const debited = parseAmount(line.debitedAmount, accountCurrency).amount
-      invariant(debited > 0, 'El monto debitado tiene que ser mayor a cero')
-      return { currency: line.currency, amount, accountId: account.id, debitedAmount: debited, expectedAccountCurrency: accountCurrency }
-    }),
-  )
+  const lines = filled.map((line) => {
+    const amount = parseAmount(line.paidAmount, line.currency).amount
+    invariant(amount > 0, 'Lo pagado tiene que ser mayor a cero')
+    return { currency: line.currency, amount }
+  })
   const input = { cardId, period, date: values.date, lines }
   const { nextCloseDate, nextDueDate } = values
   invariant(!nextCloseDate === !nextDueDate, 'Completá las dos fechas del próximo resumen, o ninguna')

@@ -12,7 +12,7 @@ export interface HubTab {
 interface HubPageProps {
   title: string
   /** The first one is the default; the open tab lives in the URL
-   *  (?tab=cuentas), so a link or a reload lands on it. */
+   *  (?tab=cuotas), so a link or a reload lands on it. */
   tabs: readonly HubTab[]
 }
 

@@ -50,19 +50,11 @@ test('un mes inválido en la URL muestra un estado amable en vez de romper', asy
 
 // Etapa 8: Reportes y el informe muestran ingresos y el balance neto del mes.
 test('reportes e informe muestran ingresos, gastos y balance neto', async ({ page }) => {
-  await page.goto('/cuentas')
-  await page.getByRole('button', { name: 'Nueva cuenta' }).first().click()
-  await page.getByLabel('Nombre').fill('Galicia')
-  await page.getByRole('button', { name: 'Guardar' }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-
   await page.goto('/movimientos')
   await page.getByRole('button', { name: 'Nuevo movimiento' }).first().click()
   await page.getByRole('tab', { name: 'Ingreso' }).click()
   await page.getByLabel('Descripción').fill('Sueldo')
   await page.getByLabel('Monto').fill('5000')
-  await page.getByLabel('Cuenta', { exact: true }).click()
-  await page.getByRole('option', { name: /Galicia/ }).click()
   await page.getByText('Elegí una categoría').click()
   await page.getByRole('option', { name: 'Sueldo' }).click()
   await page.getByRole('button', { name: 'Guardar' }).click()

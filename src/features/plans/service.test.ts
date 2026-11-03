@@ -506,18 +506,34 @@ describe('planes con medio de pago (Fase 4b)', () => {
     await Promise.all([db.creditCards.clear(), db.cardStatements.clear(), db.accounts.clear()])
   })
 
-  it('a recurring plan with a debit account generates gastos from that account', async () => {
+  it('a plan from before Etapa 10 that names a debit account still generates gastos — without the account', async () => {
     const { createAccount } = await import('@/database/repositories/accounts.repo')
     const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
     const category = await createCategory({ kind: 'expense', name: 'Servicios' })
-    const plan = await createRecurringPlanFromForm({
-      ...recurringPlanFormValues(category.id),
-      paymentMethod: `account:${account.id}`,
+    const plan = await createRecurringPlan({
+      template: { description: 'Luz', categoryId: category.id, amount: 100, currency: 'ARS', accountId: account.id },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 1, startDate: '2026-02-01' },
     })
-    expect(plan.template.accountId).toBe(account.id)
+    await materializeDue('2026-04-15')
     const generated = await db.expenses.where('sourcePlanId').equals(plan.id).toArray()
     expect(generated.length).toBeGreaterThan(0)
-    expect(generated.every((e) => e.accountId === account.id)).toBe(true)
+    for (const expense of generated) expect(expense).not.toHaveProperty('accountId')
+  })
+
+  it('a salary plan from before Etapa 10 that names an account generates ingresos — without the account', async () => {
+    const { createAccount } = await import('@/database/repositories/accounts.repo')
+    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
+    const category = await createCategory({ kind: 'income', name: 'Sueldo' })
+    const plan = await createRecurringPlan({
+      kind: 'income',
+      template: { description: 'Sueldo', categoryId: category.id, amount: 100, currency: 'ARS', accountId: account.id },
+      rule: { freq: 'monthly', interval: 1, dayOfMonth: 1, startDate: '2026-02-01' },
+    })
+    await materializeDue('2026-04-15')
+    const generated = (await db.incomes.toArray()).filter((i) => i.sourcePlanId === plan.id)
+    expect(generated.length).toBeGreaterThan(0)
+    for (const income of generated) expect(income).not.toHaveProperty('accountId')
+    await Promise.all([db.incomes.clear(), db.accounts.clear()])
   })
 
   it('an installment purchase with a card ignores the first-cuota date and starts at the purchase', async () => {
@@ -541,27 +557,6 @@ describe('planes con medio de pago (Fase 4b)', () => {
     expect(plan).toMatchObject({ firstDueDate: '2026-07-15', cardId: card.id })
     const cuotas = await db.expenses.where('sourcePlanId').equals(plan.id).sortBy('date')
     expect(cuotas.map((c) => c.statementPeriod)).toEqual(['2026-07', '2026-08', '2026-09'])
-  })
-})
-
-describe('recurrente con débito: validaciones', () => {
-  afterEach(async () => {
-    await db.accounts.clear()
-  })
-
-  it('rejects a start before the account’s opening date, or another currency', async () => {
-    const { createAccount } = await import('@/database/repositories/accounts.repo')
-    const account = await createAccount({ name: 'Galicia', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-06-01' })
-    const category = await createCategory({ kind: 'expense', name: 'Servicios' })
-    await expect(
-      createRecurringPlanFromForm({ ...recurringPlanFormValues(category.id), paymentMethod: `account:${account.id}` }),
-    ).rejects.toThrow(/saldo inicial/)
-    await expect(
-      createRecurringPlanFromForm({
-        ...recurringPlanFormValues(category.id, { startDate: '2026-06-01', currency: 'USD' }),
-        paymentMethod: `account:${account.id}`,
-      }),
-    ).rejects.toThrow(/es en ARS/)
   })
 })
 
@@ -623,7 +618,6 @@ describe('listInstallmentPlansWithProgress — con tarjeta, como cuenta el banco
         categoryId: category.id,
         amount: '88.040',
         currency: 'ARS',
-        accountId: '',
         cardId: card.id,
         statementPeriod: cuota5.statementPeriod!,
       },
@@ -893,13 +887,11 @@ describe('revisión de B', () => {
 
 describe('ingreso fijo (sueldo)', () => {
   afterEach(async () => {
-    await Promise.all([db.accounts.clear(), db.incomes.clear(), db.creditCards.clear()])
+    await Promise.all([db.incomes.clear(), db.creditCards.clear()])
   })
 
   async function salarySetup() {
-    const { createAccount } = await import('@/database/repositories/accounts.repo')
     const sueldo = await createCategory({ kind: 'income', name: 'Sueldo' })
-    const account = await createAccount({ name: 'BBVA', type: 'bank', currency: 'ARS', openingBalance: 0, openingDate: '2026-01-01' })
     const values = {
       kind: 'income' as const,
       description: 'Sueldo',
@@ -912,27 +904,29 @@ describe('ingreso fijo (sueldo)', () => {
       startDate: '2026-10-01',
       endDate: '',
       maxOccurrences: '',
-      paymentMethod: `account:${account.id}`,
+      paymentMethod: '',
     }
-    return { sueldo, account, values }
+    return { sueldo, values }
   }
 
-  it('generates an ingreso into its account each time it’s due, listed as income', async () => {
-    const { account, values } = await salarySetup()
+  it('generates an ingreso (with no account) each time it’s due, listed as income', async () => {
+    const { values } = await salarySetup()
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-02T12:00:00'))
     try {
       const plan = await createRecurringPlanFromForm(values)
       expect(plan.kind).toBe('income')
       const incomes = (await db.incomes.toArray()).sort((a, b) => a.date.localeCompare(b.date))
-      expect(incomes.map((i) => [i.date, i.amount, i.accountId, i.sourcePlanId])).toEqual([
-        ['2026-10-01', 1_500_000_00, account.id, plan.id],
-        ['2026-11-01', 1_500_000_00, account.id, plan.id],
+      expect(incomes.map((i) => [i.date, i.amount, i.sourcePlanId])).toEqual([
+        ['2026-10-01', 1_500_000_00, plan.id],
+        ['2026-11-01', 1_500_000_00, plan.id],
       ])
+      for (const income of incomes) expect(income).not.toHaveProperty('accountId')
       expect(await db.expenses.count()).toBe(0)
       const { listRecurringPlansWithNext } = await import('./service')
       const [item] = await listRecurringPlansWithNext()
-      expect(item).toMatchObject({ kind: 'income', generatedCount: 2, paymentLabel: 'Entra a · BBVA' })
+      expect(item).toMatchObject({ kind: 'income', generatedCount: 2 })
+      expect(item).not.toHaveProperty('paymentLabel')
     } finally {
       vi.useRealTimers()
     }
@@ -946,13 +940,14 @@ describe('ingreso fijo (sueldo)', () => {
     expect(await db.incomes.count()).toBe(0)
   })
 
-  it('needs an account and an income category; never a card; never turned into a gasto', async () => {
-    const { sueldo, account, values } = await salarySetup()
+  it('needs no account but an income category; never a card; never turned into a gasto', async () => {
+    const { sueldo, values } = await salarySetup()
     const gasto = await createCategory({ kind: 'expense', name: 'Comida' })
     const rule: RecurrenceRule = { freq: 'monthly', interval: 1, startDate: '2026-10-01' }
     const template = { description: 'Sueldo', categoryId: sueldo.id, amount: 100, currency: 'ARS' }
-    await expect(createRecurringPlan({ kind: 'income', template, rule })).rejects.toThrow(/cuenta/)
-    await expect(createRecurringPlan({ kind: 'income', template: { ...template, accountId: account.id, categoryId: gasto.id }, rule })).rejects.toThrow(/categoría de ingreso/)
+    await expect(createRecurringPlan({ kind: 'income', template: { ...template, categoryId: gasto.id }, rule })).rejects.toThrow(/categoría de ingreso/)
+    await expect(createRecurringPlan({ kind: 'income', template: { ...template, cardId: 'c1' }, rule })).rejects.toThrow(/tarjeta/)
+    await expect(createRecurringPlan({ kind: 'income', template, rule })).resolves.toMatchObject({ kind: 'income' })
     const plan = await createRecurringPlanFromForm(values)
     await expect(updateRecurringPlanFromForm(plan.id, { ...values, kind: 'expense' })).rejects.toThrow(/no se puede convertir/)
   })

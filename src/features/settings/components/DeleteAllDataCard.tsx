@@ -64,7 +64,7 @@ export function DeleteAllDataCard() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Borrar todos los datos?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se borran tus cuentas, movimientos, tarjetas y resúmenes, planes, presupuestos, ahorros, inversiones,
+              Se borran tus movimientos, tarjetas y resúmenes, planes, presupuestos, ahorros, inversiones,
               categorías y ajustes guardados en este navegador (el modo claro u oscuro se mantiene). No se puede
               deshacer: sólo un backup exportado antes los puede recuperar. Si tenés Moneta abierta en otra pestaña,
               también se reinicia.

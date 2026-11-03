@@ -3,7 +3,7 @@ import { ArrowRight, Coins, Lock, ShieldCheck, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 const PROMISES = [
-  { icon: Lock, text: 'Sin cuentas ni contraseñas' },
+  { icon: Lock, text: 'Sin registrarte ni contraseñas' },
   { icon: WifiOff, text: 'Tus datos no salen de este dispositivo' },
   { icon: Coins, text: 'Pesos y dólares, cada uno en su moneda' },
 ]
@@ -33,7 +33,7 @@ export function WelcomeHero() {
         <p className="text-xs font-medium tracking-widest text-primary uppercase">Bienvenido a Moneta</p>
         <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Tu plata, en tus manos.</h2>
         <p className="mt-3 text-muted-foreground">
-          Llevá tus cuentas, tarjetas, cuotas y ahorros en un solo lugar, sin entregarle tus datos a nadie. Todo se
+          Llevá tus gastos, tarjetas, cuotas y ahorros en un solo lugar, sin entregarle tus datos a nadie. Todo se
           guarda en este dispositivo.
         </p>
         <ul className="mt-5 flex flex-col gap-2 text-sm">
@@ -46,8 +46,8 @@ export function WelcomeHero() {
         </ul>
         <div className="mt-7 flex flex-wrap gap-2">
           <Button asChild size="lg">
-            <Link to="/tarjetas?tab=cuentas">
-              Crear mi primera cuenta
+            <Link to="/movimientos">
+              Cargar mi primer gasto
               <ArrowRight className="size-4" />
             </Link>
           </Button>

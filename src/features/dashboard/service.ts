@@ -1,5 +1,4 @@
 import {
-  accountsRepo,
   budgetsRepo,
   cardStatementsRepo,
   categoriesRepo,
@@ -38,7 +37,7 @@ export function clearOnboardingHidden(): void {
   }
 }
 
-export type OnboardingStepId = 'account' | 'card' | 'expense' | 'income' | 'budget'
+export type OnboardingStepId = 'expense' | 'card' | 'income' | 'budget'
 
 export interface OnboardingStep {
   id: OnboardingStepId
@@ -47,7 +46,7 @@ export interface OnboardingStep {
 
 export interface Onboarding {
   steps: OnboardingStep[]
-  /** Anything loaded at all — an account, a card, a movement, savings or
+  /** Anything loaded at all — a card, a movement, savings or
    *  an investment: until then the home is a welcome, not a dashboard of
    *  zeros. (Default categories and settings don't count: every install
    *  has them.) */
@@ -56,8 +55,7 @@ export interface Onboarding {
 
 /** "Primeros pasos": each step ticks itself off from what's really stored. */
 export async function getOnboarding(): Promise<Onboarding> {
-  const [accounts, cards, expenseCount, incomeCount, budgets, savings, holdings, recurring] = await Promise.all([
-    accountsRepo.listAccounts(),
+  const [cards, expenseCount, incomeCount, budgets, savings, holdings, recurring] = await Promise.all([
     creditCardsRepo.listCreditCards(),
     expensesRepo.countExpenses(),
     incomesRepo.countIncomes(),
@@ -68,15 +66,13 @@ export async function getOnboarding(): Promise<Onboarding> {
   ])
   return {
     steps: [
-      { id: 'account', done: accounts.length > 0 },
-      { id: 'card', done: cards.length > 0 },
       { id: 'expense', done: expenseCount > 0 },
+      { id: 'card', done: cards.length > 0 },
       { id: 'income', done: incomeCount > 0 },
       { id: 'budget', done: budgets.length > 0 },
     ],
     hasData:
-      accounts.length +
-        cards.length +
+      cards.length +
         expenseCount +
         incomeCount +
         savings.length +
@@ -215,7 +211,7 @@ export interface MonthLeft {
 }
 
 /**
- * The month's money as it moves through the accounts: ingresos (received
+ * The month's money: ingresos (received
  * and a salary still to come) against the fixed gastos not paid by card,
  * the card statements due this month (whole — purchases are counted once,
  * through their statement, never on their own dates) and every other

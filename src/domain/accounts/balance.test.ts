@@ -83,6 +83,19 @@ describe('toAccountMovements', () => {
     expect(movements).toEqual([])
   })
 
+  it('skips ingresos and card payments without an account (Etapa 10)', () => {
+    const withoutAccount = income()
+    delete withoutAccount.accountId
+    const payment = { id: 'p1', cardId: 'c1', period: '2026-10', currency: 'ARS', amount: 1000, date: '2026-11-05', createdAt: '', updatedAt: '' }
+    const movements = toAccountMovements({
+      incomes: [withoutAccount],
+      expenses: [],
+      adjustments: [],
+      transfers: [], investmentLots: [], statementPayments: [payment],
+    })
+    expect(movements).toEqual([])
+  })
+
   it('skips projected expenses — they have not happened yet', () => {
     const movements = toAccountMovements({
       incomes: [],
