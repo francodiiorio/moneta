@@ -53,14 +53,7 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
       )}
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium">{item.description}</p>
-          {item.status === 'projected' && (
-            <Badge variant="secondary" className="shrink-0">
-              Por pagar
-            </Badge>
-          )}
-        </div>
+        <p className="truncate text-sm font-medium">{item.description}</p>
         <p className="truncate text-xs text-muted-foreground">
           {[item.categoryLabel ?? '—', item.accountLabel].filter(Boolean).join(' · ')}
         </p>
@@ -75,7 +68,16 @@ export function TransactionRow({ item, onEdit, onDelete }: TransactionRowProps) 
             ⇄ <MoneyText value={item.counterpart} />
           </p>
         )}
-        <p className="text-xs text-muted-foreground">{formatShortDate(item.date)}</p>
+        {/* Next to the date, not the name: on a phone the name needs the
+            whole width. */}
+        <div className="flex items-center justify-end gap-1.5">
+          {item.status === 'projected' && (
+            <Badge variant="secondary" className="px-1.5 py-0 text-[11px]">
+              Por pagar
+            </Badge>
+          )}
+          <p className="text-xs text-muted-foreground">{formatShortDate(item.date)}</p>
+        </div>
       </div>
 
       <DropdownMenu>

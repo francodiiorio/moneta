@@ -145,14 +145,14 @@ export function TransactionsPage() {
         actions={
           <>
             {advanced && (
-              <Button variant="outline" asChild>
+              <Button variant="outline" className="flex-1 sm:flex-none" asChild>
                 <Link to="/movimientos/importar">
                   <Upload className="size-4" />
                   Importar CSV
                 </Link>
               </Button>
             )}
-            <Button onClick={() => openCreateDialog()}>
+            <Button className="flex-1 sm:flex-none" onClick={() => openCreateDialog()}>
               <Plus className="size-4" />
               Nuevo movimiento
             </Button>
@@ -160,57 +160,61 @@ export function TransactionsPage() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" onClick={() => setMonth(shiftMonth(month, -1))}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex items-center justify-between gap-1 sm:justify-start">
+          <Button variant="ghost" size="icon" aria-label="Mes anterior" onClick={() => setMonth(shiftMonth(month, -1))}>
             <ChevronLeft className="size-4" />
           </Button>
           <span className="min-w-36 text-center text-sm font-medium capitalize">
             {formatMonthLabel(month)}
           </span>
-          <Button variant="ghost" size="icon" onClick={() => setMonth(shiftMonth(month, 1))}>
+          <Button variant="ghost" size="icon" aria-label="Mes siguiente" onClick={() => setMonth(shiftMonth(month, 1))}>
             <ChevronRight className="size-4" />
           </Button>
         </div>
 
-        <Select value={categoryFilter ?? ALL} onValueChange={(v) => setCategoryFilter(v === ALL ? null : v)}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Todas las categorías" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>Todas las categorías</SelectItem>
-            {CATEGORY_GROUPS.map(({ kind, label }) => {
-              const ofKind = categories?.filter((c) => c.kind === kind) ?? []
-              if (ofKind.length === 0) return null
-              return (
-                <SelectGroup key={kind}>
-                  <SelectLabel>{label}</SelectLabel>
-                  {ofKind.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )
-            })}
-          </SelectContent>
-        </Select>
-
-        {accounts !== undefined && accounts.length > 0 && (
-          <Select value={accountFilter ?? ALL} onValueChange={(v) => setAccountFilter(v === ALL ? null : v)}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Todas las cuentas" />
+        {/* Side by side on a phone, where "Todas las categorías" wouldn't
+            fit in half the width: the trigger says just "Categorías". */}
+        <div className="flex gap-2 sm:gap-3">
+          <Select value={categoryFilter ?? ALL} onValueChange={(v) => setCategoryFilter(v === ALL ? null : v)}>
+            <SelectTrigger className="flex-1 sm:w-48 sm:flex-none">
+              <SelectValue placeholder="Categorías">{categoryFilter === null ? 'Categorías' : undefined}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>Todas las cuentas</SelectItem>
-              {accounts.map((account) => (
-                <SelectItem key={account.id} value={account.id}>
-                  {account.isArchived ? `${account.name} (archivada)` : account.name}
-                </SelectItem>
-              ))}
+              <SelectItem value={ALL}>Todas las categorías</SelectItem>
+              {CATEGORY_GROUPS.map(({ kind, label }) => {
+                const ofKind = categories?.filter((c) => c.kind === kind) ?? []
+                if (ofKind.length === 0) return null
+                return (
+                  <SelectGroup key={kind}>
+                    <SelectLabel>{label}</SelectLabel>
+                    {ofKind.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )
+              })}
             </SelectContent>
           </Select>
-        )}
+
+          {accounts !== undefined && accounts.length > 0 && (
+            <Select value={accountFilter ?? ALL} onValueChange={(v) => setAccountFilter(v === ALL ? null : v)}>
+              <SelectTrigger className="flex-1 sm:w-48 sm:flex-none">
+                <SelectValue placeholder="Cuentas">{accountFilter === null ? 'Cuentas' : undefined}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todas las cuentas</SelectItem>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.isArchived ? `${account.name} (archivada)` : account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       {transactions === undefined ? (

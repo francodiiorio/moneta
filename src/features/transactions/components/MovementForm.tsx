@@ -392,7 +392,9 @@ export function MovementForm({
                   }}
                 >
                   <FormControl>
-                    <SelectTrigger className="w-full">
+                    {/* Its options are a sentence long: on a phone they wrap
+                        instead of being cut. */}
+                    <SelectTrigger className="w-full text-left whitespace-normal data-[size=default]:h-auto data-[size=default]:min-h-9">
                       <SelectValue />
                     </SelectTrigger>
                   </FormControl>
