@@ -159,7 +159,7 @@ export function CardsPage({ embedded = false }: EmbeddableProps = {}) {
       />
 
       {summaries === undefined ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1].map((i) => (
             <div key={i} className="h-56 animate-pulse rounded-xl bg-muted" />
           ))}
@@ -173,13 +173,13 @@ export function CardsPage({ embedded = false }: EmbeddableProps = {}) {
         />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{active.map(renderCard)}</div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{active.map(renderCard)}</div>
           {archived.length > 0 && (
             <div className="flex flex-col gap-3">
               <Button variant="ghost" size="sm" className="w-fit" onClick={toggleShowArchived}>
                 {showArchived ? 'Ocultar archivadas' : `Ver archivadas (${archived.length})`}
               </Button>
-              {showArchived && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{archived.map(renderCard)}</div>}
+              {showArchived && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{archived.map(renderCard)}</div>}
             </div>
           )}
         </>

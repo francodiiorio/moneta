@@ -45,7 +45,7 @@ export function SettingsPage() {
           <CardTitle>Preferencias</CardTitle>
           <CardDescription>Moneda base para totales consolidados y tema visual.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label>Moneda base</Label>
             {settings ? (

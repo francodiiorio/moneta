@@ -111,7 +111,7 @@ export function UploadStep({
           <CardTitle className="text-base">Archivo</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="csv-file">Extracto (CSV)</Label>
               <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ export function UploadStep({
             <CardHeader>
               <CardTitle className="text-base">Destino</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label>¿De dónde es el extracto?</Label>
                 <Select value={destinationValue} onValueChange={handleDestinationChange}>
@@ -245,7 +245,7 @@ export function UploadStep({
             <CardHeader>
               <CardTitle className="text-base">Moneda y categoría</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
+            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label>Moneda</Label>
                 <Select
@@ -295,7 +295,7 @@ export function UploadStep({
               <CardTitle className="text-base">Columnas</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <ColumnSelect
                   label="Fecha"
                   columns={columns}
@@ -360,7 +360,7 @@ export function UploadStep({
                 </Tabs>
 
                 {mapping.amount.mode === 'single' ? (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <ColumnSelect
                       label="Columna de monto"
                       columns={columns}
@@ -394,7 +394,7 @@ export function UploadStep({
                     </div>
                   </div>
                 ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <ColumnSelect
                       label="Columna de débito (gastos)"
                       columns={columns}

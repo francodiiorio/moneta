@@ -77,7 +77,7 @@ export function ReportsPage() {
       {summary && (
         // lg, not sm: from md the sidebar leaves too little room for three
         // ARS amounts side by side (they can't wrap).
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
           <Card className="py-0">
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">Ingresos</p>
@@ -115,7 +115,7 @@ export function ReportsPage() {
           description="Cargá gastos e ingresos en Movimientos para ver el desglose por categoría."
         />
       ) : (
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle>Gasto por categoría</CardTitle>

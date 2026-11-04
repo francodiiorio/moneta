@@ -69,7 +69,7 @@ export function DashboardPage() {
       <div className="flex flex-col gap-4">
         <PageHeader title={greeting()} description="Empecemos a ordenar tu plata." />
         <WelcomeHero />
-        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           <OnboardingChecklist steps={onboarding.steps} />
           <FeatureHighlights />
         </div>
@@ -165,7 +165,7 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
 
       <MonthLeftHero month={month} data={left} />
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         <CardDeadlines />
         <UpcomingPanel />
         <BudgetsPanel month={month} />
@@ -270,7 +270,7 @@ function MonthOverview({ steps }: { steps: OnboardingStep[] }) {
               />
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
               <Panel
                 title="Ingresos y gastos"
                 icon={BarChart3}

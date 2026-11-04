@@ -46,7 +46,9 @@ export function InstallmentPlanRow({ item, onEdit, onDelete }: InstallmentPlanRo
           <CategoryIcon icon={item.categoryIcon} color={item.categoryColor} />
           <div className="min-w-0">
             <p className="truncate font-medium">{item.description}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            {/* Wraps instead of truncating: on a phone the card name is
+                what would get cut. */}
+            <p className="text-xs break-words text-muted-foreground">
               {[item.categoryLabel, item.paymentLabel].filter(Boolean).join(' · ')}
             </p>
           </div>
