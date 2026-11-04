@@ -33,6 +33,7 @@ import { useAllCategories } from '../hooks/useAllCategories'
 import { useTransactionsUiStore } from '../store'
 import { TransactionFormDialog } from '../components/TransactionFormDialog'
 import { TransactionRow } from '../components/TransactionRow'
+import { MonthSpendingCard } from '../components/MonthSpendingCard'
 import { removeTransaction, type TransactionKind, type TransactionListItem } from '../service'
 
 const ALL = '__all__'
@@ -70,6 +71,7 @@ export function TransactionsPage() {
   const {
     month,
     categoryFilter,
+    hideCuotas,
     setMonth,
     setCategoryFilter,
     dialogOpen,
@@ -82,6 +84,7 @@ export function TransactionsPage() {
   const [pendingDelete, setPendingDelete] = useState<TransactionListItem | null>(null)
 
   const editingItem = transactions?.find((t) => t.id === editingTransactionId)
+  const filteredCategoryName = categoryFilter === null ? undefined : categories?.find((c) => c.id === categoryFilter)?.name
   const groups = groupByDate(transactions ?? [])
 
   const deleteCopy = pendingDelete ? DELETE_COPY[pendingDelete.kind] : DELETE_COPY.expense
@@ -160,12 +163,16 @@ export function TransactionsPage() {
         </Select>
       </div>
 
+      <MonthSpendingCard month={month} {...(filteredCategoryName !== undefined && { categoryName: filteredCategoryName })} />
+
       {transactions === undefined ? (
         <div className="flex flex-col gap-2">
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />
           ))}
         </div>
+      ) : groups.length === 0 && (categoryFilter !== null || hideCuotas) ? (
+        <EmptyState icon={Receipt} title="Nada con estos filtros" description="Probá con otra categoría o mostrando las cuotas." />
       ) : groups.length === 0 ? (
         <EmptyState
           icon={Receipt}

@@ -6,8 +6,10 @@ import { currentMonthStamp, type MonthStamp } from '@/lib/dates'
 interface TransactionsUiState {
   month: MonthStamp
   categoryFilter: string | null
+  hideCuotas: boolean
   setMonth: (month: MonthStamp) => void
   setCategoryFilter: (categoryId: string | null) => void
+  setHideCuotas: (hide: boolean) => void
 
   dialogOpen: boolean
   editingTransactionId: string | null
@@ -19,8 +21,10 @@ interface TransactionsUiState {
 export const useTransactionsUiStore = create<TransactionsUiState>((set) => ({
   month: currentMonthStamp(),
   categoryFilter: null,
+  hideCuotas: false,
   setMonth: (month) => set({ month }),
   setCategoryFilter: (categoryId) => set({ categoryFilter: categoryId }),
+  setHideCuotas: (hideCuotas) => set({ hideCuotas }),
 
   dialogOpen: false,
   editingTransactionId: null,
